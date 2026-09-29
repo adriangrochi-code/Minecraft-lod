@@ -3,10 +3,21 @@ package com.example.minecraftlodmod.config;
 import me.shedaniel.clothconfig2.api.ConfigBuilder;
 import me.shedaniel.clothconfig2.api.ConfigCategory;
 import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
+import me.shedaniel.clothconfig2.gui.entries.EnumListEntry;
+import me.shedaniel.clothconfig2.gui.entries.TextListEntry;
+import com.example.minecraftlodmod.benchmark.SesionCalibracion;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.function.Supplier;
 
 /**
  * Pantalla de config con Cloth Config (árbol de la sección 11). Solo se
@@ -31,13 +42,15 @@ final class PantallaCloth {
         ConfigEntryBuilder e = builder.entryBuilder();
 
         ConfigCategory general = builder.getOrCreateCategory(Component.translatable(CLAVE + "general"));
-        general.addEntry(e.startEnumSelector(texto("preset"), ParametrosCalidad.Seleccion.class, c.seleccion.get())
+        EnumListEntry<ParametrosCalidad.Seleccion> preset = e.startEnumSelector(texto("preset"),
+                        ParametrosCalidad.Seleccion.class, c.seleccion.get())
                 .setDefaultValue(c.seleccion.getDefault())
                 .setEnumNameProvider(valor -> Component.translatable(
                         CLAVE + "preset." + valor.name().toLowerCase(Locale.ROOT)))
                 .setTooltip(texto("preset.tooltip"))
                 .setSaveConsumer(c.seleccion::set)
-                .build());
+                .build();
+        general.addEntry(preset);
         general.addEntry(e.startIntSlider(texto("fpsObjetivo"), c.fpsObjetivo.get(),
                         ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX)
                 .setDefaultValue(c.fpsObjetivo.getDefault())
@@ -49,8 +62,7 @@ final class PantallaCloth {
                 .setTooltip(texto("autoAjuste.tooltip"))
                 .setSaveConsumer(c.autoAjuste::set)
                 .build());
-        // Botón "Calibrar desde este preset": llega con benchmark/ (sección 9).
-        general.addEntry(e.startTextDescription(texto("calibrar.pendiente")).build());
+        general.addEntry(new BotonCalibrar(preset::getValue));
 
         ConfigCategory personalizado = builder.getOrCreateCategory(Component.translatable(CLAVE + "personalizado"));
         personalizado.addEntry(e.startTextDescription(texto("personalizado.descripcion")).build());
@@ -88,5 +100,66 @@ final class PantallaCloth {
 
     private static Component texto(String clave) {
         return Component.translatable(CLAVE + clave);
+    }
+
+    /**
+     * Preset desde el que calibrar según lo elegido en pantalla (aunque no
+     * se haya guardado): AUTOMATICO parte de la recomendación por hardware,
+     * PERSONALIZADO del preset Medio.
+     */
+    static QualityPreset presetParaCalibrar(ParametrosCalidad.Seleccion seleccion) {
+        if (seleccion.preset() != null) {
+            return seleccion.preset();
+        }
+        return seleccion == ParametrosCalidad.Seleccion.AUTOMATICO
+                ? QualityPreset.recomendarPorHardware(ConfigLod.nucleosCpu(), ConfigLod.ramTotalMb())
+                : QualityPreset.MEDIO;
+    }
+
+    /** "Calibrar desde este preset" (sección 11): Cloth no trae una entrada de botón. */
+    private static final class BotonCalibrar extends TextListEntry {
+        private static final int ANCHO = 150;
+        private final Button boton;
+
+        BotonCalibrar(Supplier<ParametrosCalidad.Seleccion> seleccion) {
+            super(texto("calibrar"), Component.empty());
+            boton = Button.builder(texto("calibrar.boton"),
+                            b -> SesionCalibracion.iniciar(presetParaCalibrar(seleccion.get())))
+                    .size(ANCHO, 20)
+                    .build();
+        }
+
+        @Override
+        public void render(GuiGraphics graficos, int indice, int y, int x, int ancho, int alto,
+                           int mouseX, int mouseY, boolean resaltado, float delta) {
+            // Solo desde el menú principal: la calibración abre otro mundo.
+            boolean disponible = Minecraft.getInstance().level == null && !SesionCalibracion.enCurso();
+            boton.active = disponible;
+            boton.setTooltip(Tooltip.create(texto(disponible ? "calibrar.tooltip" : "calibrar.enMundo")));
+            graficos.drawString(Minecraft.getInstance().font, getFieldName(), x, y + 6, 0xFFFFFF);
+            boton.setX(x + ancho - ANCHO);
+            boton.setY(y);
+            boton.render(graficos, mouseX, mouseY, delta);
+        }
+
+        @Override
+        public int getItemHeight() {
+            return 24;
+        }
+
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int boton) {
+            return this.boton.mouseClicked(mouseX, mouseY, boton);
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(boton);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(boton);
+        }
     }
 }

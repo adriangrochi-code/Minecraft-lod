@@ -112,15 +112,21 @@ sujetos a elección manual o a la calibración real por benchmark (sección 9).
 
 ## 9. Calibración por benchmark
 
-- Dimensión custom (`worldgen/dimension`) generada proceduralmente con seed fija y generador vanilla normal (terreno real, no sintético), con 3-4 puntos representativos (llanura, bosque denso, montaña, cueva/cambio de altura).
-- Se genera una sola vez, cacheada igual que cualquier mundo; invalidable si cambia el algoritmo de LOD entre versiones del mod.
-- Flujo del botón "Calibrar":
-  1. Jugador elige preset inicial (Bajo/Medio/Alto/Ultra) como punto de partida.
-  2. Se genera (si no existe) y teletransporta a la dimensión benchmark.
-  3. Prueba por escalones alrededor del preset elegido (hacia arriba si sobra rendimiento, hacia abajo si falta), midiendo frame_time en cada punto representativo.
-  4. Guarda el resultado como config personalizada basada en el preset.
-  5. Devuelve al jugador a su dimensión/posición original.
-- Disponible desde el primer arranque del mod, sin necesidad de tener un mundo propio generado.
+- **Mundo aparte** (`minecraftlodmod-benchmark`, decisión 2026-09-29 — antes
+  era una dimensión custom) generado con seed fija y generador vanilla normal
+  (terreno real, no sintético), con 4 puntos representativos (llanura, bosque
+  denso, montaña, cueva) — ver `benchmark/PuntosBenchmark.java`. Al ser un
+  mundo propio, la seed fija hace determinista toda la generación (terreno,
+  estructuras, árboles) sin mixins, y se puede calibrar desde el menú
+  principal sin tener un mundo del jugador.
+- Se genera una sola vez, cacheada igual que cualquier mundo; el cache de LOD
+  se invalida solo si cambia el algoritmo (`GeneradorLocal.VERSION_ALGORITMO`).
+- Flujo del botón "Calibrar" (solo desde el menú principal):
+  1. Jugador elige preset inicial como punto de partida.
+  2. Se crea (si no existe) y se abre el mundo de benchmark.
+  3. Prueba por escalones alrededor del preset elegido (hacia arriba si sobra rendimiento, hacia abajo si falta), midiendo frame_time en cada punto representativo. Escalones: los presets + 2 intermedios por tramo; pasa si el promedio ≤ 90% del frame time objetivo.
+  4. Guarda el resultado como config Personalizada.
+  5. Cierra el mundo de benchmark y vuelve al menú principal.
 
 ## 10. Multiplayer
 

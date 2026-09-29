@@ -15,7 +15,6 @@
   "minecraftlodmod.configuration.fpsObjetivo.tooltip": "Usado por el auto-ajuste en modo Personalizado; cada preset trae el suyo.",
   "minecraftlodmod.configuration.autoAjuste": "Auto-ajuste dinámico",
   "minecraftlodmod.configuration.autoAjuste.tooltip": "Baja generación, detalle y radio (en ese orden) si el juego va por debajo del FPS objetivo, y los recupera cuando sobra margen.",
-  "minecraftlodmod.configuration.calibrar.pendiente": "Calibración por benchmark: disponible en una versión próxima.",
   "minecraftlodmod.configuration.personalizado": "Personalizado",
   "minecraftlodmod.configuration.personalizado.descripcion": "Estos valores solo se usan con el preset Personalizado.",
   "minecraftlodmod.configuration.radioLodChunks": "Radio de LOD (chunks)",
@@ -30,5 +29,12 @@
   "minecraftlodmod.configuration.radioServidoMaximo": "Radio máximo servido (chunks)",
   "minecraftlodmod.configuration.radioServidoMaximo.tooltip": "Cuánto relieve lejano puede pedir cada jugador. 0 = el radio del preset.",
   "minecraftlodmod.configuration.nodosPorSegundo": "Nodos por segundo por jugador",
-  "minecraftlodmod.configuration.rafagaNodos": "Ráfaga máxima de nodos"
+  "minecraftlodmod.configuration.rafagaNodos": "Ráfaga máxima de nodos",
+  "minecraftlodmod.configuration.calibrar": "Calibrar por benchmark",
+  "minecraftlodmod.configuration.calibrar.boton": "Calibrar desde este preset",
+  "minecraftlodmod.configuration.calibrar.tooltip": "Abre un mundo de benchmark fijo, mide el rendimiento en 4 lugares representativos y guarda el resultado como preset Personalizado. Tarda unos minutos.",
+  "minecraftlodmod.configuration.calibrar.enMundo": "Solo disponible desde el menú principal.",
+  "minecraftlodmod.calibracion.terminada": "Calibración de LOD terminada",
+  "minecraftlodmod.calibracion.resultado": "Guardado como Personalizado: radio LOD %s chunks",
+  "minecraftlodmod.calibracion.piso": "Tu hardware quedó en el escalón más liviano; guardado como Personalizado"
 }

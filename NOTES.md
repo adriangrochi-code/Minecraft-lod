@@ -41,6 +41,21 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   `fpsObjetivo` están persistidos pero nadie los consume todavía: los usa
   `ControlDeRendimiento` cuando render/ lo arranque.
 
+- **benchmark/: la calibración todavía no mide el LOD.** El recorrido
+  completo funciona (mundo fijo, 4 puntos, escalones, guardado), pero hasta
+  que render/ registre `SesionCalibracion.asignarAplicador`, cambiar de
+  escalón no cambia lo que se dibuja: hoy mide solo el costo vanilla de cada
+  escena. Al conectar render/, revisar también que 10 s de calentamiento
+  alcancen para que el LOD del punto esté generado antes de medir.
+- Puntos de `PuntosBenchmark` verificados con capturas bajo Xvfb (llanura
+  plana de piedra, bosque denso, cumbre nevada a y=196, caverna a y=-45).
+  Falta ver en hardware real si la orientación (yaw/pitch) es la más
+  representativa para el LOD, cuando exista.
+- **Tamaño del cache en disco:** 4096 chunks generados = 422 MB de `.mlod`
+  (~100 KB/chunk), casi todo nivel 0 sin comprimir. Para radios grandes es
+  inviable: evaluar no persistir el nivel 0 (se puede re-extraer del mundo)
+  o comprimir por bloques (ver la contradicción de la sección 5 anotada abajo).
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~
@@ -72,6 +87,21 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   - El cliente todavía no guarda lo recibido: falta un cache cliente
     (disco por servidor + `BoundedRegionCache`, que antes necesita la clave
     con región+dimensión anotada más abajo).
+- **benchmark/, decisiones tomadas (con el usuario, 2026-09-29):**
+  - Mundo de benchmark APARTE (`minecraftlodmod-benchmark`, seed 12345) en
+    vez de dimensión: cumple "calibrar sin tener un mundo propio" (sección
+    9) y la seed fija sale gratis, sin mixin ni generador propio. Cambia la
+    sección 9 del documento de arquitectura: "volver a la posición
+    original" pasa a ser "volver al menú principal".
+  - Escalones: los 6 presets + 2 intermedios por tramo (16 en total),
+    todos con el fps objetivo del preset elegido. Resuelve el punto abierto
+    de la sección 14.
+  - Pasa un escalón si su frame time promedio ≤ 90% del objetivo.
+  - `/locate biome` NO sirve para ubicar puntos: reporta biomas 3D a la
+    altura de búsqueda (sobre un océano puede decir "picos"). Los puntos
+    se eligieron analizando el relieve real con los `.mlod` del propio mod.
+  - El botón existe solo en la pantalla de Cloth; la automática de
+    NeoForge no admite botones propios.
 - **config/, decisiones tomadas:**
   - La persistencia es `ModConfigSpec` de NeoForge, no AutoConfig de Cloth:
     así Cloth queda como dependencia OPCIONAL (solo la pantalla) y un

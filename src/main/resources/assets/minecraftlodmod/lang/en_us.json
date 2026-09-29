@@ -15,7 +15,6 @@
   "minecraftlodmod.configuration.fpsObjetivo.tooltip": "Used by auto-tuning in Custom mode; each preset has its own.",
   "minecraftlodmod.configuration.autoAjuste": "Dynamic auto-tuning",
   "minecraftlodmod.configuration.autoAjuste.tooltip": "Lowers generation, detail and radius (in that order) when the game runs below the target FPS, and restores them when there is headroom.",
-  "minecraftlodmod.configuration.calibrar.pendiente": "Benchmark calibration: coming in a future version.",
   "minecraftlodmod.configuration.personalizado": "Custom",
   "minecraftlodmod.configuration.personalizado.descripcion": "These values are only used with the Custom preset.",
   "minecraftlodmod.configuration.radioLodChunks": "LOD radius (chunks)",
@@ -30,5 +29,12 @@
   "minecraftlodmod.configuration.radioServidoMaximo": "Max served radius (chunks)",
   "minecraftlodmod.configuration.radioServidoMaximo.tooltip": "How much distant terrain each player may request. 0 = the preset radius.",
   "minecraftlodmod.configuration.nodosPorSegundo": "Nodes per second per player",
-  "minecraftlodmod.configuration.rafagaNodos": "Max node burst"
+  "minecraftlodmod.configuration.rafagaNodos": "Max node burst",
+  "minecraftlodmod.configuration.calibrar": "Calibrate by benchmark",
+  "minecraftlodmod.configuration.calibrar.boton": "Calibrate from this preset",
+  "minecraftlodmod.configuration.calibrar.tooltip": "Opens a fixed benchmark world, measures performance at 4 representative spots and saves the result as a Custom preset. Takes a few minutes.",
+  "minecraftlodmod.configuration.calibrar.enMundo": "Only available from the main menu.",
+  "minecraftlodmod.calibracion.terminada": "LOD calibration finished",
+  "minecraftlodmod.calibracion.resultado": "Saved as Custom: LOD radius %s chunks",
+  "minecraftlodmod.calibracion.piso": "Your hardware is at the lightest level; saved as Custom"
 }
