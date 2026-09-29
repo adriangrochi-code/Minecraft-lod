@@ -37,7 +37,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Render de LOD, backend compatible (sección 6 y 20): primer render
@@ -84,12 +87,35 @@ public final class RenderLod {
     static final int BYTES_POR_VERTICE = 16; // POSITION_COLOR: 3 floats + 4 bytes
 
     private final GeneradorLocal generador;
-    private final ExecutorService hiloMallas = Executors.newSingleThreadExecutor(r -> {
+    /**
+     * Un hilo con cola de PRIORIDAD por distancia a la cámara: las celdas se
+     * arman del centro (el jugador) hacia afuera, aunque una lejana se haya
+     * encolado antes. Solo {@code execute()}: {@code submit()} envolvería la
+     * tarea en algo no comparable.
+     */
+    private final ExecutorService hiloMallas = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
+            new PriorityBlockingQueue<>(), r -> {
         Thread hilo = new Thread(r, "LOD-Mallas");
         hilo.setDaemon(true);
         hilo.setPriority(Thread.MIN_PRIORITY);
         return hilo;
     });
+    private final AtomicLong secuenciaTareas = new AtomicLong();
+
+    /** Tarea de armado ordenada por distancia a la cámara al encolarse (y por orden de llegada si empatan). */
+    private record TareaMalla(double distancia2, long secuencia, Runnable accion)
+            implements Runnable, Comparable<TareaMalla> {
+        @Override
+        public void run() {
+            accion.run();
+        }
+
+        @Override
+        public int compareTo(TareaMalla otra) {
+            int porDistancia = Double.compare(distancia2, otra.distancia2);
+            return porDistancia != 0 ? porDistancia : Long.compare(secuencia, otra.secuencia);
+        }
+    }
 
     // Todo lo que sigue, salvo las colas y los volatile, es del hilo de render.
     private final Map<Long, EstadoCelda> celdas = new HashMap<>();
@@ -247,8 +273,9 @@ public final class RenderLod {
             if (!estado.enConstruccion && (cambio || incompleta) && encoladas < ENCOLADAS_POR_PLAN) {
                 estado.enConstruccion = true;
                 encoladas++;
-                hiloMallas.execute(() -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                        chunkX, chunkZ, distanciaVanilla));
+                hiloMallas.execute(new TareaMalla(distancia2(celda, camara), secuenciaTareas.incrementAndGet(),
+                        () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
+                                chunkX, chunkZ, distanciaVanilla)));
             }
         }
         celdas.entrySet().removeIf(e -> {

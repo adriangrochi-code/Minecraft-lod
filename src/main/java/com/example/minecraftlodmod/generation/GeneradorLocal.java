@@ -9,6 +9,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -23,7 +24,6 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.function.Function;
@@ -59,7 +59,7 @@ public final class GeneradorLocal {
      * Versión del algoritmo de extracción/reducción, mezclada en el
      * {@code hashFuente} del cache: subirla invalida todo lo generado antes.
      */
-    public static final long VERSION_ALGORITMO = 2;
+    public static final long VERSION_ALGORITMO = 4;
 
     /** Nivel reservado en {@link SectionExtractor#claveNodo} para marcar "este chunk ya se generó". */
     private static final int NIVEL_MARCA_CHUNK = 15;
@@ -101,7 +101,9 @@ public final class GeneradorLocal {
         ParametrosCalidad calidad = resolverCalidad.apply(servidor);
         this.calidad = calidad;
         PresupuestoMemoria presupuesto = PresupuestoMemoria.para(calidad.cacheRamMb(), calidad.hilosGeneracion());
-        store = new RegionFileStore(directorio, hashFuente, PERIODO_ESCRITURA_MS);
+        // El slider "RAM para LOD" (cacheRamMb): su parte de cache limita lo
+        // que el store tiene en memoria antes de mandarlo a disco.
+        store = new RegionFileStore(directorio, hashFuente, PERIODO_ESCRITURA_MS, presupuesto.bytesCacheRegiones());
         scheduler = new GenerationTaskScheduler(calidad.hilosGeneracion(), presupuesto.maxTareasEnCola());
         LOG.info("LOD: generación LOCAL activa ({}, cola {}) en {}",
                 calidad, presupuesto.maxTareasEnCola(), directorio);
@@ -148,27 +150,54 @@ public final class GeneradorLocal {
         }
     }
 
+    /**
+     * Reintenta pendientes empezando por los más cercanos a algún jugador:
+     * el LOD se completa del centro hacia afuera. Recorre todos los
+     * pendientes por tick (lineal, barato para miles), no hace falta
+     * mantenerlos ordenados mientras los jugadores se mueven.
+     */
     @SubscribeEvent
     public void alTerminarTick(ServerTickEvent.Post evento) {
         if (pendientes.isEmpty() || store == null) {
             return;
         }
-        Iterator<Pendiente> it = pendientes.iterator();
-        for (int i = 0; i < REINTENTOS_POR_TICK && it.hasNext(); i++) {
-            Pendiente p = it.next();
+        for (int i = 0; i < REINTENTOS_POR_TICK && !pendientes.isEmpty(); i++) {
+            Pendiente p = masCercanoAJugador(evento.getServer());
             ServerLevel nivel = evento.getServer().getLevel(p.dimension());
             LevelChunk chunk = nivel == null ? null
                     : nivel.getChunkSource().getChunkNow(ChunkPos.getX(p.chunk()), ChunkPos.getZ(p.chunk()));
             // Descargado: se regenera en la próxima carga. Ya generado: nada que hacer.
             if (chunk == null || store.contiene(claveRegion(nivel, chunk), claveMarca(chunk))) {
-                it.remove();
+                pendientes.remove(p);
                 continue;
             }
             if (!encolarSinPendiente(nivel, chunk)) {
                 return; // cola todavía llena: seguir el próximo tick
             }
-            it.remove();
+            pendientes.remove(p);
         }
+    }
+
+    private Pendiente masCercanoAJugador(MinecraftServer servidor) {
+        Pendiente mejor = null;
+        double mejorDistancia = Double.MAX_VALUE;
+        var jugadores = servidor.getPlayerList().getPlayers();
+        for (Pendiente p : pendientes) {
+            double centroX = ChunkPos.getX(p.chunk()) * 16 + 8;
+            double centroZ = ChunkPos.getZ(p.chunk()) * 16 + 8;
+            double distancia = jugadores.isEmpty() ? 0 : Double.MAX_VALUE;
+            for (ServerPlayer jugador : jugadores) {
+                if (jugador.level().dimension() == p.dimension()) {
+                    double dx = jugador.getX() - centroX, dz = jugador.getZ() - centroZ;
+                    distancia = Math.min(distancia, dx * dx + dz * dz);
+                }
+            }
+            if (mejor == null || distancia < mejorDistancia) {
+                mejor = p;
+                mejorDistancia = distancia;
+            }
+        }
+        return mejor;
     }
 
     private void encolar(ServerLevel nivel, ChunkAccess chunk) {

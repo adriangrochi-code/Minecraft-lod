@@ -70,6 +70,14 @@ public final class BoundedRegionCache {
         desalojarHastaEntrarEnPresupuesto();
     }
 
+    /** Saca una entrada (quedó vieja: se guardó una versión nueva del nodo). */
+    public void quitar(long claveNodo) {
+        byte[] anterior = mapa.remove(claveNodo);
+        if (anterior != null) {
+            bytesUsados -= anterior.length;
+        }
+    }
+
     private void desalojarHastaEntrarEnPresupuesto() {
         var iterador = mapa.entrySet().iterator();
         while (bytesUsados > presupuestoBytes && iterador.hasNext()) {

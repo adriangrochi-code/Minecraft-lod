@@ -15,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Cache en disco de nodos ya serializados (sección 5 del documento de
@@ -59,11 +61,43 @@ public final class RegionFileStore implements AutoCloseable {
 
     private final ScheduledExecutorService hiloEscritura;
 
+    /** Presupuesto por defecto de RAM (constructor sin presupuesto: tests y usos simples). */
+    public static final long PRESUPUESTO_RAM_POR_DEFECTO = 64L * 1024 * 1024;
+
+    /**
+     * Límite de bytes pendientes (comprimidos) antes de forzar un vaciado a
+     * disco sin esperar al período: la RAM que el jugador eligió para LOD
+     * manda, no el reloj.
+     */
+    private final long limitePendientes;
+    private final AtomicLong bytesPendientes = new AtomicLong();
+    private final AtomicBoolean vaciadoUrgentePedido = new AtomicBoolean();
+    /** Nodos leídos de disco, todavía comprimidos; acceso sincronizado sobre el propio cache. */
+    private final BoundedRegionCache cacheLectura;
+
     /**
      * @param periodoEscrituraMs cada cuánto se bajan los pendientes a disco;
      *                           0 o menos desactiva el hilo (solo {@link #vaciar()} manual)
      */
     public RegionFileStore(Path directorioBase, long hashFuente, long periodoEscrituraMs) {
+        this(directorioBase, hashFuente, periodoEscrituraMs, PRESUPUESTO_RAM_POR_DEFECTO);
+    }
+
+    /**
+     * @param presupuestoRamBytes RAM total para datos de LOD (el slider
+     *                            "RAM para LOD"): una cuarta parte para lo
+     *                            pendiente de escribir (al superarla se baja
+     *                            a disco en el acto), el resto para el cache
+     *                            de lectura LRU. Todo se guarda comprimido
+     *                            ({@link CompresionNodos}), así que entra
+     *                            varias veces más terreno que en crudo.
+     */
+    public RegionFileStore(Path directorioBase, long hashFuente, long periodoEscrituraMs, long presupuestoRamBytes) {
+        if (presupuestoRamBytes < 4) {
+            throw new IllegalArgumentException("Presupuesto de RAM inválido: " + presupuestoRamBytes);
+        }
+        this.limitePendientes = presupuestoRamBytes / 4;
+        this.cacheLectura = new BoundedRegionCache(presupuestoRamBytes - limitePendientes);
         this.directorioBase = directorioBase;
         this.hashFuente = hashFuente;
         if (periodoEscrituraMs > 0) {
@@ -80,20 +114,54 @@ public final class RegionFileStore implements AutoCloseable {
     }
 
     public void guardar(ClaveRegion region, long claveNodo, byte[] datos) {
+        // Vacío = marca sin contenido (ej. "chunk generado"): no vale la pena comprimir.
+        byte[] comprimido = datos.length == 0 ? datos : CompresionNodos.comprimir(datos);
+        long[] reemplazado = {0};
         // compute (no computeIfAbsent + put): atómico frente al remove de escribirRegion,
         // así un nodo nunca cae en un mapa que ya se está bajando a disco.
         pendientes.compute(region, (r, nodos) -> {
             ConcurrentHashMap<Long, byte[]> destino = nodos != null ? nodos : new ConcurrentHashMap<>();
-            destino.put(claveNodo, datos);
+            byte[] anterior = destino.put(claveNodo, comprimido);
+            reemplazado[0] = anterior == null ? 0 : anterior.length;
             return destino;
         });
+        long clave = claveCache(region, claveNodo);
+        if (clave != SIN_CACHE) {
+            synchronized (cacheLectura) {
+                cacheLectura.quitar(clave);
+            }
+        }
+        long total = bytesPendientes.addAndGet(comprimido.length - reemplazado[0]);
+        if (total > limitePendientes && hiloEscritura != null && vaciadoUrgentePedido.compareAndSet(false, true)) {
+            hiloEscritura.execute(() -> {
+                vaciadoUrgentePedido.set(false);
+                vaciarSinExcepciones();
+            });
+        }
     }
 
     /** @return los bytes del nodo, o null si no está ni pendiente ni en disco. */
     public byte[] leer(ClaveRegion region, long claveNodo) {
+        byte[] comprimido = leerComprimido(region, claveNodo);
+        if (comprimido == null) {
+            return null;
+        }
+        return comprimido.length == 0 ? comprimido : CompresionNodos.descomprimir(comprimido);
+    }
+
+    private byte[] leerComprimido(ClaveRegion region, long claveNodo) {
         byte[] enMemoria = buscarEnMemoria(region, claveNodo);
         if (enMemoria != null) {
             return enMemoria;
+        }
+        long clave = claveCache(region, claveNodo);
+        if (clave != SIN_CACHE) {
+            synchronized (cacheLectura) {
+                byte[] cacheado = cacheLectura.obtener(clave);
+                if (cacheado != null) {
+                    return cacheado;
+                }
+            }
         }
         synchronized (candado(region)) {
             // Re-chequear: una escritura pudo terminar mientras esperábamos el candado.
@@ -109,8 +177,33 @@ public final class RegionFileStore implements AutoCloseable {
             if (ubicacion == null) {
                 return null;
             }
-            return leerDeDisco(region, ubicacion[0], (int) ubicacion[1]);
+            byte[] deDisco = leerDeDisco(region, ubicacion[0], (int) ubicacion[1]);
+            if (clave != SIN_CACHE) {
+                synchronized (cacheLectura) {
+                    cacheLectura.poner(clave, deDisco);
+                }
+            }
+            return deDisco;
         }
+    }
+
+    /** Clave que no entra en {@link #claveCache}: ese nodo simplemente no se cachea. */
+    static final long SIN_CACHE = -1L;
+
+    /**
+     * Clave global para el cache (un solo presupuesto para todas las
+     * regiones): dimensión (8 bits) | región X y Z con signo (14 bits c/u,
+     * ±8192 regiones = ±4 millones de bloques) | clave de nodo (26 bits,
+     * ver {@code SectionExtractor.claveNodo}). Fuera de ese rango, o con una
+     * clave de nodo más ancha, devuelve {@link #SIN_CACHE}.
+     */
+    static long claveCache(ClaveRegion region, long claveNodo) {
+        int rx = region.regionX(), rz = region.regionZ();
+        if (rx < -8192 || rx >= 8192 || rz < -8192 || rz >= 8192 || claveNodo < 0 || claveNodo >= (1L << 26)) {
+            return SIN_CACHE;
+        }
+        return ((long) (region.dimensionId() & 0xFF) << 54) | ((long) (rx & 0x3FFF) << 40)
+                | ((long) (rz & 0x3FFF) << 26) | claveNodo;
     }
 
     public boolean contiene(ClaveRegion region, long claveNodo) {
@@ -129,8 +222,14 @@ public final class RegionFileStore implements AutoCloseable {
      */
     public void invalidarRegion(ClaveRegion region) {
         synchronized (candado(region)) {
-            pendientes.remove(region);
+            ConcurrentHashMap<Long, byte[]> descartados = pendientes.remove(region);
+            if (descartados != null) {
+                bytesPendientes.addAndGet(-bytesDe(descartados));
+            }
             headers.remove(region);
+            synchronized (cacheLectura) {
+                cacheLectura.limpiar(); // raro (cambio de bloques): más simple que filtrar por región
+            }
             try {
                 Files.deleteIfExists(archivoDe(region));
             } catch (IOException e) {
@@ -162,6 +261,26 @@ public final class RegionFileStore implements AutoCloseable {
         return pendientes.size();
     }
 
+    /** Bytes (comprimidos) esperando ir a disco. */
+    public long bytesPendientes() {
+        return bytesPendientes.get();
+    }
+
+    /** Bytes (comprimidos) en el cache de lectura. */
+    public long bytesEnCache() {
+        synchronized (cacheLectura) {
+            return cacheLectura.bytesUsados();
+        }
+    }
+
+    private static long bytesDe(Map<Long, byte[]> nodos) {
+        long total = 0;
+        for (byte[] datos : nodos.values()) {
+            total += datos.length;
+        }
+        return total;
+    }
+
     Path archivoDe(ClaveRegion region) {
         return directorioBase
                 .resolve("dim" + (region.dimensionId() & 0xFF))
@@ -174,6 +293,7 @@ public final class RegionFileStore implements AutoCloseable {
             if (nuevos == null || nuevos.isEmpty()) {
                 return;
             }
+            bytesPendientes.addAndGet(-bytesDe(nuevos));
             enEscritura.put(region, nuevos);
             try {
                 // Fusionar con lo que ya hay en disco: una región se escribe
@@ -215,13 +335,20 @@ public final class RegionFileStore implements AutoCloseable {
             } catch (IOException | RuntimeException e) {
                 // Devolver los nodos a pendientes para reintentar, sin pisar
                 // versiones más nuevas que hayan llegado mientras tanto.
+                long[] devueltos = {0};
                 pendientes.compute(region, (r, llegados) -> {
                     if (llegados == null) {
+                        devueltos[0] = bytesDe(nuevos);
                         return nuevos;
                     }
-                    nuevos.forEach(llegados::putIfAbsent);
+                    nuevos.forEach((clave, datos) -> {
+                        if (llegados.putIfAbsent(clave, datos) == null) {
+                            devueltos[0] += datos.length;
+                        }
+                    });
                     return llegados;
                 });
+                bytesPendientes.addAndGet(devueltos[0]);
                 throw e;
             } finally {
                 enEscritura.remove(region);

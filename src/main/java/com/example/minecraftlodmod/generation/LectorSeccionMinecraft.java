@@ -8,6 +8,7 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -35,10 +36,17 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
     // Luz de la sección y de la de arriba (la capa de arriba ilumina la cara
     // superior de la fila y=15). Null si el motor de luz no la tiene todavía.
     private final DataLayer cielo, bloque, cieloArriba, bloqueArriba;
+    /** Biomas de la sección (grilla 4×4×4, índice (x*4+y)*4+z), para el tinte de {@link ColoresBloque}. */
+    private final Biome[] biomas;
+    private final int origenX, origenZ;
 
     private LectorSeccionMinecraft(PalettedContainer<BlockState> estados, boolean soloAire,
                                    DataLayer cielo, DataLayer bloque,
-                                   DataLayer cieloArriba, DataLayer bloqueArriba) {
+                                   DataLayer cieloArriba, DataLayer bloqueArriba,
+                                   Biome[] biomas, int origenX, int origenZ) {
+        this.biomas = biomas;
+        this.origenX = origenX;
+        this.origenZ = origenZ;
         this.estados = estados;
         this.soloAire = soloAire;
         this.cielo = cielo;
@@ -80,9 +88,23 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
                     copiar(luzCielo.getDataLayerData(pos)),
                     copiar(luzBloque.getDataLayerData(pos)),
                     copiar(luzCielo.getDataLayerData(arriba)),
-                    copiar(luzBloque.getDataLayerData(arriba)))));
+                    copiar(luzBloque.getDataLayerData(arriba)),
+                    copiarBiomas(seccion), chunkX * 16, chunkZ * 16)));
         }
         return capturas;
+    }
+
+    /** 64 referencias: más barato que copiar el contenedor, y {@code recreate()} lo crea vacío. */
+    private static Biome[] copiarBiomas(LevelChunkSection seccion) {
+        Biome[] biomas = new Biome[64];
+        for (int x = 0; x < 4; x++) {
+            for (int y = 0; y < 4; y++) {
+                for (int z = 0; z < 4; z++) {
+                    biomas[(x * 4 + y) * 4 + z] = seccion.getNoiseBiome(x, y, z).value();
+                }
+            }
+        }
+        return biomas;
     }
 
     private static DataLayer copiar(DataLayer capa) {
@@ -110,9 +132,8 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         if (material == SuperVoxel.Material.AIRE) {
             return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) y, material, (byte) 0);
         }
-        // EmptyBlockGetter: getMapColor no puede tocar el mundo desde otro
-        // hilo; los bloques que dependen de la posición caen a su color base.
-        int rgb = estado.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).col;
+        Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
+        int rgb = ColoresBloque.rgb(estado, bioma, origenX + x, origenZ + z);
         return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) y, material, (byte) 0)
                 .conLuzHorneada(luz(x, y, z));
     }

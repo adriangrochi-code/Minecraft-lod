@@ -4,6 +4,7 @@ import com.example.minecraftlodmod.config.ConfigLod;
 import com.example.minecraftlodmod.config.PantallaConfig;
 import com.example.minecraftlodmod.generation.GeneradorLocal;
 import com.example.minecraftlodmod.network.ProtocoloLod;
+import com.example.minecraftlodmod.render.PaletaTexturas;
 import com.example.minecraftlodmod.render.RenderLod;
 import com.example.minecraftlodmod.benchmark.SesionCalibracion;
 import net.neoforged.api.distmarker.Dist;
@@ -43,6 +44,9 @@ public class MinecraftLodMod {
         modEventBus.addListener(protocolo::registrar);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
+            PaletaTexturas paleta = new PaletaTexturas();
+            modEventBus.addListener(paleta::alCoserAtlas);
+            NeoForge.EVENT_BUS.addListener(paleta::alTerminarTick);
             RenderLod render = new RenderLod(generador);
             NeoForge.EVENT_BUS.register(render);
             SesionCalibracion.asignarAplicador(render::aplicarCalidad);

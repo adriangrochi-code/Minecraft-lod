@@ -51,10 +51,10 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   plana de piedra, bosque denso, cumbre nevada a y=196, caverna a y=-45).
   Falta ver en hardware real si la orientación (yaw/pitch) es la más
   representativa para el LOD, cuando exista.
-- **Tamaño del cache en disco:** 4096 chunks generados = 422 MB de `.mlod`
-  (~100 KB/chunk), casi todo nivel 0 sin comprimir. Para radios grandes es
-  inviable: evaluar no persistir el nivel 0 (se puede re-extraer del mundo)
-  o comprimir por bloques (ver la contradicción de la sección 5 anotada abajo).
+- **Tamaño del cache en disco:** con Deflate por nodo bajó de ~103 KB a
+  ~37 KB por chunk (2304 chunks = 86 MB). Sigue siendo mucho para un
+  horizonte de km: el siguiente paso es guardar a distancia solo niveles
+  gruesos y agregar niveles por encima de la sección.
 
 - **render/: primer render funcional (2026-09-29), a optimizar en Pista B:**
   - Un nivel de LOD por celda de 4×4 chunks (no por nodo), elegido por
@@ -73,6 +73,12 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
     necesita la grilla (para la luz por vértice), no solo la lista de Quad.
     Rediseñar la interfaz cuando llegue el backend de alto rendimiento.
   - Probado con Embeddium: NO (no hay Embeddium en el entorno de dev).
+
+- **Color real de texturas:** solo en singleplayer (el servidor integrado
+  usa la paleta del cliente). Un servidor dedicado no tiene texturas y
+  genera con el color de mapa; para multiplayer, recolorear en el cliente
+  (guardar el id de bloque dominante en los 2 bytes reservados del
+  supervóxel). Revisar con resource packs y bloques de mods.
 
 ## Errores recurrentes / bloqueos
 
@@ -147,17 +153,16 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   `dim0/r.0.0.mlod` y `r.0.-1.mlod` y los nodos decodifican a un heightmap
   coherente.
 
-- **Contradicción en la sección 5 (a decidir):** pide GZIP "a nivel de
-  archivo completo" y a la vez lectura parcial por tabla de offsets. Con el
-  archivo entero comprimido no se puede hacer seek a un nodo: hay que
-  descomprimir todo. `storage/RegionFileStore` prioriza la lectura parcial
-  (datos sin comprimir, el RLE por nodo ya comprime el terreno natural). Si
-  se quiere compresión, la opción compatible es Deflate por bloques de
-  varios nodos, no por archivo.
-- `BoundedRegionCache` usa como clave solo `claveNodo`, que es relativa a la
-  región: dos regiones distintas chocan en el mismo cache. Para usarlo como
-  cache global delante de `RegionFileStore` hace falta una clave que incluya
-  región + dimensión (o un cache por región). No se tocó por la regla 4.
+- **Sección 5, resuelto:** Deflate POR NODO (`storage/CompresionNodos`), no
+  por archivo: la tabla de offsets sigue permitiendo leer un nodo suelto.
+  Pendientes y cache de lectura también guardan los nodos comprimidos.
+- **`RegionFileStore` reescribe la región ENTERA en cada vaciado** (lee
+  todos los nodos viejos y escribe todo de nuevo). Con regiones de decenas
+  de MB es mucha E/S. Mejor: datos append-only + índice aparte, con
+  compactación ocasional.
+- `BoundedRegionCache` ya se usa como cache global de lectura dentro de
+  `RegionFileStore`, con una clave que empaqueta dimensión + región + nodo
+  (`RegionFileStore.claveCache`; regiones más allá de ±8192 no se cachean).
 
 - El build pasó de NeoGradle userdev a ModDevGradle 2.0.148 (plugin oficial
   actual del MDK). `neoforge.mods.toml` se movió a `src/main/templates/` y se
