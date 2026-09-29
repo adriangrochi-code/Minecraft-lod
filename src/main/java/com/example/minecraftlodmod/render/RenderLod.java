@@ -98,8 +98,6 @@ public final class RenderLod {
     /** Profundidad de 24 bits: un near plane lejos mejora mucho la precisión a distancia. */
     static final float NEAR_LOD = 16f;
     static final int BYTES_POR_VERTICE = 16; // POSITION_COLOR: 3 floats + 4 bytes
-    /** Último nivel con oclusión ambiental (ver armar). */
-    static final int NIVEL_MAX_OCLUSION = 2;
 
     /**
      * x, y, z y sprite como 4 shorts enteros ({@code ivec4} en el shader).
@@ -137,6 +135,8 @@ public final class RenderLod {
     private long framesDesdeEstadistica;
     private long nanosDibujo;
     private int llamadasUltimoFrame;
+    /** Distancia horizontal a la cámara del borde más lejano de LOD dibujado en el último frame. */
+    private volatile float alcanceLodBloques;
     private long verticesUltimoFrame;
 
     private void registrarEstadisticas(Minecraft mc) {
@@ -271,14 +271,20 @@ public final class RenderLod {
         }
     }
 
+    /**
+     * La niebla de terreno vanilla se corre hasta donde llega el LOD REALMENTE
+     * dibujado (el frame anterior), no hasta el radio del preset: si el LOD
+     * todavía no tiene datos más allá de la distancia vanilla (mundo recién
+     * creado, zona sin explorar) queda la niebla normal, y si los tiene, el
+     * borde del terreno conocido se esconde dentro de la niebla.
+     */
     @SubscribeEvent
     public void alCalcularNiebla(ViewportEvent.RenderFog evento) {
-        ParametrosCalidad c = calidad;
-        if (c == null || celdas.isEmpty() || evento.getMode() != FogRenderer.FogMode.FOG_TERRAIN
+        if (!ConfigLod.CLIENTE.lodActivo.get() || calidad == null || evento.getMode() != FogRenderer.FogMode.FOG_TERRAIN
                 || evento.getType() != FogType.NONE) {
             return; // bajo el agua, en lava o con ceguera se respeta la niebla de vanilla
         }
-        float finLod = c.radioLodChunks() * 16f;
+        float finLod = alcanceLodBloques;
         if (finLod > evento.getFarPlaneDistance()) {
             evento.setNearPlaneDistance(finLod * 0.8f);
             evento.setFarPlaneDistance(finLod);
@@ -295,7 +301,8 @@ public final class RenderLod {
 
     @SubscribeEvent
     public void alRenderizar(RenderLevelStageEvent evento) {
-        if (evento.getStage() != RenderLevelStageEvent.Stage.AFTER_SKY) {
+        // Apagado desde la config: ni dibujo ni niebla (las mallas se conservan para volver rápido).
+        if (evento.getStage() != RenderLevelStageEvent.Stage.AFTER_SKY || !ConfigLod.CLIENTE.lodActivo.get()) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -398,8 +405,22 @@ public final class RenderLod {
         // Vanilla dibuja hasta su distancia de render; se deja un chunk de
         // solapamiento para que no queden huecos en el borde (vanilla queda encima).
         int distanciaVanilla = Math.max(0, mc.options.getEffectiveRenderDistance() - 1);
+        // Chunks que vanilla YA tiene cargados dentro de su distancia: solo esos se le
+        // dejan; el resto lo sigue dibujando el LOD hasta que llegue (sin huecos).
+        Set<Long> deVanilla = new HashSet<>();
+        long vanilla2 = (long) distanciaVanilla * distanciaVanilla;
+        for (int dx = -distanciaVanilla; dx <= distanciaVanilla; dx++) {
+            for (int dz = -distanciaVanilla; dz <= distanciaVanilla; dz++) {
+                if ((long) dx * dx + (long) dz * dz < vanilla2
+                        && mc.level.getChunkSource().hasChunk(chunkX + dx, chunkZ + dz)) {
+                    deVanilla.add(PlanCeldas.claveChunk(chunkX + dx, chunkZ + dz));
+                }
+            }
+        }
+        Set<Long> cubiertos = Set.copyOf(deVanilla);
         List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, c.radioLodChunks(),
-                distanciaVanilla, Math.toRadians(fovGrados), mc.getWindow().getHeight(), c.umbralPx());
+                distanciaVanilla, cubiertos::contains, Math.toRadians(fovGrados), mc.getWindow().getHeight(),
+                c.umbralPx());
         plan.sort(Comparator.comparingDouble(celda -> distancia2(celda, camara)));
 
         Set<Long> vigentes = new HashSet<>();
@@ -423,7 +444,7 @@ public final class RenderLod {
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(distancia2(celda, camara), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                chunkX, chunkZ, distanciaVanilla, texturas, oclusion)));
+                                cubiertos, texturas, oclusion)));
             }
         }
         celdas.entrySet().removeIf(e -> {
@@ -437,20 +458,17 @@ public final class RenderLod {
 
     /** Hilo de mallas: lee los nodos del nivel elegido y arma los vértices de la celda. */
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
-                       int minSeccion, int maxSeccion, int chunkCamX, int chunkCamZ, int distanciaVanilla,
+                       int minSeccion, int maxSeccion, Set<Long> deVanilla,
                        GeometriaLod.Texturas texturas, boolean oclusion) {
         long inicioArmado = System.nanoTime();
         try {
             GeometriaLod geometria = new GeometriaLod();
             geometria.usarTexturas(texturas);
             geometria.descartarCarasSinLuz(ConfigLod.CLIENTE.descartarCuevas.get());
-            // Solo en niveles cercanos: ahí se aprecia, y es donde menos fusión se pierde
-            // por vóxel dibujado. Lejos (vóxeles de 8+ bloques) el rincón no se distingue.
-            geometria.usarOclusionAmbiental(oclusion && celda.nivel() <= NIVEL_MAX_OCLUSION);
+            geometria.usarOclusionAmbiental(oclusion);
             int conDatos = celda.esGrande()
                     ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion)
-                    : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion,
-                    chunkCamX, chunkCamZ, distanciaVanilla);
+                    : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion, deVanilla);
             if (geometria.vertices() == 0) {
                 listas.add(new MallaLista(clave, celda, null, null, null, conDatos, false));
                 return;
@@ -506,7 +524,7 @@ public final class RenderLod {
      */
     private static int armarCelda(GeometriaLod geometria, PlanCeldas.Celda celda, RegionFileStore store,
                                   byte dimension, int minSeccion, int maxSeccion,
-                                  int chunkCamX, int chunkCamZ, int distanciaVanilla) {
+                                  Set<Long> deVanilla) {
         int nivel = celda.nivel();
         int lado = SectionExtractor.LADO >> nivel;
         int total = SectionExtractor.voxelesPorNodo(nivel);
@@ -536,7 +554,7 @@ public final class RenderLod {
                         {0, -1, GeometriaLod.OMITIR_Z_NEG}, {0, 1, GeometriaLod.OMITIR_Z_POS}};
                 for (int l = 0; l < 4; l++) {
                     int vx = chunkX + lados[l][0], vz = chunkZ + lados[l][1];
-                    if (dentroDeVanilla(vx, vz, chunkCamX, chunkCamZ, distanciaVanilla)) {
+                    if (deVanilla.contains(PlanCeldas.claveChunk(vx, vz))) {
                         omitidas |= lados[l][2];
                     } else {
                         lod[l] = tieneDatos(store, dimension, vx, vz);
@@ -573,12 +591,6 @@ public final class RenderLod {
     private record PosSeccion(int x, int y, int z) {
     }
 
-    private static boolean dentroDeVanilla(int chunkX, int chunkZ, int chunkCamX, int chunkCamZ,
-                                           int distanciaVanilla) {
-        long dx = chunkX - chunkCamX, dz = chunkZ - chunkCamZ;
-        return dx * dx + dz * dz < (long) distanciaVanilla * distanciaVanilla;
-    }
-
     private static boolean tieneDatos(RegionFileStore store, byte dimension, int chunkX, int chunkZ) {
         return store.contiene(GeneradorLocal.claveRegion(dimension, chunkX, chunkZ),
                 GeneradorLocal.claveMarca(chunkX, chunkZ));
@@ -596,10 +608,12 @@ public final class RenderLod {
     private void dibujarLod(Minecraft mc, RenderLevelStageEvent evento, Vec3 camara) {
         llamadasUltimoFrame = 0;
         verticesUltimoFrame = 0;
+        alcanceLodBloques = alcance(camara);
         ParametrosCalidad c = calidad;
         float far = Math.max(NEAR_LOD * 2, c.radioLodChunks() * 16f * 1.5f);
-        Matrix4f proyeccion = new Matrix4f().perspective((float) Math.toRadians(fovGrados),
-                (float) mc.getWindow().getWidth() / Math.max(1, mc.getWindow().getHeight()), NEAR_LOD, far);
+        // La de vanilla (con balanceo de cámara, zoom y FOV reales) con near/far del LOD.
+        Matrix4f proyeccion = PlanCeldas.conPlanosDeProfundidad(new Matrix4f(evento.getProjectionMatrix()),
+                NEAR_LOD, far);
 
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
@@ -776,6 +790,21 @@ public final class RenderLod {
         return PlanCeldas.LADO_CELDA * PlanCeldas.LADO_CELDA - Integer.bitCount(celda.mascaraOmitidos());
     }
 
+    /** Borde más lejano (esquina de celda) entre las celdas con malla. */
+    private float alcance(Vec3 camara) {
+        double maximo = 0;
+        for (EstadoCelda e : celdas.values()) {
+            if (!e.tieneMalla || e.construidaCon == null) {
+                continue;
+            }
+            PlanCeldas.Celda c = e.construidaCon;
+            double dx = Math.max(Math.abs(c.origenX() - camara.x), Math.abs(c.origenX() + c.ladoEnBloques() - camara.x));
+            double dz = Math.max(Math.abs(c.origenZ() - camara.z), Math.abs(c.origenZ() + c.ladoEnBloques() - camara.z));
+            maximo = Math.max(maximo, dx * dx + dz * dz);
+        }
+        return (float) Math.sqrt(maximo);
+    }
+
     private static double distancia2(PlanCeldas.Celda celda, Vec3 camara) {
         double mitad = celda.ladoEnBloques() / 2.0;
         double cx = celda.origenX() + mitad - camara.x;
@@ -818,6 +847,7 @@ public final class RenderLod {
     private void liberarTodo() {
         celdas.values().forEach(RenderLod::cerrarBuffer);
         celdas.clear();
+        alcanceLodBloques = 0;
         MallaLista lista;
         while ((lista = listas.poll()) != null) {
             cerrar(lista);

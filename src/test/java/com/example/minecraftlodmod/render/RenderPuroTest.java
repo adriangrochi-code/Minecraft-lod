@@ -335,4 +335,29 @@ class RenderPuroTest {
         }
         assertTrue(minimo < maximo, "El techo junto al bloque tiene vértices más oscuros");
     }
+
+    @Test
+    void laProyeccionConservaElBalanceoDeCamaraYCambiaSoloLaProfundidad() {
+        float fov = (float) Math.toRadians(70), aspecto = 16f / 9f;
+        org.joml.Matrix4f balanceo = new org.joml.Matrix4f().translation(0.02f, -0.05f, 0f)
+                .rotateZ(0.03f).rotateX(0.02f);
+        org.joml.Matrix4f vanilla = new org.joml.Matrix4f().perspective(fov, aspecto, 0.05f, 512f).mul(balanceo);
+        org.joml.Matrix4f esperada = new org.joml.Matrix4f().perspective(fov, aspecto, 16f, 5000f).mul(balanceo);
+
+        org.joml.Matrix4f lod = PlanCeldas.conPlanosDeProfundidad(new org.joml.Matrix4f(vanilla), 16f, 5000f);
+
+        assertTrue(lod.equals(esperada, 1e-4f), "Misma matriz que armarla con el balanceo incluido:\n" + lod + esperada);
+    }
+
+    @Test
+    void unChunkQueVanillaTodaviaNoCargoLoSigueDibujandoElLod() {
+        // Cámara en el chunk (0, 0), distancia vanilla 8: vanilla tiene todo menos el chunk (3, 0).
+        long faltante = PlanCeldas.claveChunk(3, 0);
+        List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(8, 8, 64, 8, clave -> clave != faltante,
+                Math.toRadians(70), 1080, 2.5);
+        PlanCeldas.Celda celda = plan.stream().filter(c -> !c.esGrande() && c.celdaX() == 0 && c.celdaZ() == 0)
+                .findFirst().orElseThrow(() -> new AssertionError("La celda del chunk faltante tiene que estar en el plan"));
+        assertFalse(celda.omitido(3, 0), "El chunk sin cargar lo dibuja el LOD");
+        assertTrue(celda.omitido(2, 0), "Los que vanilla ya tiene se le dejan a vanilla");
+    }
 }

@@ -34,6 +34,8 @@
   "minecraftlodmod.configuration.calibrar.boton": "Calibrate from this preset",
   "minecraftlodmod.configuration.calibrar.tooltip": "Opens a fixed benchmark world, measures performance at 4 representative spots and saves the result as a Custom preset. Takes a few minutes.",
   "minecraftlodmod.configuration.calibrar.enMundo": "Only available from the main menu.",
+  "minecraftlodmod.configuration.calibrar.cancelar": "Cancel calibration",
+  "minecraftlodmod.configuration.calibrar.cancelar.tooltip": "Stops the running calibration without saving and returns to the configured quality.",
   "minecraftlodmod.calibracion.terminada": "LOD calibration finished",
   "minecraftlodmod.calibracion.resultado": "Saved as Custom: LOD radius %s chunks",
   "minecraftlodmod.calibracion.piso": "Your hardware is at the lightest level; saved as Custom",
@@ -42,5 +44,11 @@
   "minecraftlodmod.configuration.descartarCuevas": "Cave culling",
   "minecraftlodmod.configuration.descartarCuevas.tooltip": "Skip unlit faces (cave interiors, buried faces) in the LOD. Much less geometry; distant cave openings may show gaps.",
   "minecraftlodmod.configuration.oclusionAmbiental": "Ambient occlusion",
-  "minecraftlodmod.configuration.oclusionAmbiental.tooltip": "Darkens corners, wall bases and under trees in the LOD, like vanilla smooth lighting. No GPU cost; slightly more geometry."
+  "minecraftlodmod.configuration.oclusionAmbiental.tooltip": "Darkens corners, wall bases and under trees in the LOD, like vanilla smooth lighting. No GPU cost; slightly more geometry.",
+  "minecraftlodmod.configuration.lodActivo": "LOD enabled",
+  "minecraftlodmod.configuration.lodActivo.tooltip": "Draws the distant terrain. Turn it off to compare against vanilla; LOD generation keeps running.",
+  "minecraftlodmod.configuration.pregenerar": "Pregenerate chunks for LOD",
+  "minecraftlodmod.configuration.pregenerar.tooltip": "Generates the world outward from you (like Chunky) so the LOD reaches far without exploring. Uses CPU and disk: chunks are saved to the world. Backs off by itself if the game slows down.",
+  "minecraftlodmod.configuration.radioPregeneracion": "Pregeneration radius (chunks)",
+  "minecraftlodmod.configuration.radioPregeneracion.tooltip": "256 ≈ 200k chunks: 1-2 GB, tens of minutes. 1024 ≈ 3M: tens of GB, hours. 2048 ≈ 13M: hundreds of GB, days."
 }

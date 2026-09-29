@@ -4,8 +4,11 @@ import com.example.minecraftlodmod.core.LodSelector;
 import com.example.minecraftlodmod.generation.NivelesGrandes;
 import com.example.minecraftlodmod.generation.SectionExtractor;
 
+import org.joml.Matrix4f;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.LongPredicate;
 
 /**
  * Qué dibujar (lógica pura): el terreno LOD se agrupa en celdas de
@@ -76,6 +79,14 @@ public final class PlanCeldas {
     private PlanCeldas() {
     }
 
+    /** Clave de chunk, mismo empaquetado que {@code ChunkPos.asLong}. */
+    public static long claveChunk(int chunkX, int chunkZ) {
+        return (chunkX & 0xFFFFFFFFL) | ((long) chunkZ << 32);
+    }
+
+    /** Vanilla lista en todo su radio (tests y planes sin mundo). */
+    private static final LongPredicate VANILLA_SIEMPRE = clave -> true;
+
     /**
      * @param camX/camZ          cámara, en bloques
      * @param radioLodChunks     radio de LOD del preset
@@ -88,8 +99,8 @@ public final class PlanCeldas {
     public static List<Celda> planificar(double camX, double camZ, int radioLodChunks, int distanciaVanilla,
                                          double fovRadianes, double alturaPantallaPx, double umbralPx) {
         List<Celda> plan = new ArrayList<>();
-        agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, fovRadianes, alturaPantallaPx, umbralPx,
-                Integer.MIN_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, VANILLA_SIEMPRE, fovRadianes,
+                alturaPantallaPx, umbralPx, Integer.MIN_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE);
         return plan;
     }
 
@@ -104,6 +115,21 @@ public final class PlanCeldas {
      */
     public static List<Celda> planificarConGrandes(double camX, double camZ, int radioLodChunks, int distanciaVanilla,
                                                    double fovRadianes, double alturaPantallaPx, double umbralPx) {
+        return planificarConGrandes(camX, camZ, radioLodChunks, distanciaVanilla, VANILLA_SIEMPRE, fovRadianes,
+                alturaPantallaPx, umbralPx);
+    }
+
+    /**
+     * @param vanillaListo clave de chunk ({@link #claveChunk}) → true si vanilla ya
+     *                     lo tiene cargado. Dentro de la distancia vanilla, un chunk
+     *                     que vanilla TODAVÍA no tiene lo sigue dibujando el LOD
+     *                     (vanilla lo tapa al llegar): así no quedan huecos al
+     *                     moverse rápido o teletransportarse. Idea del "vanilla
+     *                     renderability" de FarPlaneTwo (sección 25, punto 6).
+     */
+    public static List<Celda> planificarConGrandes(double camX, double camZ, int radioLodChunks, int distanciaVanilla,
+                                                   LongPredicate vanillaListo, double fovRadianes,
+                                                   double alturaPantallaPx, double umbralPx) {
         List<Celda> plan = new ArrayList<>();
         int nivel = NivelesGrandes.NIVEL_MAX;
         int lado = NivelesGrandes.ladoEnBloques(nivel);
@@ -112,7 +138,7 @@ public final class PlanCeldas {
         int desdeZ = (int) Math.floor((camZ - radio) / lado), hastaZ = (int) Math.floor((camZ + radio) / lado);
         for (int tx = desdeX; tx <= hastaX; tx++) {
             for (int tz = desdeZ; tz <= hastaZ; tz++) {
-                subdividir(plan, nivel, tx, tz, camX, camZ, radioLodChunks, distanciaVanilla,
+                subdividir(plan, nivel, tx, tz, camX, camZ, radioLodChunks, distanciaVanilla, vanillaListo,
                         fovRadianes, alturaPantallaPx, umbralPx);
             }
         }
@@ -120,7 +146,8 @@ public final class PlanCeldas {
     }
 
     private static void subdividir(List<Celda> plan, int nivel, int tx, int tz, double camX, double camZ,
-                                   int radioLodChunks, int distanciaVanilla, double fov, double alto, double umbral) {
+                                   int radioLodChunks, int distanciaVanilla, LongPredicate vanillaListo,
+                                   double fov, double alto, double umbral) {
         int lado = NivelesGrandes.ladoEnBloques(nivel);
         double minX = (double) tx * lado, minZ = (double) tz * lado;
         double dx = Math.max(0, Math.max(minX - camX, camX - (minX + lado)));
@@ -136,19 +163,20 @@ public final class PlanCeldas {
             for (int hx = 0; hx < 2; hx++) {
                 for (int hz = 0; hz < 2; hz++) {
                     subdividir(plan, nivel - 1, tx * 2 + hx, tz * 2 + hz, camX, camZ, radioLodChunks,
-                            distanciaVanilla, fov, alto, umbral);
+                            distanciaVanilla, vanillaListo, fov, alto, umbral);
                 }
             }
         } else {
             int celdasPorLado = lado / (LADO_CELDA * 16);
-            agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, fov, alto, umbral,
+            agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, vanillaListo, fov, alto, umbral,
                     tx * celdasPorLado, (tx + 1) * celdasPorLado - 1, tz * celdasPorLado, (tz + 1) * celdasPorLado - 1);
         }
     }
 
     /** Celdas de nivel 0-4 dentro del radio y del rango de celdas dado (inclusive). */
     private static void agregarCeldas(List<Celda> plan, double camX, double camZ, int radioLodChunks,
-                                      int distanciaVanilla, double fovRadianes, double alturaPantallaPx,
+                                      int distanciaVanilla, LongPredicate vanillaListo,
+                                      double fovRadianes, double alturaPantallaPx,
                                       double umbralPx, int minCeldaX, int maxCeldaX, int minCeldaZ, int maxCeldaZ) {
         int chunkCamX = (int) Math.floor(camX / 16);
         int chunkCamZ = (int) Math.floor(camZ / 16);
@@ -167,7 +195,9 @@ public final class PlanCeldas {
                         long ddx = (long) cx * LADO_CELDA + dx - chunkCamX;
                         long ddz = (long) cz * LADO_CELDA + dz - chunkCamZ;
                         long d2 = ddx * ddx + ddz * ddz;
-                        if (d2 > radio2 || d2 < vanilla2) {
+                        boolean deVanilla = d2 < vanilla2 && vanillaListo.test(
+                                claveChunk(cx * LADO_CELDA + dx, cz * LADO_CELDA + dz));
+                        if (d2 > radio2 || deVanilla) {
                             mascara |= 1 << (dx * LADO_CELDA + dz);
                         } else {
                             algunoEnRadio = true;
@@ -203,5 +233,25 @@ public final class PlanCeldas {
             }
         }
         return 0;
+    }
+
+    /**
+     * La proyección del frame de vanilla con otros planos de profundidad.
+     *
+     * Vanilla multiplica su perspectiva por el balanceo de cámara al caminar
+     * (y el de daño, náusea, zoom de otros mods): P × B. Si el LOD armara su
+     * propia perspectiva, el terreno vanilla se balancearía y el LOD no, y
+     * parecería que el LOD sube y baja con cada paso. Como B es afín (fila
+     * de abajo 0,0,0,1) y en una perspectiva la fila 3 es (0,0,-1,0), la
+     * fila 3 de P × B es -(fila 2 de B): alcanza con reescribir la fila 2
+     * del producto con los coeficientes de profundidad nuevos, sin conocer B.
+     *
+     * @param proyeccion proyección de vanilla (se modifica y se devuelve)
+     */
+    public static Matrix4f conPlanosDeProfundidad(Matrix4f proyeccion, float near, float far) {
+        float a = -(far + near) / (far - near);
+        float b = -2f * far * near / (far - near);
+        Matrix4f m = proyeccion;
+        return m.m02(-a * m.m03()).m12(-a * m.m13()).m22(-a * m.m23()).m32(-a * m.m33() + b);
     }
 }

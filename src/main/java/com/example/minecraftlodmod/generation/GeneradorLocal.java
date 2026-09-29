@@ -1,5 +1,7 @@
 package com.example.minecraftlodmod.generation;
 
+import com.example.minecraftlodmod.config.ConfigLod;
+
 import com.example.minecraftlodmod.config.PresupuestoMemoria;
 import com.example.minecraftlodmod.config.ParametrosCalidad;
 import com.example.minecraftlodmod.core.OctreeNode;
@@ -79,6 +81,7 @@ public final class GeneradorLocal {
     }
 
     private final LinkedHashSet<Pendiente> pendientes = new LinkedHashSet<>();
+    private final PregeneradorChunks pregenerador = new PregeneradorChunks(this);
 
     /** Cada cuántos ticks se reconstruyen los niveles grandes de lo recién generado (5 s). */
     static final int TICKS_ENTRE_LOTES_GRANDES = 100;
@@ -176,6 +179,8 @@ public final class GeneradorLocal {
         }
         pendientes.clear();
         chunksSucios.clear();
+        pregenerador.reiniciar();
+        pregeneradorRoto = false;
         descartadosPorColaLlena = 0;
     }
 
@@ -207,6 +212,7 @@ public final class GeneradorLocal {
     @SubscribeEvent
     public void alTerminarTick(ServerTickEvent.Post evento) {
         registrarEstadisticas();
+        pregenerar(evento.getServer());
         if (++ticksDesdeLote >= TICKS_ENTRE_LOTES_GRANDES) {
             ticksDesdeLote = 0;
             lanzarLoteGrande();
@@ -229,6 +235,31 @@ public final class GeneradorLocal {
             }
             pendientes.remove(p);
         }
+    }
+
+    /**
+     * Pregeneración (solo singleplayer por ahora: la opción vive en la config
+     * del cliente, que en un servidor dedicado no existe). Nunca tira el
+     * servidor abajo: un error la apaga hasta el próximo arranque.
+     */
+    private void pregenerar(MinecraftServer servidor) {
+        if (pregeneradorRoto || !servidor.isSingleplayer()) {
+            return;
+        }
+        try {
+            pregenerador.tick(servidor, ConfigLod.CLIENTE.pregenerar.get(), ConfigLod.CLIENTE.radioPregeneracion.get());
+        } catch (RuntimeException e) {
+            pregeneradorRoto = true;
+            pregenerador.soltarTodo();
+            LOG.error("LOD: la pregeneración falló y se apaga hasta reiniciar el mundo", e);
+        }
+    }
+
+    private boolean pregeneradorRoto;
+
+    /** Chunks cargados que esperan lugar en la cola de extracción. */
+    int cantidadPendientes() {
+        return pendientes.size();
     }
 
     private Pendiente masCercanoAJugador(MinecraftServer servidor) {

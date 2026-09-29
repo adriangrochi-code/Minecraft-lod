@@ -37,6 +37,9 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue colapsoDesdeNivel;
         public final ModConfigSpec.IntValue fpsObjetivo;
         public final ModConfigSpec.BooleanValue autoAjuste;
+        public final ModConfigSpec.BooleanValue lodActivo;
+        public final ModConfigSpec.BooleanValue pregenerar;
+        public final ModConfigSpec.IntValue radioPregeneracion;
         public final ModConfigSpec.BooleanValue texturasLod;
         public final ModConfigSpec.BooleanValue descartarCuevas;
         public final ModConfigSpec.BooleanValue oclusionAmbiental;
@@ -52,6 +55,15 @@ public final class ConfigLod {
                             ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX);
             autoAjuste = b.comment("Ajustar detalle, radio y generación en caliente para sostener el FPS objetivo.")
                     .define("autoAjuste", true);
+            lodActivo = b.comment("Dibujar el LOD. Apagarlo sirve para comparar contra vanilla; la generación sigue.")
+                    .define("lodActivo", true);
+            pregenerar = b.comment("Generar chunks vanilla del jugador hacia afuera (como Chunky) para llenar el LOD",
+                            "sin recorrer el mundo. Usa CPU y disco: los chunks generados quedan guardados en el mundo.",
+                            "Solo singleplayer por ahora.")
+                    .define("pregenerar", false);
+            radioPregeneracion = b.comment("Radio de la pregeneración, en chunks. 256 ≈ 200 mil chunks (del orden de",
+                            "1-2 GB y decenas de minutos); 2048 ≈ 13 millones (cientos de GB, días).")
+                    .defineInRange("radioPregeneracion", 256, 16, ParametrosCalidad.RADIO_MAX);
             texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
                             "con la distancia). Apagado: colores planos, un poco más barato en GPU.")
                     .define("texturasLod", true);

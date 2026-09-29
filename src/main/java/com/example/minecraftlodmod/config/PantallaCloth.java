@@ -50,6 +50,22 @@ final class PantallaCloth {
                 .setTooltip(texto("preset.tooltip"))
                 .setSaveConsumer(c.seleccion::set)
                 .build();
+        general.addEntry(e.startBooleanToggle(texto("lodActivo"), c.lodActivo.get())
+                .setDefaultValue(c.lodActivo.getDefault())
+                .setTooltip(texto("lodActivo.tooltip"))
+                .setSaveConsumer(c.lodActivo::set)
+                .build());
+        general.addEntry(e.startBooleanToggle(texto("pregenerar"), c.pregenerar.get())
+                .setDefaultValue(c.pregenerar.getDefault())
+                .setTooltip(texto("pregenerar.tooltip"))
+                .setSaveConsumer(c.pregenerar::set)
+                .build());
+        general.addEntry(e.startIntSlider(texto("radioPregeneracion"), c.radioPregeneracion.get(),
+                        16, ParametrosCalidad.RADIO_MAX)
+                .setDefaultValue(c.radioPregeneracion.getDefault())
+                .setTooltip(texto("radioPregeneracion.tooltip"))
+                .setSaveConsumer(c.radioPregeneracion::set)
+                .build());
         general.addEntry(preset);
         general.addEntry(e.startIntSlider(texto("fpsObjetivo"), c.fpsObjetivo.get(),
                         ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX)
@@ -138,8 +154,13 @@ final class PantallaCloth {
 
         BotonCalibrar(Supplier<ParametrosCalidad.Seleccion> seleccion) {
             super(texto("calibrar"), Component.empty());
-            boton = Button.builder(texto("calibrar.boton"),
-                            b -> SesionCalibracion.iniciar(presetParaCalibrar(seleccion.get())))
+            boton = Button.builder(texto("calibrar.boton"), b -> {
+                        if (SesionCalibracion.enCurso()) {
+                            SesionCalibracion.cancelarManual();
+                        } else {
+                            SesionCalibracion.iniciar(presetParaCalibrar(seleccion.get()));
+                        }
+                    })
                     .size(ANCHO, 20)
                     .build();
         }
@@ -147,10 +168,14 @@ final class PantallaCloth {
         @Override
         public void render(GuiGraphics graficos, int indice, int y, int x, int ancho, int alto,
                            int mouseX, int mouseY, boolean resaltado, float delta) {
-            // Solo desde el menú principal: la calibración abre otro mundo.
-            boolean disponible = Minecraft.getInstance().level == null && !SesionCalibracion.enCurso();
+            // Iniciar solo desde el menú principal (la calibración abre otro mundo);
+            // una calibración en curso se puede cancelar siempre.
+            boolean enCurso = SesionCalibracion.enCurso();
+            boolean disponible = enCurso || Minecraft.getInstance().level == null;
             boton.active = disponible;
-            boton.setTooltip(Tooltip.create(texto(disponible ? "calibrar.tooltip" : "calibrar.enMundo")));
+            boton.setMessage(texto(enCurso ? "calibrar.cancelar" : "calibrar.boton"));
+            boton.setTooltip(Tooltip.create(texto(enCurso ? "calibrar.cancelar.tooltip"
+                    : disponible ? "calibrar.tooltip" : "calibrar.enMundo")));
             graficos.drawString(Minecraft.getInstance().font, getFieldName(), x, y + 6, 0xFFFFFF);
             boton.setX(x + ancho - ANCHO);
             boton.setY(y);

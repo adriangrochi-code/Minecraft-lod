@@ -255,7 +255,7 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   - **Solo caras de arriba (+Y).** Medido en el cliente (mismo lugar, sobre
     el océano en 0,0): sin oclusión 28,5M vértices guardados / 14,8M
     dibujados; con oclusión en todas las caras 40,4M / 21,3M (+42%); solo
-    arriba 31,8M / 18,1M (+12% / +23%). Limitarla a niveles 0-2 no cambió
+    arriba 31,8M / 18,1M (+12% / +23%). Limitarla a niveles 0-2 (probado y descartado) no cambió
     nada: casi todos los vértices están en esos niveles. Las mediciones en
     otros lugares fueron ruidosas (el servidor seguía generando chunks);
     falta una medición determinista sobre los datos guardados.
@@ -265,3 +265,30 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   - En diagonales que caen fuera de dos grillas a la vez (esquina de
     sección) no hay dato y se asume que no ocluye.
 
+- **Arreglos reportados en la primera prueba del jar (2026-09-29):**
+  - Calibración colgada: si el jugador salía del benchmark antes de
+    terminar, `SesionCalibracion` quedaba activa y en el siguiente mundo lo
+    teletransportaba a los puntos de benchmark, cambiaba la calidad y dejaba
+    el botón "Calibrar" deshabilitado. Ahora se cancela al salir (solo si ya
+    había arrancado: abrir un mundo desde el menú también dispara
+    LoggingOut), si el frame corre en otro servidor, o si el mundo abierto no
+    es el de benchmark; y el botón pasa a "Cancelar calibración". Verificado
+    que la calibración completa sigue funcionando; la cancelación a mitad no
+    se llegó a reproducir en Xvfb (termina en ~1 min con render por software).
+  - Niebla: se corre hasta el alcance REAL del LOD dibujado, no hasta el radio
+    del preset (antes, con pocas celdas, la niebla se iba a 2560 bloques y el
+    borde del terreno conocido quedaba expuesto).
+  - LOD que "se movía" al caminar: el LOD armaba su propia proyección sin el
+    balanceo de cámara de vanilla. Ahora usa la proyección del frame con
+    near/far reemplazados (`PlanCeldas.conPlanosDeProfundidad`). Falta verlo
+    en monitor real (Pista B).
+  - Opción "LOD activado" en el menú del mod para comparar contra vanilla.
+  - Huecos: dentro de la distancia vanilla solo se le dejan a vanilla los
+    chunks que el cliente YA tiene cargados (punto 6 de la sección 25, versión
+    por chunk cargado; no mira si vanilla ya compiló la malla).
+  - Pregenerador integrado (`PregeneradorChunks` + `EspiralChunks`): tickets
+    propios de nivel 33, del jugador hacia afuera, se frena con MSPT > 40 ms o
+    extracción atrasada. Solo singleplayer (la opción vive en la config del
+    cliente). Pendiente: versión para servidor dedicado (config de servidor),
+    y "rough generation" para radios de miles de chunks, que con generación
+    vanilla completa ocupan cientos de GB y tardan días.

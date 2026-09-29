@@ -21,7 +21,9 @@ import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.WorldOptions;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
+import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
@@ -43,6 +45,12 @@ import java.util.function.Consumer;
  *
  * Mover al jugador se hace directo sobre el servidor integrado (siempre es
  * singleplayer), no con comandos: no depende de que el mundo tenga trucos.
+ *
+ * La sesión vive SOLO dentro del mundo de benchmark: si el jugador sale
+ * antes de que termine (o por algún motivo se abre otro mundo), se cancela
+ * y se vuelve a la calidad de la config. Antes quedaba activa y, en el
+ * siguiente mundo que se abriera, seguía teletransportando al jugador a
+ * los puntos de benchmark y cambiando la calidad del LOD.
  *
  * Pendiente con render/: {@link #asignarAplicador} — hasta que exista el
  * render de LOD, cambiar de escalón no cambia lo que se dibuja y la
@@ -66,6 +74,8 @@ public final class SesionCalibracion {
     private final CalibradorBenchmark calibrador;
     private long ultimoFrameNanos;
     private boolean posicionado;
+    /** Servidor integrado del mundo de benchmark; si el frame corre en otro, se cancela. */
+    private MinecraftServer servidorBenchmark;
 
     private SesionCalibracion(QualityPreset inicial) {
         this.calibrador = new CalibradorBenchmark(EscalonesCalibracion.desde(inicial),
@@ -120,6 +130,37 @@ public final class SesionCalibracion {
         }
     }
 
+    /** Botón "Cancelar calibración" de la pantalla de config. */
+    public static void cancelarManual() {
+        abortar("cancelada por el jugador");
+    }
+
+    /** Calibración interrumpida: fuera la sesión y el render vuelve a la calidad de la config. */
+    private static void abortar(String motivo) {
+        if (activa == null) {
+            return;
+        }
+        LOG.info("LOD: calibración cancelada ({})", motivo);
+        cancelar();
+        aplicador.accept(ConfigLod.calidadCliente());
+    }
+
+    /** Salir del mundo (menú de pausa, desconexión) antes de terminar cancela la calibración. */
+    @SubscribeEvent
+    public void alSalir(ClientPlayerNetworkEvent.LoggingOut evento) {
+        // Abrir un mundo desde el menú también dispara LoggingOut ANTES de entrar:
+        // solo cuenta una vez que la calibración arrancó dentro del benchmark.
+        if (!posicionado) {
+            return;
+        }
+        abortar("se salió del mundo de benchmark");
+    }
+
+    private static boolean esMundoBenchmark(MinecraftServer servidor) {
+        java.nio.file.Path carpeta = servidor.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize().getFileName();
+        return carpeta != null && carpeta.toString().equals(PuntosBenchmark.NOMBRE_MUNDO);
+    }
+
     @SubscribeEvent
     public void alTerminarFrame(RenderFrameEvent.Post evento) {
         Minecraft mc = Minecraft.getInstance();
@@ -128,7 +169,16 @@ public final class SesionCalibracion {
             ultimoFrameNanos = 0;
             return;
         }
+        if (posicionado && servidor != servidorBenchmark) {
+            abortar("se abrió otro mundo");
+            return;
+        }
         if (!posicionado) {
+            if (!esMundoBenchmark(servidor)) {
+                abortar("el mundo abierto no es el de benchmark");
+                return;
+            }
+            servidorBenchmark = servidor;
             // Primer frame dentro del mundo: primer escalón, primer punto.
             aplicador.accept(calibrador.escalonActual());
             mover(servidor, 0);
