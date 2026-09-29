@@ -51,6 +51,13 @@ public final class GeometriaLod {
     /** Sprites por fila de la tabla (textura de 768 texeles de ancho). */
     public static final int SPRITES_POR_FILA = 256;
 
+    /**
+     * Brillo por nivel de oclusión ambiental (índice 0 = rincón cerrado, 3 =
+     * libre). Valores de partida parecidos al smooth lighting de vanilla; el
+     * ajuste fino es de Pista B (se juzga viéndolo).
+     */
+    static final float[] BRILLO_OCLUSION = {0.55f, 0.7f, 0.85f, 1.0f};
+
     /** Brillo mínimo con luz horneada 0: el terreno a oscuras no queda negro puro. */
     static final float LUZ_MINIMA = 0.25f;
 
@@ -93,6 +100,12 @@ public final class GeometriaLod {
     private int vertices;
     private Texturas fuenteTexturas;
     private boolean descartarSinLuz;
+    private boolean oclusionAmbiental;
+
+    /** Oscurecer rincones y bases de paredes (oclusión ambiental por vértice, sección 25 punto 5). */
+    public void usarOclusionAmbiental(boolean usar) {
+        this.oclusionAmbiental = usar;
+    }
 
     /**
      * Descartar caras sin ninguna luz (cielo ni bloque) en sus cuatro
@@ -140,7 +153,7 @@ public final class GeometriaLod {
     public int agregarSeccion(SuperVoxel[] grid, int lado, float ox, float oy, float oz, float escala,
                               int carasOmitidas, GreedyMesher.Vecinos vecinos) {
         int agregados = 0;
-        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos)) {
+        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos, oclusionAmbiental)) {
             if (omitida(q, lado, carasOmitidas)) {
                 continue;
             }
@@ -191,18 +204,36 @@ public final class GeometriaLod {
         // mano derecha es +X, -Y o +Z según el eje; para las otras tres caras se
         // recorre al revés, así todas quedan antihorarias vistas desde afuera.
         int u1 = u0 + largoU, v1 = v0 + largoV;
-        if (antihorarioDirecto(q.eje(), q.positivo())) {
-            vertice(q, plano, u0, v0, luz.minMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
-            vertice(q, plano, u1, v0, luz.maxMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
-            vertice(q, plano, u1, v1, luz.maxMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
-            vertice(q, plano, u0, v1, luz.minMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
-        } else {
-            vertice(q, plano, u0, v1, luz.minMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
-            vertice(q, plano, u1, v1, luz.maxMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
-            vertice(q, plano, u1, v0, luz.maxMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
-            vertice(q, plano, u0, v0, luz.minMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
+        // Esquinas en orden antihorario: índice 0 (u0,v0), 1 (u1,v0), 2 (u1,v1), 3 (u0,v1).
+        int[] us = {u0, u1, u1, u0};
+        int[] vs = {v0, v0, v1, v1};
+        int[] luces = {luz.minMin(), luz.maxMin(), luz.maxMax(), luz.minMax()};
+        int[] oclusion = {q.oclusionEn(false, false), q.oclusionEn(true, false),
+                q.oclusionEn(true, true), q.oclusionEn(false, true)};
+        int[] orden = ordenEsquinas(antihorarioDirecto(q.eje(), q.positivo()), oclusion);
+        for (int e : orden) {
+            vertice(q, plano, us[e], vs[e], luces[e], BRILLO_OCLUSION[oclusion[e]], rgbBase, cara, sombra,
+                    ox, oy, oz, escala);
         }
         return true;
+    }
+
+    /**
+     * Orden de las 4 esquinas (0 (u0,v0), 1 (u1,v0), 2 (u1,v1), 3 (u0,v1))
+     * para emitir el quad: antihorario desde afuera, y empezando de modo que
+     * la diagonal que Minecraft usa para partirlo en triángulos (vértice 0 a
+     * 2 del quad) una las esquinas MÁS claras. Si no, un rincón oscuro se
+     * estira en una franja a lo largo de la diagonal (el "anisotropía" típico
+     * de la oclusión por vértice en quads).
+     */
+    static int[] ordenEsquinas(boolean directo, int[] oclusion) {
+        int[] orden = directo ? new int[]{0, 1, 2, 3} : new int[]{3, 2, 1, 0};
+        int diagonalActual = oclusion[orden[0]] + oclusion[orden[2]];
+        int diagonalOtra = oclusion[orden[1]] + oclusion[orden[3]];
+        if (diagonalOtra > diagonalActual) {
+            orden = new int[]{orden[1], orden[2], orden[3], orden[0]}; // rotar conserva el sentido
+        }
+        return orden;
     }
 
     /** true si el contorno (u0,v0) (u1,v0) (u1,v1) (u0,v1) ya es antihorario visto desde afuera. */
@@ -210,8 +241,8 @@ public final class GeometriaLod {
         return eje == Quad.Eje.Y ? !positivo : positivo;
     }
 
-    private void vertice(Quad q, float plano, int u, int v, int luz, int rgbBase, Cara cara, float sombra,
-                         float ox, float oy, float oz, float escala) {
+    private void vertice(Quad q, float plano, int u, int v, int luz, float brilloOclusion, int rgbBase, Cara cara,
+                         float sombra, float ox, float oy, float oz, float escala) {
         Quad.Eje eje = q.eje();
         float x, y, z;
         switch (eje) {
@@ -224,7 +255,7 @@ public final class GeometriaLod {
         posiciones[i] = ox + x * escala;
         posiciones[i + 1] = oy + y * escala;
         posiciones[i + 2] = oz + z * escala;
-        colores[vertices] = color(rgbBase, sombra, luz);
+        colores[vertices] = color(rgbBase, sombra * brilloOclusion, luz);
         sprites[vertices] = cara == null ? 0 : cara.sprite();
         int indiceCara = eje.ordinal() * 2 + (q.positivo() ? 1 : 0);
         caras[vertices] = (byte) indiceCara;

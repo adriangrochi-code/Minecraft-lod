@@ -39,6 +39,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue autoAjuste;
         public final ModConfigSpec.BooleanValue texturasLod;
         public final ModConfigSpec.BooleanValue descartarCuevas;
+        public final ModConfigSpec.BooleanValue oclusionAmbiental;
 
         Cliente(ModConfigSpec.Builder b) {
             ParametrosCalidad medio = ParametrosCalidad.de(QualityPreset.MEDIO);
@@ -57,6 +58,9 @@ public final class ConfigLod {
             descartarCuevas = b.comment("No dibujar en el LOD caras sin ninguna luz (interiores de cuevas, caras enterradas).",
                             "Reduce mucho la geometría; puede dejar huecos al mirar dentro de una cueva lejana.")
                     .define("descartarCuevas", true);
+            oclusionAmbiental = b.comment("Oscurecer rincones y bases de paredes del LOD (oclusión ambiental por vértice).",
+                            "Sin costo en la GPU, pero fusiona menos caras: algo más de geometría.")
+                    .define("oclusionAmbiental", true);
 
             b.comment("Valores usados solo con preset = PERSONALIZADO (o guardados por la calibración).")
                     .push("personalizado");

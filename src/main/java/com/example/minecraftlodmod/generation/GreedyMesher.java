@@ -15,6 +15,16 @@ import java.util.List;
  * vóxeles (variante simplificada del de Mikola Lysenko), adaptada para
  * trabajar sobre SuperVoxel en vez de bloques individuales.
  *
+ * Oclusión ambiental por vértice (sección 25, punto 5): por cada cara de
+ * vóxel se miran los 3 vecinos de cada esquina en la capa de enfrente (dos
+ * costados y la diagonal), como el "smooth lighting" de vanilla. Solo se
+ * fusionan caras con la MISMA oclusión en sus 4 esquinas: si no, un quad
+ * grande interpolaría el oscurecimiento de un rincón a lo largo de toda la
+ * cara. Solo en caras de ARRIBA: en todas las caras costaba ~+42% de
+ * vértices (medido en el mundo de benchmark); en las de arriba, que son las
+ * que más se ven del terreno (pasto junto a paredes, bajo árboles), ~+12%
+ * guardados / ~+23% dibujados.
+ *
  * Nota: esta clase resuelve la geometría; NO sube nada a GPU — eso es
  * responsabilidad de render/, que today no existe todavía en este esqueleto.
  */
@@ -67,10 +77,15 @@ public final class GreedyMesher {
 
     /** @param vecinos vóxeles del otro lado del borde; null = todo borde expuesto */
     public static List<Quad> mallar(SuperVoxel[] grid, int lado, Vecinos vecinos) {
+        return mallar(grid, lado, vecinos, false);
+    }
+
+    /** @param conOclusion calcular oclusión ambiental por esquina (si no, {@link Quad#SIN_OCLUSION}) */
+    public static List<Quad> mallar(SuperVoxel[] grid, int lado, Vecinos vecinos, boolean conOclusion) {
         List<Quad> quads = new ArrayList<>();
         for (Quad.Eje eje : Quad.Eje.values()) {
-            quads.addAll(mallarEje(grid, lado, eje, true, vecinos));
-            quads.addAll(mallarEje(grid, lado, eje, false, vecinos));
+            quads.addAll(mallarEje(grid, lado, eje, true, vecinos, conOclusion && eje == Quad.Eje.Y));
+            quads.addAll(mallarEje(grid, lado, eje, false, vecinos, false));
         }
         return quads;
     }
@@ -91,13 +106,14 @@ public final class GreedyMesher {
     }
 
     private static List<Quad> mallarEje(SuperVoxel[] grid, int lado, Quad.Eje eje, boolean positivo,
-                                        Vecinos vecinos) {
+                                        Vecinos vecinos, boolean conOclusion) {
         List<Quad> resultado = new ArrayList<>();
 
         // Recorremos capa por capa a lo largo del eje principal.
         for (int capa = 0; capa < lado; capa++) {
             // Máscara 2D: qué "superficie" (vóxel visible desde esta cara) hay en cada celda de la capa.
             SuperVoxel[][] mascara = new SuperVoxel[lado][lado];
+            int[][] oclusion = new int[lado][lado];
 
             for (int u = 0; u < lado; u++) {
                 for (int v = 0; v < lado; v++) {
@@ -111,18 +127,20 @@ public final class GreedyMesher {
 
                     if (esAire(vecino)) {
                         mascara[u][v] = actual;
+                        oclusion[u][v] = conOclusion
+                                ? oclusionCara(grid, lado, eje, capaVecina, u, v, vecinos) : Quad.SIN_OCLUSION;
                     }
                 }
             }
 
-            resultado.addAll(fusionarMascara(mascara, lado, capa, eje, positivo));
+            resultado.addAll(fusionarMascara(mascara, oclusion, lado, capa, eje, positivo));
         }
 
         return resultado;
     }
 
     /** Algoritmo greedy 2D estándar: barre la máscara y va extendiendo rectángulos lo más posible. */
-    private static List<Quad> fusionarMascara(SuperVoxel[][] mascara, int lado, int capa,
+    private static List<Quad> fusionarMascara(SuperVoxel[][] mascara, int[][] oclusion, int lado, int capa,
                                                Quad.Eje eje, boolean positivo) {
         List<Quad> quads = new ArrayList<>();
         boolean[][] visitado = new boolean[lado][lado];
@@ -132,12 +150,14 @@ public final class GreedyMesher {
                 if (visitado[u][v] || mascara[u][v] == null) continue;
 
                 SuperVoxel referencia = mascara[u][v];
+                int oclusionReferencia = oclusion[u][v];
 
                 // Extender en la dirección "v" mientras siga siendo la misma superficie.
                 int anchoV = 1;
                 while (v + anchoV < lado
                         && !visitado[u][v + anchoV]
-                        && mismaSuperficie(mascara[u][v + anchoV], referencia)) {
+                        && mismaSuperficie(mascara[u][v + anchoV], referencia)
+                        && oclusion[u][v + anchoV] == oclusionReferencia) {
                     anchoV++;
                 }
 
@@ -147,7 +167,8 @@ public final class GreedyMesher {
                 while (u + anchoU < lado) {
                     for (int dv = 0; dv < anchoV; dv++) {
                         if (visitado[u + anchoU][v + dv]
-                                || !mismaSuperficie(mascara[u + anchoU][v + dv], referencia)) {
+                                || !mismaSuperficie(mascara[u + anchoU][v + dv], referencia)
+                                || oclusion[u + anchoU][v + dv] != oclusionReferencia) {
                             break filaSiguiente;
                         }
                     }
@@ -161,7 +182,7 @@ public final class GreedyMesher {
                     }
                 }
 
-                quads.add(construirQuad(eje, positivo, capa, u, v, anchoU, anchoV, referencia));
+                quads.add(construirQuad(eje, positivo, capa, u, v, anchoU, anchoV, referencia, oclusionReferencia));
             }
         }
 
@@ -169,14 +190,54 @@ public final class GreedyMesher {
     }
 
     private static Quad construirQuad(Quad.Eje eje, boolean positivo, int capa, int u, int v,
-                                       int anchoU, int anchoV, SuperVoxel referencia) {
+                                       int anchoU, int anchoV, SuperVoxel referencia, int oclusion) {
         // Mapear (capa, u, v) de vuelta a (x, y, z) según el eje — convención:
         // eje X -> capa=x, u=y, v=z | eje Y -> capa=y, u=x, v=z | eje Z -> capa=z, u=x, v=y
         return switch (eje) {
-            case X -> new Quad(capa, u, v, anchoV, anchoU, eje, positivo, referencia);
-            case Y -> new Quad(u, capa, v, anchoU, anchoV, eje, positivo, referencia);
-            case Z -> new Quad(u, v, capa, anchoU, anchoV, eje, positivo, referencia);
+            case X -> new Quad(capa, u, v, anchoV, anchoU, eje, positivo, referencia, oclusion);
+            case Y -> new Quad(u, capa, v, anchoU, anchoV, eje, positivo, referencia, oclusion);
+            case Z -> new Quad(u, v, capa, anchoU, anchoV, eje, positivo, referencia, oclusion);
         };
+    }
+
+    /**
+     * Oclusión de las 4 esquinas de la cara de vóxel (u, v), mirando la capa
+     * de enfrente ({@code capaFrente}): por esquina, 3 - (costados + diagonal
+     * que ocluyen), y 0 si ocluyen los dos costados (rincón cerrado).
+     */
+    static int oclusionCara(SuperVoxel[] grid, int lado, Quad.Eje eje, int capaFrente, int u, int v,
+                            Vecinos vecinos) {
+        int resultado = 0;
+        for (int esquina = 0; esquina < 4; esquina++) {
+            int du = (esquina & 1) == 0 ? -1 : 1;
+            int dv = (esquina & 2) == 0 ? -1 : 1;
+            boolean costadoU = ocluye(grid, lado, eje, capaFrente, u + du, v, vecinos);
+            boolean costadoV = ocluye(grid, lado, eje, capaFrente, u, v + dv, vecinos);
+            int valor;
+            if (costadoU && costadoV) {
+                valor = 0;
+            } else {
+                boolean diagonal = ocluye(grid, lado, eje, capaFrente, u + du, v + dv, vecinos);
+                valor = 3 - ((costadoU ? 1 : 0) + (costadoV ? 1 : 0) + (diagonal ? 1 : 0));
+            }
+            resultado |= valor << (esquina * 2);
+        }
+        return resultado;
+    }
+
+    /** Sólidos y vegetación ocluyen; aire y agua no (el agua no oscurece la orilla). */
+    private static boolean ocluye(SuperVoxel[] grid, int lado, Quad.Eje eje, int capa, int u, int v,
+                                  Vecinos vecinos) {
+        int fuera = (capa < 0 || capa >= lado ? 1 : 0) + (u < 0 || u >= lado ? 1 : 0) + (v < 0 || v >= lado ? 1 : 0);
+        SuperVoxel s;
+        if (fuera == 0) {
+            s = obtener(grid, lado, eje, capa, u, v);
+        } else if (fuera == 1) {
+            s = afuera(vecinos, eje, capa, u, v);
+        } else {
+            return false; // diagonal fuera de dos grillas a la vez: sin dato, no ocluye
+        }
+        return s != null && s.material() != SuperVoxel.Material.AIRE && s.material() != SuperVoxel.Material.AGUA;
     }
 
     private static SuperVoxel afuera(Vecinos vecinos, Quad.Eje eje, int capa, int u, int v) {

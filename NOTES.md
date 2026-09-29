@@ -222,7 +222,7 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
     puede recalcular el tinte; haría falta agregar el bioma (cambia el
     formato de 8 bytes de la sección 5), a decidir junto con el cache
     cliente de multiplayer.
-  - Puntos 5-8 de la sección 25 siguen pendientes.
+  - Puntos 6-8 de la sección 25 siguen pendientes.
 - **Sección 25, puntos 3 y 4 aplicados:**
   - Una malla por dirección de cara por celda, con su plano mínimo/máximo;
     `RenderLod.dibujarPasada` saltea los grupos que miran para el otro lado
@@ -243,3 +243,25 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
     omitido entero). En teselas (niveles 3-8) solo se usan las bandas de
     arriba y abajo; los costados de tesela siguen siendo paredes
     (pendiente, leer solo el borde de la tesela vecina).
+- **Sección 25, punto 5 aplicado (oclusión ambiental por vértice):**
+  - `GreedyMesher.oclusionCara`: por esquina, costados + diagonal en la capa
+    de enfrente (sólidos y vegetación ocluyen, agua no); solo se fusionan
+    caras con la misma oclusión en sus 4 esquinas. `Quad.oclusion` la lleva
+    empaquetada (2 bits por esquina).
+  - `GeometriaLod`: brillo por nivel `BRILLO_OCLUSION` {0.55, 0.7, 0.85, 1}
+    multiplicado al color, y la diagonal del quad se elige para unir las
+    esquinas más claras (`ordenEsquinas`), rotando sin cambiar el sentido.
+  - Opción `oclusionAmbiental` (cliente, default true); cambiarla rearma el LOD.
+  - **Solo caras de arriba (+Y).** Medido en el cliente (mismo lugar, sobre
+    el océano en 0,0): sin oclusión 28,5M vértices guardados / 14,8M
+    dibujados; con oclusión en todas las caras 40,4M / 21,3M (+42%); solo
+    arriba 31,8M / 18,1M (+12% / +23%). Limitarla a niveles 0-2 no cambió
+    nada: casi todos los vértices están en esos niveles. Las mediciones en
+    otros lugares fueron ruidosas (el servidor seguía generando chunks);
+    falta una medición determinista sobre los datos guardados.
+  - **Pendiente de Pista B:** ajustar `BRILLO_OCLUSION` viéndolo en monitor
+    real, y decidir si en el preset Mínimo (A275) conviene apagarla por
+    defecto según el costo en vértices medido.
+  - En diagonales que caen fuera de dos grillas a la vez (esquina de
+    sección) no hay dato y se asume que no ocluye.
+

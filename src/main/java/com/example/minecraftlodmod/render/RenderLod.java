@@ -98,6 +98,8 @@ public final class RenderLod {
     /** Profundidad de 24 bits: un near plane lejos mejora mucho la precisión a distancia. */
     static final float NEAR_LOD = 16f;
     static final int BYTES_POR_VERTICE = 16; // POSITION_COLOR: 3 floats + 4 bytes
+    /** Último nivel con oclusión ambiental (ver armar). */
+    static final int NIVEL_MAX_OCLUSION = 2;
 
     /**
      * x, y, z y sprite como 4 shorts enteros ({@code ivec4} en el shader).
@@ -125,6 +127,7 @@ public final class RenderLod {
     private static volatile int versionTexturas;
     private int versionTexturasVista = -1;
     private boolean texturasEnUso;
+    private boolean oclusionEnUso;
 
     // Estadísticas para estimar el costo en cada hardware (log cada 10 s).
     static final long PERIODO_ESTADISTICAS_NANOS = 10_000_000_000L;
@@ -311,9 +314,12 @@ public final class RenderLod {
         // celdas (las viejas se siguen dibujando hasta que llegue su reemplazo).
         boolean usarTexturas = shaderTextura != null && PaletaTexturas.tabla() != null
                 && ConfigLod.CLIENTE.texturasLod.get();
-        if (versionTexturas != versionTexturasVista || usarTexturas != texturasEnUso) {
+        boolean usarOclusion = ConfigLod.CLIENTE.oclusionAmbiental.get();
+        if (versionTexturas != versionTexturasVista || usarTexturas != texturasEnUso
+                || usarOclusion != oclusionEnUso) {
             versionTexturasVista = versionTexturas;
             texturasEnUso = usarTexturas;
+            oclusionEnUso = usarOclusion;
             LOG.info("LOD: texturas {} (shader {}, tabla {}, opción {})", usarTexturas ? "activas" : "apagadas",
                     shaderTextura != null ? "ok" : "sin cargar", PaletaTexturas.tabla() != null ? "ok" : "sin calcular",
                     ConfigLod.CLIENTE.texturasLod.get());
@@ -400,6 +406,7 @@ public final class RenderLod {
         int encoladas = 0;
         byte dimension = GeneradorLocal.idDimension(mc.level.dimension());
         GeometriaLod.Texturas texturas = texturasEnUso ? PaletaTexturas.tabla() : null;
+        boolean oclusion = oclusionEnUso;
         int minSeccion = mc.level.getMinSection();
         int maxSeccion = mc.level.getMaxSection();
         for (PlanCeldas.Celda celda : plan) {
@@ -416,7 +423,7 @@ public final class RenderLod {
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(distancia2(celda, camara), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                chunkX, chunkZ, distanciaVanilla, texturas)));
+                                chunkX, chunkZ, distanciaVanilla, texturas, oclusion)));
             }
         }
         celdas.entrySet().removeIf(e -> {
@@ -431,12 +438,15 @@ public final class RenderLod {
     /** Hilo de mallas: lee los nodos del nivel elegido y arma los vértices de la celda. */
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
                        int minSeccion, int maxSeccion, int chunkCamX, int chunkCamZ, int distanciaVanilla,
-                       GeometriaLod.Texturas texturas) {
+                       GeometriaLod.Texturas texturas, boolean oclusion) {
         long inicioArmado = System.nanoTime();
         try {
             GeometriaLod geometria = new GeometriaLod();
             geometria.usarTexturas(texturas);
             geometria.descartarCarasSinLuz(ConfigLod.CLIENTE.descartarCuevas.get());
+            // Solo en niveles cercanos: ahí se aprecia, y es donde menos fusión se pierde
+            // por vóxel dibujado. Lejos (vóxeles de 8+ bloques) el rincón no se distingue.
+            geometria.usarOclusionAmbiental(oclusion && celda.nivel() <= NIVEL_MAX_OCLUSION);
             int conDatos = celda.esGrande()
                     ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion)
                     : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion,

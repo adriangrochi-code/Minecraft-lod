@@ -294,4 +294,45 @@ class RenderPuroTest {
         // Cámara exactamente en el plano: de canto, no se ve.
         assertFalse(GeometriaLod.caraVisible(1, 24, 24, 24));
     }
+
+    @Test
+    void laDiagonalDelQuadUneLasEsquinasMasClaras() {
+        // Esquina 0 oscura: la diagonal 0-2 la estiraría; se rota para usar 1-3.
+        int[] orden = GeometriaLod.ordenEsquinas(true, new int[]{0, 3, 3, 3});
+        assertEquals(List.of(1, 2, 3, 0), Arrays.stream(orden).boxed().toList());
+        // Sin diferencia no se rota, y el sentido inverso se conserva.
+        assertEquals(List.of(0, 1, 2, 3), Arrays.stream(GeometriaLod.ordenEsquinas(true, new int[]{3, 3, 3, 3}))
+                .boxed().toList());
+        assertEquals(List.of(3, 2, 1, 0), Arrays.stream(GeometriaLod.ordenEsquinas(false, new int[]{3, 3, 3, 3}))
+                .boxed().toList());
+    }
+
+    @Test
+    void conOclusionElRinconSaleMasOscuro() {
+        // Dos vóxeles: piso (y = 0) y un bloque encima en x = 0; la cara de arriba del
+        // piso en x = 1 tiene su esquina junto al bloque más oscura.
+        int lado = 2;
+        SuperVoxel[] g = new SuperVoxel[lado * lado * lado];
+        SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        Arrays.fill(g, aire);
+        for (int x = 0; x < lado; x++) {
+            for (int z = 0; z < lado; z++) {
+                g[(x * lado) * lado + z] = solido(15);
+            }
+        }
+        g[(0 * lado + 1) * lado] = solido(15);
+        g[(0 * lado + 1) * lado + 1] = solido(15);
+        GeometriaLod con = new GeometriaLod();
+        con.usarOclusionAmbiental(true);
+        con.agregarSeccion(g, lado, 0, 0, 0, 1);
+        int minimo = 255, maximo = 0;
+        for (int i = 0; i < con.vertices(); i++) {
+            if (con.cara(i) == 3 && con.y(i) == 1) { // techo del piso
+                int rojo = (con.color(i) >> 16) & 0xFF;
+                minimo = Math.min(minimo, rojo);
+                maximo = Math.max(maximo, rojo);
+            }
+        }
+        assertTrue(minimo < maximo, "El techo junto al bloque tiene vértices más oscuros");
+    }
 }

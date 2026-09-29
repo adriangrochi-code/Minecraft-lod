@@ -40,5 +40,7 @@
   "minecraftlodmod.configuration.texturasLod": "LOD textures",
   "minecraftlodmod.configuration.texturasLod.tooltip": "Draw distant terrain with the textures of the active resource pack; they simplify with distance. Off: flat colors.",
   "minecraftlodmod.configuration.descartarCuevas": "Cave culling",
-  "minecraftlodmod.configuration.descartarCuevas.tooltip": "Skip unlit faces (cave interiors, buried faces) in the LOD. Much less geometry; distant cave openings may show gaps."
+  "minecraftlodmod.configuration.descartarCuevas.tooltip": "Skip unlit faces (cave interiors, buried faces) in the LOD. Much less geometry; distant cave openings may show gaps.",
+  "minecraftlodmod.configuration.oclusionAmbiental": "Ambient occlusion",
+  "minecraftlodmod.configuration.oclusionAmbiental.tooltip": "Darkens corners, wall bases and under trees in the LOD, like vanilla smooth lighting. No GPU cost; slightly more geometry."
 }

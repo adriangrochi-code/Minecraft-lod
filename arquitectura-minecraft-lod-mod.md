@@ -503,7 +503,8 @@ Ideas adoptadas, en orden de implementación sugerido:
    opacidad del borde de la sección vecina al mallar: elimina caras
    internas en los límites de sección/tesela (hoy solo se omiten caras
    laterales cubiertas a nivel celda).
-5. **Oclusión ambiental horneada por vértice.** Voxy usa SSAO de
+5. **Oclusión ambiental horneada por vértice — implementado en
+   `GreedyMesher`/`GeometriaLod`, opción `oclusionAmbiental`.** Voxy usa SSAO de
    postproceso; lo nuestro compatible es AO por vértice al mallar (0 costo
    en GPU, gran aporte de profundidad visual). SSAO queda para el backend
    opt-in.

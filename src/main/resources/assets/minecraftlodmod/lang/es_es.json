@@ -40,5 +40,7 @@
   "minecraftlodmod.configuration.texturasLod": "Texturas en el LOD",
   "minecraftlodmod.configuration.texturasLod.tooltip": "Dibuja el terreno lejano con las texturas del paquete de texturas activo; se simplifican solas con la distancia. Apagado: colores planos.",
   "minecraftlodmod.configuration.descartarCuevas": "Descartar cuevas",
-  "minecraftlodmod.configuration.descartarCuevas.tooltip": "No dibuja en el LOD caras sin luz (interiores de cuevas, caras enterradas). Mucha menos geometría; puede dejar huecos al mirar dentro de una cueva lejana."
+  "minecraftlodmod.configuration.descartarCuevas.tooltip": "No dibuja en el LOD caras sin luz (interiores de cuevas, caras enterradas). Mucha menos geometría; puede dejar huecos al mirar dentro de una cueva lejana.",
+  "minecraftlodmod.configuration.oclusionAmbiental": "Oclusión ambiental",
+  "minecraftlodmod.configuration.oclusionAmbiental.tooltip": "Oscurece rincones, bases de paredes y bajo los árboles del LOD, como la iluminación suave de vanilla. No cuesta GPU; genera algo más de geometría."
 }

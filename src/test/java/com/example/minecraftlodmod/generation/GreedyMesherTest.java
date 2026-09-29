@@ -110,4 +110,61 @@ class GreedyMesherTest {
         assertEquals(1, caraXPos.get(0).z(), "Queda solo la mitad sin tapar");
         assertEquals(1, caraXPos.get(0).ancho());
     }
+
+    /** Piso de 3x3 (y = 0) con bloques encima según {@code arriba[x][z]}. */
+    private static SuperVoxel[] pisoCon(boolean[][] arriba) {
+        int lado = 3;
+        SuperVoxel[] g = new SuperVoxel[lado * lado * lado];
+        for (int x = 0; x < lado; x++) {
+            for (int y = 0; y < lado; y++) {
+                for (int z = 0; z < lado; z++) {
+                    boolean lleno = y == 0 || (y == 1 && arriba[x][z]);
+                    g[(x * lado + y) * lado + z] = lleno ? solido() : aire();
+                }
+            }
+        }
+        return g;
+    }
+
+    private static Quad techoEn(List<Quad> quads, int x, int z) {
+        return quads.stream()
+                .filter(q -> q.eje() == Quad.Eje.Y && q.positivo() && q.y() == 0)
+                .filter(q -> x >= q.x() && x < q.x() + q.ancho() && z >= q.z() && z < q.z() + q.alto())
+                .findFirst().orElseThrow();
+    }
+
+    @Test
+    void laOclusionOscureceLasEsquinasJuntoAUnBloque() {
+        boolean[][] arriba = new boolean[3][3];
+        arriba[0][1] = true; // un bloque sobre el piso, al lado (-x) de la celda (1, 1)
+        List<Quad> quads = GreedyMesher.mallar(pisoCon(arriba), 3, null, true);
+
+        Quad junto = techoEn(quads, 1, 1);
+        assertEquals(1, junto.ancho(), "No se fusiona con caras de otra oclusión");
+        assertTrue(junto.oclusionEn(false, false) < 3 && junto.oclusionEn(false, true) < 3,
+                "Las esquinas del lado del bloque se oscurecen");
+        assertEquals(3, junto.oclusionEn(true, false), "Las del otro lado no");
+        assertEquals(3, techoEn(quads, 2, 0).oclusionEn(true, false), "Lejos del bloque no hay oclusión");
+    }
+
+    @Test
+    void unRinconCerradoQuedaEnCero() {
+        boolean[][] arriba = new boolean[3][3];
+        arriba[0][1] = true; // -x de (1, 1)
+        arriba[1][0] = true; // -z de (1, 1)
+        Quad rincon = techoEn(GreedyMesher.mallar(pisoCon(arriba), 3, null, true), 1, 1);
+        assertEquals(0, rincon.oclusionEn(false, false), "Dos costados ocluyendo: rincón cerrado");
+    }
+
+    @Test
+    void sinOclusionTodoQuedaComoAntes() {
+        boolean[][] arriba = new boolean[3][3];
+        arriba[0][1] = true;
+        SuperVoxel[] g = pisoCon(arriba);
+        List<Quad> sin = GreedyMesher.mallar(g, 3, null, false);
+        assertEquals(GreedyMesher.mallar(g, 3).size(), sin.size());
+        assertTrue(sin.stream().allMatch(q -> q.oclusion() == Quad.SIN_OCLUSION));
+        assertTrue(GreedyMesher.mallar(g, 3, null, true).size() >= sin.size(),
+                "Con oclusión se fusiona menos, nunca más");
+    }
 }
