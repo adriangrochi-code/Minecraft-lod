@@ -1,7 +1,7 @@
 package com.example.minecraftlodmod.generation;
 
 import com.example.minecraftlodmod.config.PresupuestoMemoria;
-import com.example.minecraftlodmod.config.QualityPreset;
+import com.example.minecraftlodmod.config.ParametrosCalidad;
 import com.example.minecraftlodmod.core.OctreeNode;
 import com.example.minecraftlodmod.storage.OctreeNodeCodec;
 import com.example.minecraftlodmod.storage.RegionFileStore;
@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.Function;
 
 /**
  * Pipeline de generación en modo LOCAL (sección 4): lee el {@code Level}
@@ -56,14 +57,20 @@ public final class GeneradorLocal {
     private static final byte[] MARCA = new byte[0];
     private static final long PERIODO_ESCRITURA_MS = 3000;
 
-    private final QualityPreset preset;
+    private final Function<MinecraftServer, ParametrosCalidad> resolverCalidad;
+    private volatile ParametrosCalidad calidad;
     // volatile: los lee también network/ desde los hilos del pool.
     private volatile GenerationTaskScheduler scheduler;
     private volatile RegionFileStore store;
     private int descartadosPorColaLlena;
 
-    public GeneradorLocal(QualityPreset preset) {
-        this.preset = preset;
+    /**
+     * @param resolverCalidad calidad con que genera cada servidor; se evalúa
+     *                        al arrancar, con la config de servidor ya cargada
+     *                        ({@code ConfigLod::calidadServidor})
+     */
+    public GeneradorLocal(Function<MinecraftServer, ParametrosCalidad> resolverCalidad) {
+        this.resolverCalidad = resolverCalidad;
     }
 
     /**
@@ -75,11 +82,13 @@ public final class GeneradorLocal {
         MinecraftServer servidor = evento.getServer();
         Path directorio = servidor.getWorldPath(LevelResource.ROOT).resolve("minecraftlodmod");
         long hashFuente = servidor.getWorldData().worldGenOptions().seed() * 31 + VERSION_ALGORITMO;
-        PresupuestoMemoria presupuesto = PresupuestoMemoria.para(preset);
+        ParametrosCalidad calidad = resolverCalidad.apply(servidor);
+        this.calidad = calidad;
+        PresupuestoMemoria presupuesto = PresupuestoMemoria.para(calidad.cacheRamMb(), calidad.hilosGeneracion());
         store = new RegionFileStore(directorio, hashFuente, PERIODO_ESCRITURA_MS);
-        scheduler = new GenerationTaskScheduler(preset.hilosGeneracion, presupuesto.maxTareasEnCola());
-        LOG.info("LOD: generación LOCAL activa (preset {}, {} hilos, cola {}) en {}",
-                preset, preset.hilosGeneracion, presupuesto.maxTareasEnCola(), directorio);
+        scheduler = new GenerationTaskScheduler(calidad.hilosGeneracion(), presupuesto.maxTareasEnCola());
+        LOG.info("LOD: generación LOCAL activa ({}, cola {}) en {}",
+                calidad, presupuesto.maxTareasEnCola(), directorio);
     }
 
     @SubscribeEvent
@@ -129,7 +138,7 @@ public final class GeneradorLocal {
         RegionFileStore.ClaveRegion region = claveRegion(nivel, chunk);
         long marca = claveMarca(chunk);
         RegionFileStore destino = store;
-        int colapsoDesde = preset.colapsoHomogeneoDesdeNivel;
+        int colapsoDesde = calidad.colapsoDesdeNivel();
 
         var tarea = scheduler.intentarEnviar(() -> {
             for (LectorSeccionMinecraft.Captura captura : capturas) {
@@ -152,8 +161,9 @@ public final class GeneradorLocal {
         }
     }
 
-    public QualityPreset preset() {
-        return preset;
+    /** Calidad con que genera el servidor en curso, o null si no hay servidor corriendo. */
+    public ParametrosCalidad calidad() {
+        return calidad;
     }
 
     /** Cache de disco del servidor en curso, o null si no hay servidor corriendo. */

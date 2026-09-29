@@ -36,6 +36,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   Requiere que render/ asigne el receptor (`ProtocoloLod.asignarReceptor`)
   y que el selector del cliente decida qué pedir.
 
+- **config/:** el botón "Calibrar desde este preset" (sección 11) es un
+  texto de "próximamente" hasta que exista benchmark/. `autoAjuste` y
+  `fpsObjetivo` están persistidos pero nadie los consume todavía: los usa
+  `ControlDeRendimiento` cuando render/ lo arranque.
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~
@@ -67,6 +72,21 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   - El cliente todavía no guarda lo recibido: falta un cache cliente
     (disco por servidor + `BoundedRegionCache`, que antes necesita la clave
     con región+dimensión anotada más abajo).
+- **config/, decisiones tomadas:**
+  - La persistencia es `ModConfigSpec` de NeoForge, no AutoConfig de Cloth:
+    así Cloth queda como dependencia OPCIONAL (solo la pantalla) y un
+    servidor dedicado no la necesita. Sin Cloth, la pantalla automática de
+    NeoForge edita los mismos valores (mismas claves de idioma).
+  - Los cambios de calidad se aplican al abrir el próximo mundo (el pool y
+    el cache se dimensionan al arrancar el servidor), no en caliente.
+  - NeoForge 21.1 guarda la config de SERVIDOR en `config/`, no por mundo.
+  - Servidor con preset AUTOMATICO: en singleplayer usa la calidad del
+    cliente; en dedicado, la heurística por hardware.
+- **Validación sin monitor (útil para Pista B):** el cliente corre bajo
+  `Xvfb` con render por software (Mesa llvmpipe) y se maneja con `xdotool`
+  + capturas con `xwd`. Así se verificó la pantalla de config, que guarda,
+  y que un mundo singleplayer genera con la calidad elegida. Sirve para
+  chequeos funcionales; NO para juzgar rendimiento ni calidad visual fina.
 - `build.gradle`: `neoForge.unitTest` habilitado para poder testear clases
   con tipos de Minecraft. Cuesta ~7 s extra de arranque por corrida de test.
 - Validado con `runServer` headless (seed 12345): el spawn genera

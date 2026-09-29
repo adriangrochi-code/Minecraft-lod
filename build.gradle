@@ -23,6 +23,7 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
     mavenCentral()
+    maven { url = 'https://maven.shedaniel.me/' } // Cloth Config
 }
 
 neoForge {
@@ -59,10 +60,11 @@ neoForge {
 }
 
 dependencies {
-    // Cloth Config — usado por el módulo config/ para la pantalla in-game.
-    // Verificar en el Maven de shedaniel la versión NeoForge para 1.21.1
-    // antes de descomentar (requiere agregar maven.shedaniel.me a repositories).
-    // implementation "me.shedaniel.cloth:cloth-config-neoforge:15.+"
+    // Cloth Config — pantalla in-game de config/, dependencia OPCIONAL:
+    // solo se compila contra ella; sin Cloth instalado se usa la pantalla
+    // automática de NeoForge. runtimeOnly la suma a runClient para verla.
+    compileOnly "me.shedaniel.cloth:cloth-config-neoforge:${cloth_config_version}"
+    runtimeOnly "me.shedaniel.cloth:cloth-config-neoforge:${cloth_config_version}"
 
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'

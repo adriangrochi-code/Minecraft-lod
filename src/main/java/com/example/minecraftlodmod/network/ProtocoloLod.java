@@ -1,5 +1,8 @@
 package com.example.minecraftlodmod.network;
 
+import com.example.minecraftlodmod.config.ConfigLod;
+import com.example.minecraftlodmod.config.LimitesRed;
+import com.example.minecraftlodmod.config.ParametrosCalidad;
 import com.example.minecraftlodmod.generation.GeneradorLocal;
 import com.example.minecraftlodmod.generation.GenerationTaskScheduler;
 import com.example.minecraftlodmod.storage.RegionFileStore;
@@ -7,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -43,20 +47,14 @@ public final class ProtocoloLod {
     /** Versión del protocolo; subirla si cambia el formato de los payloads. */
     public static final String VERSION = "1";
 
-    // Ritmo por jugador: suficiente para llenar el radio de un preset alto
-    // en segundos, sin dejar que un cliente use al servidor para leer disco
-    // sin freno.
-    static final double NODOS_POR_SEGUNDO = 1024;
-    static final double RAFAGA_MAXIMA = 2048;
-
     private static volatile Consumer<RespuestaNodoPayload> receptor = r -> { };
 
     private final GeneradorLocal generador;
-    private final LimitadorPedidos limitador;
+    /** Se crea con el primer pedido de cada servidor (límites de su config); solo hilo principal. */
+    private LimitadorPedidos limitador;
 
     public ProtocoloLod(GeneradorLocal generador) {
         this.generador = generador;
-        this.limitador = new LimitadorPedidos(generador.preset().radioLodChunks, NODOS_POR_SEGUNDO, RAFAGA_MAXIMA);
     }
 
     /**
@@ -80,7 +78,14 @@ public final class ProtocoloLod {
     /** Listener del bus de NeoForge: libera el estado del limitador. */
     @SubscribeEvent
     public void alDesconectarse(PlayerEvent.PlayerLoggedOutEvent evento) {
-        limitador.olvidar(evento.getEntity().getUUID());
+        if (limitador != null) {
+            limitador.olvidar(evento.getEntity().getUUID());
+        }
+    }
+
+    @SubscribeEvent
+    public void alDetenerServidor(ServerStoppingEvent evento) {
+        limitador = null;
     }
 
     /** Hilo principal del servidor (default de {@code PayloadRegistrar}). */
@@ -90,8 +95,13 @@ public final class ProtocoloLod {
         }
         RegionFileStore store = generador.store();
         GenerationTaskScheduler scheduler = generador.scheduler();
-        if (store == null || scheduler == null) {
+        ParametrosCalidad calidad = generador.calidad();
+        if (store == null || scheduler == null || calidad == null) {
             return;
+        }
+        if (limitador == null) {
+            LimitesRed limites = ConfigLod.limitesRed(calidad);
+            limitador = new LimitadorPedidos(limites.radioMaximoChunks(), limites.nodosPorSegundo(), limites.rafagaNodos());
         }
         ServerLevel nivel = jugador.serverLevel();
         int chunkX = jugador.chunkPosition().x;
