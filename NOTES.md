@@ -166,10 +166,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 - **Sección 5, resuelto:** Deflate POR NODO (`storage/CompresionNodos`), no
   por archivo: la tabla de offsets sigue permitiendo leer un nodo suelto.
   Pendientes y cache de lectura también guardan los nodos comprimidos.
-- **`RegionFileStore` reescribe la región ENTERA en cada vaciado** (lee
-  todos los nodos viejos y escribe todo de nuevo). Con regiones de decenas
-  de MB es mucha E/S. Mejor: datos append-only + índice aparte, con
-  compactación ocasional.
+- **`RegionFileStore` append-only (resuelto):** datos `r.X.Z.GEN.mlod` solo
+  crecen, índice `r.X.Z.idx` aparte (atómico), compactación a una
+  generación nueva cuando lo muerto supera a lo vivo. Los archivos del
+  formato viejo (`r.X.Z.mlod` sin generación) quedan huérfanos en mundos
+  existentes: se podrían borrar al arrancar.
 - `BoundedRegionCache` ya se usa como cache global de lectura dentro de
   `RegionFileStore`, con una clave que empaqueta dimensión + región + nodo
   (`RegionFileStore.claveCache`; regiones más allá de ±8192 no se cachean).

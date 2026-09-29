@@ -20,25 +20,29 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Cache en disco de nodos ya serializados (sección 5 del documento de
- * arquitectura), un archivo por región y dimensión:
+ * arquitectura). Por región y dimensión, dos archivos:
  *
- *   largo_header: 4 bytes | {@link RegionHeader} | área de datos
+ *   r.X.Z.idx        generación (8 bytes) | {@link RegionHeader} (tabla de offsets)
+ *   r.X.Z.GEN.mlod   nodos comprimidos uno detrás de otro, APPEND-ONLY
  *
- * Los offsets de la tabla del header son relativos al comienzo del área de
- * datos, así que leer un nodo es leer el header (cacheado en RAM) y hacer
- * UNA lectura posicional del tamaño exacto del nodo — la lectura parcial que
- * motiva la tabla de offsets.
+ * Leer un nodo = índice (cacheado en RAM) + UNA lectura posicional del
+ * tamaño exacto del nodo (la lectura parcial que motiva la tabla).
  *
- * Escritura diferida (write-behind): {@link #guardar} solo deja el nodo en
- * un mapa de pendientes; un hilo propio los baja a disco en lote cada
- * {@code periodoEscrituraMs} (la sección 5 sugiere 2-5 s). Cada región se
- * reescribe completa en un archivo temporal y se reemplaza con un move
- * atómico, así un crash a mitad de escritura nunca deja un archivo roto.
+ * Escritura diferida (write-behind): {@link #guardar} deja el nodo en un
+ * mapa de pendientes; un hilo propio los baja a disco en lote cada
+ * {@code periodoEscrituraMs}, o antes si se supera el presupuesto de RAM.
+ * Cada lote solo AGREGA sus nodos al final del archivo de datos y reescribe
+ * el índice (chico) con un move atómico: el costo es proporcional a lo
+ * nuevo, no al tamaño de la región. Un nodo reescrito deja su versión vieja
+ * como bytes muertos; cuando son más de la mitad del archivo, se compacta a
+ * una generación nueva ({@code GEN+1}), se cambia el índice y recién ahí se
+ * borra la vieja. Un crash en cualquier punto deja el índice anterior
+ * apuntando a datos válidos (a lo sumo, bytes huérfanos al final).
  *
- * Invalidación: cada archivo lleva el {@code hashFuente} con el que se
- * generó. Si no coincide con el del store (cambió el algoritmo de LOD, o la
- * seed/versión del mundo que el caller mezcle en el hash), el archivo se
- * ignora como si no existiera y se reescribe en el próximo guardado.
+ * Invalidación: el índice lleva el {@code hashFuente} con el que se generó.
+ * Si no coincide con el del store (cambió el algoritmo de LOD, o la
+ * seed/versión del mundo que el caller mezcle en el hash), la región se
+ * ignora como si no existiera y se empieza de cero en el próximo guardado.
  *
  * Thread-safe: pensado para usarse desde los hilos de {@code generation/}.
  */
@@ -56,7 +60,14 @@ public final class RegionFileStore implements AutoCloseable {
     /** Nodos que se están escribiendo ahora: siguen visibles para lectura hasta que el archivo quede en disco. */
     private final ConcurrentHashMap<ClaveRegion, Map<Long, byte[]>> enEscritura = new ConcurrentHashMap<>();
     /** Headers ya leídos y válidos; una región sin archivo (o con archivo inválido) no tiene entrada. */
-    private final ConcurrentHashMap<ClaveRegion, RegionHeader> headers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<ClaveRegion, Indice> headers = new ConcurrentHashMap<>();
+
+    /** Índice cargado de una región: la tabla y qué generación de datos describe. */
+    private record Indice(RegionHeader header, long generacion) {
+    }
+
+    /** No compactar archivos chicos: el espacio muerto no justifica reescribirlos. */
+    static final long COMPACTAR_DESDE_BYTES = 1L << 20;
     private final ConcurrentHashMap<ClaveRegion, Object> candados = new ConcurrentHashMap<>();
 
     private final ScheduledExecutorService hiloEscritura;
@@ -169,15 +180,15 @@ public final class RegionFileStore implements AutoCloseable {
             if (enMemoria != null) {
                 return enMemoria;
             }
-            RegionHeader header = headerDe(region);
-            if (header == null) {
+            Indice indice = indiceDe(region);
+            if (indice == null) {
                 return null;
             }
-            long[] ubicacion = header.buscarNodo(claveNodo);
+            long[] ubicacion = indice.header().buscarNodo(claveNodo);
             if (ubicacion == null) {
                 return null;
             }
-            byte[] deDisco = leerDeDisco(region, ubicacion[0], (int) ubicacion[1]);
+            byte[] deDisco = leerDeDisco(region, indice.generacion(), ubicacion[0], (int) ubicacion[1]);
             if (clave != SIN_CACHE) {
                 synchronized (cacheLectura) {
                     cacheLectura.poner(clave, deDisco);
@@ -211,8 +222,8 @@ public final class RegionFileStore implements AutoCloseable {
             return true;
         }
         synchronized (candado(region)) {
-            RegionHeader header = headerDe(region);
-            return header != null && header.tieneNodo(claveNodo);
+            Indice indice = indiceDe(region);
+            return indice != null && indice.header().tieneNodo(claveNodo);
         }
     }
 
@@ -226,12 +237,16 @@ public final class RegionFileStore implements AutoCloseable {
             if (descartados != null) {
                 bytesPendientes.addAndGet(-bytesDe(descartados));
             }
+            Indice indice = indiceDe(region);
             headers.remove(region);
             synchronized (cacheLectura) {
                 cacheLectura.limpiar(); // raro (cambio de bloques): más simple que filtrar por región
             }
             try {
                 Files.deleteIfExists(archivoDe(region));
+                if (indice != null) {
+                    Files.deleteIfExists(datosDe(region, indice.generacion()));
+                }
             } catch (IOException e) {
                 throw new UncheckedIOException("No se pudo borrar " + archivoDe(region), e);
             }
@@ -281,10 +296,17 @@ public final class RegionFileStore implements AutoCloseable {
         return total;
     }
 
+    /** El índice de la región: es el archivo que la hace existir. */
     Path archivoDe(ClaveRegion region) {
-        return directorioBase
-                .resolve("dim" + (region.dimensionId() & 0xFF))
-                .resolve("r." + region.regionX() + "." + region.regionZ() + ".mlod");
+        return carpetaDe(region).resolve("r." + region.regionX() + "." + region.regionZ() + ".idx");
+    }
+
+    Path datosDe(ClaveRegion region, long generacion) {
+        return carpetaDe(region).resolve("r." + region.regionX() + "." + region.regionZ() + "." + generacion + ".mlod");
+    }
+
+    private Path carpetaDe(ClaveRegion region) {
+        return directorioBase.resolve("dim" + (region.dimensionId() & 0xFF));
     }
 
     private void escribirRegion(ClaveRegion region) throws IOException {
@@ -296,42 +318,43 @@ public final class RegionFileStore implements AutoCloseable {
             bytesPendientes.addAndGet(-bytesDe(nuevos));
             enEscritura.put(region, nuevos);
             try {
-                // Fusionar con lo que ya hay en disco: una región se escribe
-                // en varios lotes a medida que se generan sus nodos.
-                Map<Long, byte[]> todos = new HashMap<>();
-                RegionHeader existente = headerDe(region);
-                if (existente != null) {
-                    for (long clave : existente.claves()) {
-                        long[] ubicacion = existente.buscarNodo(clave);
-                        todos.put(clave, leerDeDisco(region, ubicacion[0], (int) ubicacion[1]));
-                    }
-                }
-                todos.putAll(nuevos);
-
+                Indice existente = indiceDe(region);
+                long generacion = existente != null ? existente.generacion() : 0;
                 RegionHeader header = new RegionHeader(
                         region.regionX(), region.regionZ(), region.dimensionId(), hashFuente);
-                long offset = 0;
-                for (Map.Entry<Long, byte[]> nodo : todos.entrySet()) {
-                    header.registrarNodo(nodo.getKey(), offset, nodo.getValue().length);
-                    offset += nodo.getValue().length;
-                }
-                byte[] bytesHeader = header.serializarHeader();
-
-                Path destino = archivoDe(region);
-                Files.createDirectories(destino.getParent());
-                Path temporal = destino.resolveSibling(destino.getFileName() + ".tmp");
-                try (FileChannel canal = FileChannel.open(temporal, StandardOpenOption.CREATE,
-                        StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
-                    ByteBuffer largo = ByteBuffer.allocate(4).putInt(bytesHeader.length).flip();
-                    escribirCompleto(canal, largo);
-                    escribirCompleto(canal, ByteBuffer.wrap(bytesHeader));
-                    // Mismo orden de iteración que al registrar los offsets.
-                    for (Map.Entry<Long, byte[]> nodo : todos.entrySet()) {
-                        escribirCompleto(canal, ByteBuffer.wrap(nodo.getValue()));
+                if (existente != null) {
+                    for (long clave : existente.header().claves()) {
+                        long[] ubicacion = existente.header().buscarNodo(clave);
+                        header.registrarNodo(clave, ubicacion[0], ubicacion[1]);
                     }
                 }
-                moverAtomico(temporal, destino);
-                headers.put(region, header);
+                Path datos = datosDe(region, generacion);
+                Files.createDirectories(datos.getParent());
+                long tamanoArchivo;
+                // Sin índice válido (región nueva, o de otro algoritmo): empezar el archivo de cero.
+                StandardOpenOption modo = existente != null ? StandardOpenOption.APPEND : StandardOpenOption.TRUNCATE_EXISTING;
+                try (FileChannel canal = FileChannel.open(datos, StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE, modo)) {
+                    long offset = canal.size();
+                    for (Map.Entry<Long, byte[]> nodo : nuevos.entrySet()) {
+                        header.registrarNodo(nodo.getKey(), offset, nodo.getValue().length);
+                        escribirCompleto(canal, ByteBuffer.wrap(nodo.getValue()));
+                        offset += nodo.getValue().length;
+                    }
+                    // Los datos tienen que estar en disco ANTES que el índice que los referencia.
+                    canal.force(false);
+                    tamanoArchivo = offset;
+                }
+                escribirIndice(region, header, generacion);
+                headers.put(region, new Indice(header, generacion));
+
+                long vivos = 0;
+                for (long clave : header.claves()) {
+                    vivos += header.buscarNodo(clave)[1];
+                }
+                if (tamanoArchivo >= COMPACTAR_DESDE_BYTES && vivos * 2 < tamanoArchivo) {
+                    compactar(region, header, generacion);
+                }
             } catch (IOException | RuntimeException e) {
                 // Devolver los nodos a pendientes para reintentar, sin pisar
                 // versiones más nuevas que hayan llegado mientras tanto.
@@ -356,6 +379,45 @@ public final class RegionFileStore implements AutoCloseable {
         }
     }
 
+    /**
+     * Reescribe solo los nodos vivos en la generación siguiente, cambia el
+     * índice (atómico) y después borra la generación vieja. Llamar con el
+     * candado de la región tomado.
+     */
+    private void compactar(ClaveRegion region, RegionHeader actual, long generacion) throws IOException {
+        long nueva = generacion + 1;
+        RegionHeader compacto = new RegionHeader(region.regionX(), region.regionZ(), region.dimensionId(), hashFuente);
+        Path destino = datosDe(region, nueva);
+        try (FileChannel canal = FileChannel.open(destino, StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            long offset = 0;
+            for (long clave : actual.claves()) {
+                long[] ubicacion = actual.buscarNodo(clave);
+                byte[] datos = leerDeDisco(region, generacion, ubicacion[0], (int) ubicacion[1]);
+                compacto.registrarNodo(clave, offset, datos.length);
+                escribirCompleto(canal, ByteBuffer.wrap(datos));
+                offset += datos.length;
+            }
+            canal.force(false);
+        }
+        escribirIndice(region, compacto, nueva);
+        headers.put(region, new Indice(compacto, nueva));
+        Files.deleteIfExists(datosDe(region, generacion));
+    }
+
+    private void escribirIndice(ClaveRegion region, RegionHeader header, long generacion) throws IOException {
+        byte[] tabla = header.serializarHeader();
+        Path indice = archivoDe(region);
+        Path temporal = indice.resolveSibling(indice.getFileName() + ".tmp");
+        try (FileChannel canal = FileChannel.open(temporal, StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            escribirCompleto(canal, ByteBuffer.allocate(8).putLong(generacion).flip());
+            escribirCompleto(canal, ByteBuffer.wrap(tabla));
+            canal.force(false);
+        }
+        moverAtomico(temporal, indice);
+    }
+
     private byte[] buscarEnMemoria(ClaveRegion region, long claveNodo) {
         Map<Long, byte[]> pendientesRegion = pendientes.get(region);
         if (pendientesRegion != null) {
@@ -368,9 +430,9 @@ public final class RegionFileStore implements AutoCloseable {
         return escribiendose == null ? null : escribiendose.get(claveNodo);
     }
 
-    /** Llamar con el candado de la región tomado. null si no hay archivo o está invalidado. */
-    private RegionHeader headerDe(ClaveRegion region) {
-        RegionHeader enCache = headers.get(region);
+    /** Llamar con el candado de la región tomado. null si no hay índice, o es de otra fuente o está roto. */
+    private Indice indiceDe(ClaveRegion region) {
+        Indice enCache = headers.get(region);
         if (enCache != null) {
             return enCache;
         }
@@ -378,34 +440,33 @@ public final class RegionFileStore implements AutoCloseable {
         if (!Files.exists(archivo)) {
             return null;
         }
-        try (FileChannel canal = FileChannel.open(archivo, StandardOpenOption.READ)) {
-            ByteBuffer largo = ByteBuffer.allocate(4);
-            leerCompleto(canal, largo, 0);
-            byte[] bytesHeader = new byte[largo.flip().getInt()];
-            leerCompleto(canal, ByteBuffer.wrap(bytesHeader), 4);
-            RegionHeader header = RegionHeader.deserializarHeader(bytesHeader);
-            if (header.hashFuente != hashFuente) {
-                return null; // generado con otro algoritmo/fuente: se ignora y se regenera
+        try {
+            byte[] bytes = Files.readAllBytes(archivo);
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            long generacion = buffer.getLong();
+            byte[] tabla = new byte[bytes.length - 8];
+            buffer.get(tabla);
+            RegionHeader header = RegionHeader.deserializarHeader(tabla);
+            if (header.hashFuente != hashFuente || !Files.exists(datosDe(region, generacion))) {
+                return null; // generado con otro algoritmo/fuente, o datos perdidos: se regenera
             }
-            headers.put(region, header);
-            return header;
+            Indice indice = new Indice(header, generacion);
+            headers.put(region, indice);
+            return indice;
         } catch (IOException | RuntimeException e) {
-            // Archivo corrupto o de otra versión de formato: se trata como ausente
-            // y se sobreescribe en el próximo guardado, en vez de romper la carga.
+            // Índice corrupto o de otra versión de formato: se trata como ausente
+            // y se reescribe en el próximo guardado, en vez de romper la carga.
             return null;
         }
     }
 
-    private byte[] leerDeDisco(ClaveRegion region, long offsetEnDatos, int tamano) {
-        try (FileChannel canal = FileChannel.open(archivoDe(region), StandardOpenOption.READ)) {
-            ByteBuffer largo = ByteBuffer.allocate(4);
-            leerCompleto(canal, largo, 0);
-            long inicioDatos = 4L + largo.flip().getInt();
+    private byte[] leerDeDisco(ClaveRegion region, long generacion, long offset, int tamano) {
+        try (FileChannel canal = FileChannel.open(datosDe(region, generacion), StandardOpenOption.READ)) {
             byte[] datos = new byte[tamano];
-            leerCompleto(canal, ByteBuffer.wrap(datos), inicioDatos + offsetEnDatos);
+            leerCompleto(canal, ByteBuffer.wrap(datos), offset);
             return datos;
         } catch (IOException e) {
-            throw new UncheckedIOException("No se pudo leer " + archivoDe(region), e);
+            throw new UncheckedIOException("No se pudo leer " + datosDe(region, generacion), e);
         }
     }
 
