@@ -21,16 +21,10 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Errores recurrentes / bloqueos
 
-- **Sesión cloud (2026-09-29): `./gradlew build` no puede bajar NeoForge.**
-  El proxy de red del entorno cloud devuelve 403 para `maven.neoforged.net`
-  (también bloquea `libraries.minecraft.net` y `piston-meta.mojang.com`).
-  La configuración de Gradle en sí evalúa bien: falla recién en
-  `createMinecraftArtifacts` al resolver `neoform-runtime`. Solución: permitir
-  esos dominios en la política de red del entorno, o compilar en local.
-  Mientras tanto, la lógica pura se validó compilando con `javac` + JUnit
-  standalone: los 57 tests pasan sin cambios.
-- `neo_version=21.1.77` en `gradle.properties` es una versión conocida de
-  1.21.1 pero no se pudo confirmar cuál es la última; subirla al compilar.
+- ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~
+  **Resuelto (2026-09-29):** con la red ampliada, `./gradlew build` completo
+  (incluye `test`) pasa contra NeoForge 21.1.252 (última 21.1.x publicada en
+  maven.neoforged.net a esa fecha).
 
 ## Mejoras notadas, no aplicadas todavía
 
