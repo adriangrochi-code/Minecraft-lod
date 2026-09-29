@@ -49,6 +49,13 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+
+    // Minecraft/NeoForge en el classpath de test: permite testear código
+    // que usa tipos del juego (payloads de network/, FriendlyByteBuf).
+    unitTest {
+        enable()
+        testedMod = mods."${mod_id}"
+    }
 }
 
 dependencies {

@@ -1,0 +1,134 @@
+package com.example.minecraftlodmod.network;
+
+import com.example.minecraftlodmod.generation.GeneradorLocal;
+import com.example.minecraftlodmod.generation.GenerationTaskScheduler;
+import com.example.minecraftlodmod.storage.RegionFileStore;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.neoforged.neoforge.network.registration.HandlerThread;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
+
+/**
+ * Protocolo cliente-servidor (hito 7, sección 10 del documento de arquitectura).
+ *
+ * 1. {@link PedidoNodosPayload} (cliente → servidor): lote de nodos que
+ *    pide el selector de LOD del cliente.
+ * 2. {@link RespuestaNodoPayload} (servidor → cliente): un nodo en el
+ *    formato de {@code OctreeNodeCodec}, leído del cache de disco que llena
+ *    {@link GeneradorLocal} (modo LOCAL del servidor).
+ * 3. Servidor: valida radio/altura/ritmo con {@link LimitadorPedidos} en el
+ *    hilo principal y lee disco en el pool de generación, nunca en el hilo
+ *    principal ni en el de red.
+ * 4. Cliente: detecta si el servidor tiene el companion con
+ *    {@link ClienteLod#servidorTieneCompanion()} — el canal se negocia al
+ *    conectar, sin sondeo ni timeout. Los payloads son opcionales
+ *    ({@code optional()}): clientes sin el mod entran a un servidor con el
+ *    mod y viceversa; sin companion, el cliente queda en modo de
+ *    compatibilidad (solo LOD de zonas visitadas localmente).
+ *
+ * Integración pendiente (Pista B, con render/): quién pide nodos (selector
+ * del cliente) y quién consume las respuestas ({@link #asignarReceptor}).
+ */
+public final class ProtocoloLod {
+
+    /** Versión del protocolo; subirla si cambia el formato de los payloads. */
+    public static final String VERSION = "1";
+
+    // Ritmo por jugador: suficiente para llenar el radio de un preset alto
+    // en segundos, sin dejar que un cliente use al servidor para leer disco
+    // sin freno.
+    static final double NODOS_POR_SEGUNDO = 1024;
+    static final double RAFAGA_MAXIMA = 2048;
+
+    private static volatile Consumer<RespuestaNodoPayload> receptor = r -> { };
+
+    private final GeneradorLocal generador;
+    private final LimitadorPedidos limitador;
+
+    public ProtocoloLod(GeneradorLocal generador) {
+        this.generador = generador;
+        this.limitador = new LimitadorPedidos(generador.preset().radioLodChunks, NODOS_POR_SEGUNDO, RAFAGA_MAXIMA);
+    }
+
+    /**
+     * Quién recibe las respuestas en el cliente. Se invoca en el HILO DE RED
+     * (decodificar y cachear un nodo no necesita el hilo principal), así que
+     * el receptor tiene que ser thread-safe.
+     */
+    public static void asignarReceptor(Consumer<RespuestaNodoPayload> nuevoReceptor) {
+        receptor = nuevoReceptor;
+    }
+
+    /** Listener del bus del mod. */
+    public void registrar(RegisterPayloadHandlersEvent evento) {
+        PayloadRegistrar registrar = evento.registrar(VERSION).optional();
+        registrar.playToServer(PedidoNodosPayload.TYPE, PedidoNodosPayload.STREAM_CODEC, this::alRecibirPedido);
+        registrar.executesOn(HandlerThread.NETWORK)
+                .playToClient(RespuestaNodoPayload.TYPE, RespuestaNodoPayload.STREAM_CODEC,
+                        (respuesta, contexto) -> receptor.accept(respuesta));
+    }
+
+    /** Listener del bus de NeoForge: libera el estado del limitador. */
+    @SubscribeEvent
+    public void alDesconectarse(PlayerEvent.PlayerLoggedOutEvent evento) {
+        limitador.olvidar(evento.getEntity().getUUID());
+    }
+
+    /** Hilo principal del servidor (default de {@code PayloadRegistrar}). */
+    private void alRecibirPedido(PedidoNodosPayload pedido, IPayloadContext contexto) {
+        if (!(contexto.player() instanceof ServerPlayer jugador)) {
+            return;
+        }
+        RegionFileStore store = generador.store();
+        GenerationTaskScheduler scheduler = generador.scheduler();
+        if (store == null || scheduler == null) {
+            return;
+        }
+        ServerLevel nivel = jugador.serverLevel();
+        int chunkX = jugador.chunkPosition().x;
+        int chunkZ = jugador.chunkPosition().z;
+
+        List<NodoId> validos = new ArrayList<>(pedido.nodos().size());
+        for (NodoId nodo : pedido.nodos()) {
+            // La Y fuera del rango real de la dimensión se descarta: la clave
+            // de nodo usa 12 bits de Y y un valor absurdo podría aliasear otro nodo.
+            if (limitador.dentroDelRadio(nodo, chunkX, chunkZ)
+                    && nodo.seccionY() >= nivel.getMinSection() && nodo.seccionY() < nivel.getMaxSection()) {
+                validos.add(nodo);
+            }
+        }
+        if (validos.isEmpty() || !limitador.consumir(jugador.getUUID(), validos.size(), System.nanoTime())) {
+            return;
+        }
+
+        byte dimensionId = GeneradorLocal.idDimension(nivel.dimension());
+        // Si la cola de generación está llena, el pedido se descarta: el
+        // cliente vuelve a pedir lo que no le llegó.
+        scheduler.intentarEnviar(() -> {
+            for (NodoId nodo : validos) {
+                PacketDistributor.sendToPlayer(jugador, responder(store, dimensionId, nodo));
+            }
+            return null;
+        });
+    }
+
+    static RespuestaNodoPayload responder(RegionFileStore store, byte dimensionId, NodoId nodo) {
+        RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimensionId, nodo.seccionX(), nodo.seccionZ());
+        byte[] datos = store.leer(region, nodo.claveNodo());
+        if (datos != null) {
+            return new RespuestaNodoPayload(dimensionId, nodo, RespuestaNodoPayload.Estado.EXISTE, datos);
+        }
+        boolean chunkGenerado = store.contiene(region, GeneradorLocal.claveMarca(nodo.seccionX(), nodo.seccionZ()));
+        return new RespuestaNodoPayload(dimensionId, nodo,
+                chunkGenerado ? RespuestaNodoPayload.Estado.VACIO : RespuestaNodoPayload.Estado.NO_GENERADO, null);
+    }
+}

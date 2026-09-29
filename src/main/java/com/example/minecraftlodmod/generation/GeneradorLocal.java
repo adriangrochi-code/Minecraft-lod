@@ -57,8 +57,9 @@ public final class GeneradorLocal {
     private static final long PERIODO_ESCRITURA_MS = 3000;
 
     private final QualityPreset preset;
-    private GenerationTaskScheduler scheduler;
-    private RegionFileStore store;
+    // volatile: los lee también network/ desde los hilos del pool.
+    private volatile GenerationTaskScheduler scheduler;
+    private volatile RegionFileStore store;
     private int descartadosPorColaLlena;
 
     public GeneradorLocal(QualityPreset preset) {
@@ -151,13 +152,36 @@ public final class GeneradorLocal {
         }
     }
 
+    public QualityPreset preset() {
+        return preset;
+    }
+
+    /** Cache de disco del servidor en curso, o null si no hay servidor corriendo. */
+    public RegionFileStore store() {
+        return store;
+    }
+
+    /** Pool de generación del servidor en curso (lo comparte network/ para leer disco), o null. */
+    public GenerationTaskScheduler scheduler() {
+        return scheduler;
+    }
+
     private static RegionFileStore.ClaveRegion claveRegion(ServerLevel nivel, ChunkAccess chunk) {
-        return new RegionFileStore.ClaveRegion(idDimension(nivel.dimension()),
-                SectionExtractor.regionDe(chunk.getPos().x), SectionExtractor.regionDe(chunk.getPos().z));
+        return claveRegion(idDimension(nivel.dimension()), chunk.getPos().x, chunk.getPos().z);
+    }
+
+    public static RegionFileStore.ClaveRegion claveRegion(byte dimensionId, int seccionX, int seccionZ) {
+        return new RegionFileStore.ClaveRegion(dimensionId,
+                SectionExtractor.regionDe(seccionX), SectionExtractor.regionDe(seccionZ));
     }
 
     private static long claveMarca(ChunkAccess chunk) {
-        return SectionExtractor.claveNodo(NIVEL_MARCA_CHUNK, chunk.getPos().x, 0, chunk.getPos().z);
+        return claveMarca(chunk.getPos().x, chunk.getPos().z);
+    }
+
+    /** Clave de la marca "este chunk ya se generó": distingue sección vacía de chunk nunca cargado. */
+    public static long claveMarca(int chunkX, int chunkZ) {
+        return SectionExtractor.claveNodo(NIVEL_MARCA_CHUNK, chunkX, 0, chunkZ);
     }
 
     /**

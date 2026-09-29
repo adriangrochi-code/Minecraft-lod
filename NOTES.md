@@ -27,6 +27,15 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   mundo desde el pool). Bloques cuyo color de mapa depende de la posición
   caen a su color base — revisar visualmente con mods de worldgen.
 
+- **network/: prueba real con dos instancias.** Protocolo registrado y
+  testeado (codecs, limitador, lectura del store), y el servidor dedicado
+  arranca con él. Falta: cliente conectado a servidor dedicado pidiendo
+  nodos (`ClienteLod.pedir`), cliente con mod contra servidor sin mod (debe
+  quedar en compatibilidad, `servidorTieneCompanion() == false`) y cliente
+  vanilla contra servidor con mod (debe poder entrar: payloads `optional()`).
+  Requiere que render/ asigne el receptor (`ProtocoloLod.asignarReceptor`)
+  y que el selector del cliente decida qué pedir.
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~
@@ -48,6 +57,18 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
     mods pueden caer en el mismo id (1/253) y pisarse nodos. Solución real:
     un mapa id↔dimensión persistido junto al cache.
   - Chunks descartados por cola llena se reintentan solo al recargarse.
+- **network/, decisiones a revisar:**
+  - Ritmo por jugador fijo (1024 nodos/s, ráfaga 2048) y radio servido =
+    `radioLodChunks` del preset del SERVIDOR. Deberían salir de la config
+    del servidor cuando exista `config/`.
+  - Pedidos de chunks nunca generados responden `NO_GENERADO`; el servidor
+    no los genera a pedido (sería forzar generación vanilla de terreno
+    lejano, costo que la sección 17 reserva para "rough generation").
+  - El cliente todavía no guarda lo recibido: falta un cache cliente
+    (disco por servidor + `BoundedRegionCache`, que antes necesita la clave
+    con región+dimensión anotada más abajo).
+- `build.gradle`: `neoForge.unitTest` habilitado para poder testear clases
+  con tipos de Minecraft. Cuesta ~7 s extra de arranque por corrida de test.
 - Validado con `runServer` headless (seed 12345): el spawn genera
   `dim0/r.0.0.mlod` y `r.0.-1.mlod` y los nodos decodifican a un heightmap
   coherente.
