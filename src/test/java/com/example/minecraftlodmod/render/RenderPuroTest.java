@@ -123,19 +123,19 @@ class RenderPuroTest {
         GeometriaLod g = new GeometriaLod();
         // Arriba: textura teñida (usa el color del vóxel). Costados: tierra sin tinte.
         g.usarTexturas((estado, eje, positivo) -> eje == com.example.minecraftlodmod.generation.Quad.Eje.Y && positivo
-                ? new GeometriaLod.Cara(0.5f, 0.25f, 0.01f, 0.02f, 0x7F7F7F, true)
-                : new GeometriaLod.Cara(0.1f, 0.1f, 0.01f, 0.01f, 0x86603F, false));
+                ? new GeometriaLod.Cara(7, 0x7F7F7F, true)
+                : new GeometriaLod.Cara(8, 0x86603F, false));
         g.agregarSeccion(new SuperVoxel[]{pasto}, 1, 0, 0, 0, 1);
 
         boolean vioArriba = false, vioCostado = false;
         for (int i = 0; i < g.vertices(); i++) {
             assertTrue(g.texturizado(i));
-            if (g.normalY(i) > 0) {
+            if (g.cara(i) == 3) {
                 vioArriba = true;
-                assertEquals(0.5f, g.u0(i));
-                assertEquals(0x7F7F7F, g.promedioTextura(i));
+                assertEquals(7, g.sprite(i));
                 assertEquals(160, (g.color(i) >> 8) & 0xFF, "Arriba manda el color del vóxel (con tinte)");
-            } else if (g.normalX(i) != 0) {
+            } else if (g.cara(i) <= 1) {
+                assertEquals(8, g.sprite(i));
                 vioCostado = true;
                 assertEquals(0x86 * 6 / 10, (g.color(i) >> 16) & 0xFF, 1,
                         "El costado usa el promedio de su propia textura, con sombra 0.6");
@@ -145,9 +145,52 @@ class RenderPuroTest {
     }
 
     @Test
+    void elFormatoCompactoOcupaDoceBytesPorVerticeYConservaTodo() {
+        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) 0,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(15);
+        GeometriaLod g = new GeometriaLod();
+        g.usarTexturas((estado, eje, positivo) -> new GeometriaLod.Cara(40000, 0x646E78, true));
+        g.agregarSeccion(new SuperVoxel[]{piedra}, 1, 3000, -64, 48, 16);
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(g.vertices() * GeometriaLod.BYTES_COMPACTO);
+        g.escribirCompacto(b);
+        assertEquals(b.capacity(), b.position(), "12 bytes por vértice, ni uno más");
+        b.flip().order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < g.vertices(); i++) {
+            assertEquals((int) g.x(i), b.getShort());
+            assertEquals((int) g.y(i), b.getShort());
+            assertEquals((int) g.z(i), b.getShort());
+            assertEquals(40000, b.getShort() & 0xFFFF, "El sprite se lee sin signo");
+            assertEquals((g.color(i) >> 16) & 0xFF, b.get() & 0xFF);
+            assertEquals((g.color(i) >> 8) & 0xFF, b.get() & 0xFF);
+            assertEquals(g.color(i) & 0xFF, b.get() & 0xFF);
+            assertEquals(g.cara(i), b.get());
+        }
+    }
+
+    @Test
+    void unaPosicionQueNoEntraEnUnShortNoSeCorrompeEnSilencio() {
+        GeometriaLod g = new GeometriaLod();
+        g.agregarSeccion(new SuperVoxel[]{solido(15)}, 1, 40000, 0, 0, 1);
+        assertThrows(IllegalStateException.class,
+                () -> g.escribirCompacto(java.nio.ByteBuffer.allocate(g.vertices() * GeometriaLod.BYTES_COMPACTO)));
+    }
+
+    @Test
+    void losTexelesDelSpriteEmpaquetanRectanguloYPromedio() {
+        int[] t = GeometriaLod.texelesSprite(1024, 3, 16, 32, 0x112233);
+        assertEquals(1024, t[0] & 0xFFFF);
+        assertEquals(3, t[0] >>> 16);
+        assertEquals(16, t[1] & 0xFFFF);
+        assertEquals(32, t[1] >>> 16);
+        assertEquals(0x11, t[2] & 0xFF, "R en el byte bajo, como NativeImage");
+        assertEquals(0x22, (t[2] >> 8) & 0xFF);
+        assertEquals(0x33, (t[2] >> 16) & 0xFF);
+    }
+
+    @Test
     void sinEstadoOSinFuenteQuedaConColorPlano() {
         GeometriaLod g = new GeometriaLod();
-        g.usarTexturas((estado, eje, positivo) -> new GeometriaLod.Cara(0, 0, 0.01f, 0.01f, 0, true));
+        g.usarTexturas((estado, eje, positivo) -> new GeometriaLod.Cara(1, 0, true));
         g.agregarSeccion(new SuperVoxel[]{solido(15)}, 1, 0, 0, 0, 1); // solido() no tiene estado
         for (int i = 0; i < g.vertices(); i++) {
             assertFalse(g.texturizado(i));

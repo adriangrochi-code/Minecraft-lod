@@ -15,18 +15,18 @@ in vec4 vertexColor;
 in vec2 uvOrigen;
 in vec2 uvTamano;
 in vec3 promedio;
-in vec3 normal;
+flat in int cara;
 
 out vec4 fragColor;
 
 void main() {
     vec3 color = vertexColor.rgb;
     if (uvTamano.x > 0.0) {
-        vec3 n = abs(normal);
+        int eje = cara / 2; // 0 X, 1 Y, 2 Z
         vec2 repeticion;
-        if (n.y > 0.5) {
+        if (eje == 1) {
             repeticion = posLocal.xz;
-        } else if (n.x > 0.5) {
+        } else if (eje == 0) {
             repeticion = vec2(posLocal.z, -posLocal.y);
         } else {
             repeticion = vec2(posLocal.x, -posLocal.y);

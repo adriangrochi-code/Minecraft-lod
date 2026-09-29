@@ -205,3 +205,21 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   actual del MDK). `neoforge.mods.toml` se movió a `src/main/templates/` y se
   expande con `generateModMetadata`: antes se empaquetaba con los `${...}`
   literales y el mod no habría cargado.
+
+- **Sección 25 (Voxy/FP2), puntos 1 y 2 aplicados:**
+  - Vértice compacto de 12 bytes (antes 36): `GeometriaLod.escribirCompacto`
+    + elemento propio `RenderLod.POSICION_SPRITE` (4 shorts, uso UV entero)
+    + tabla de sprites `PaletaTexturas.TABLA_SPRITES` (textura dinámica,
+    3 texeles por sprite) que el shader lee con `texelFetch`. Límites:
+    posiciones enteras dentro de ±32767 bloques de la celda (lanza si no),
+    y hasta 65535 sprites distintos (los que sobren van con color plano).
+  - El cálculo de VRAM de las estadísticas ya no cuenta índices por malla:
+    los índices de QUADS son un buffer secuencial compartido de Minecraft.
+  - Reducción con bloque representativo: el color se promedia solo entre
+    los vóxeles del estado elegido. `VERSION_ALGORITMO` subió a 9.
+  - **No aplicado todavía del punto 2:** resolver el color en el cliente y
+    guardar por paleta. El vóxel no guarda el bioma, así que el cliente no
+    puede recalcular el tinte; haría falta agregar el bioma (cambia el
+    formato de 8 bytes de la sección 5), a decidir junto con el cache
+    cliente de multiplayer.
+  - Puntos 3-8 de la sección 25 siguen pendientes.

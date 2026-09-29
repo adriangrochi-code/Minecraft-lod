@@ -110,4 +110,31 @@ class HierarchicalReducerTest {
         assertEquals(160, r.g() & 0xFF, "El color es el de la superficie");
         assertEquals(15, r.luzHorneada(), "Y la luz, la de la superficie");
     }
+
+    @Test
+    void elColorNoMezclaBloquesDistintosSoloTintesDelMismoBloque() {
+        // Superficie: 3 columnas de pasto (dos tintes de bioma) y 1 de piedra.
+        SuperVoxel pastoA = new SuperVoxel((byte) 80, (byte) 160, (byte) 40, (byte) 0,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 9).conLuzHorneada(15);
+        SuperVoxel pastoB = new SuperVoxel((byte) 100, (byte) 180, (byte) 60, (byte) 0,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 9).conLuzHorneada(15);
+        SuperVoxel piedra = new SuperVoxel((byte) 125, (byte) 125, (byte) 125, (byte) 0,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(15);
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        for (int x = 0; x < 2; x++) {
+            for (int y = 0; y < 2; y++) {
+                for (int z = 0; z < 2; z++) {
+                    SuperVoxel arriba = x == 1 && z == 1 ? piedra : (x == 0 ? pastoA : pastoB);
+                    entrada[(x * 2 + y) * 2 + z] = arriba;
+                }
+            }
+        }
+
+        SuperVoxel r = HierarchicalReducer.reducir(entrada, 2)[0];
+
+        assertEquals(9, r.idEstado());
+        // Pasto: A, A, B → promedio (80+80+100)/3 = 86; con la piedra hubiera dado 96.
+        assertEquals(86, r.r() & 0xFF, "La piedra no ensucia el color del pasto");
+        assertEquals((160 + 160 + 180) / 3, r.g() & 0xFF, "El degradé de tinte sí se promedia");
+    }
 }

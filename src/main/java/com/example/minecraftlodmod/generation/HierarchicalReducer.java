@@ -19,7 +19,12 @@ import com.example.minecraftlodmod.core.SuperVoxel;
  *    desde arriba (por columna, el vóxel visible más alto): el terreno
  *    lejano se ve desde arriba, y una ladera de pasto tiene que seguir
  *    siendo pasto, no la tierra o piedra que hay debajo. El estado es el
- *    más frecuente de esa superficie (define la textura en el render).
+ *    más frecuente de esa superficie (define la textura en el render), y
+ *    el color se promedia SOLO entre los vóxeles de ese estado: bloque
+ *    representativo al estilo del "mipper" de Voxy (idea, no código —
+ *    sección 25). Mezclar pasto con piedra daba un color barroso que no
+ *    es de ningún bloque y no casa con la textura elegida; promediar
+ *    dentro del mismo estado conserva el degradé del tinte de bioma.
  *  - el aire nunca aporta color (antes entraba como negro y oscurecía todo
  *    nivel reducido, y la luz se perdía — corregido con el primer render).
  */
@@ -80,22 +85,27 @@ public final class HierarchicalReducer {
         if (visibles * 2 < 8) {
             return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
         }
-        int sumaR = 0, sumaG = 0, sumaB = 0, sumaLuz = 0;
+        short estado = estadoMasFrecuente(superficie, enSuperficie);
+        int sumaR = 0, sumaG = 0, sumaB = 0, sumaLuz = 0, delEstado = 0;
         for (int i = 0; i < enSuperficie; i++) {
             SuperVoxel v = superficie[i];
+            sumaLuz += v.luzHorneada();
+            if (v.estado() != estado) {
+                continue;
+            }
             sumaR += v.r() & 0xFF;
             sumaG += v.g() & 0xFF;
             sumaB += v.b() & 0xFF;
-            sumaLuz += v.luzHorneada();
+            delEstado++;
         }
         return new SuperVoxel(
-                (byte) (sumaR / enSuperficie),
-                (byte) (sumaG / enSuperficie),
-                (byte) (sumaB / enSuperficie),
+                (byte) (sumaR / delEstado),
+                (byte) (sumaG / delEstado),
+                (byte) (sumaB / delEstado),
                 (byte) (sumaAltura / visibles),
                 materialMasVotado(votosMaterial),
                 (byte) 0,
-                estadoMasFrecuente(superficie, enSuperficie)
+                estado
         ).conLuzHorneada(Math.round(sumaLuz / (float) enSuperficie));
     }
 

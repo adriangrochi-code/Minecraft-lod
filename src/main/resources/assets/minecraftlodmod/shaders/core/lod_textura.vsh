@@ -1,17 +1,17 @@
 #version 150
 
-// Terreno LOD texturizado (render/RenderLod). Por vértice:
-//   Color = color plano de la cara (tinte de bioma, sombra de cara y luz horneada ya aplicados)
-//   UV0   = esquina de la textura en el atlas de bloques
-//   UV1   = color promedio de esa textura, empaquetado (R<<8|G, B)
-//   UV2   = tamaño de la textura en el atlas × 32768 (0 = cara sin textura)
-in vec3 Position;
+// Terreno LOD texturizado, formato compacto de 12 bytes (render/RenderLod,
+// GeometriaLod#escribirCompacto). Por vértice:
+//   PosSprite = x, y, z en bloques relativos a la celda + índice de sprite (0 = sin textura)
+//   Color     = color plano de la cara (tinte, sombra de cara y luz horneada ya aplicados);
+//               el alfa trae la cara: 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z
+// El rectángulo del sprite en el atlas y su color promedio salen de la tabla
+// (Sampler1, PaletaTexturas.TABLA_SPRITES): 3 texeles RGBA8 por sprite.
+in ivec4 PosSprite;
 in vec4 Color;
-in vec2 UV0;
-in ivec2 UV1;
-in ivec2 UV2;
-in vec3 Normal;
 
+uniform sampler2D Sampler0;
+uniform sampler2D Sampler1;
 uniform mat4 ModelViewMat;
 uniform mat4 ProjMat;
 
@@ -20,16 +20,32 @@ out vec4 vertexColor;
 out vec2 uvOrigen;
 out vec2 uvTamano;
 out vec3 promedio;
-out vec3 normal;
+flat out int cara;
+
+const int SPRITES_POR_FILA = 256;
+
+ivec4 texel(int columna, int fila) {
+    return ivec4(texelFetch(Sampler1, ivec2(columna, fila), 0) * 255.0 + 0.5);
+}
 
 void main() {
-    gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
-    posLocal = Position;
-    vertexColor = Color;
-    uvOrigen = UV0;
-    uvTamano = vec2(UV2) / 32768.0;
-    int rg = UV1.x & 0xFFFF;
-    int b = UV1.y & 0xFFFF;
-    promedio = vec3(float(rg >> 8), float(rg & 0xFF), float(b & 0xFF)) / 255.0;
-    normal = Normal;
+    vec3 pos = vec3(PosSprite.xyz);
+    gl_Position = ProjMat * ModelViewMat * vec4(pos, 1.0);
+    posLocal = pos;
+    vertexColor = vec4(Color.rgb, 1.0);
+    cara = int(Color.a * 255.0 + 0.5);
+    int sprite = PosSprite.w & 0xFFFF;
+    uvOrigen = vec2(0.0);
+    uvTamano = vec2(0.0);
+    promedio = vec3(1.0);
+    if (sprite != 0) {
+        int columna = (sprite % SPRITES_POR_FILA) * 3;
+        int fila = sprite / SPRITES_POR_FILA;
+        ivec4 origen = texel(columna, fila);
+        ivec4 tamano = texel(columna + 1, fila);
+        vec2 atlas = vec2(textureSize(Sampler0, 0));
+        uvOrigen = vec2(origen.r | (origen.g << 8), origen.b | (origen.a << 8)) / atlas;
+        uvTamano = vec2(tamano.r | (tamano.g << 8), tamano.b | (tamano.a << 8)) / atlas;
+        promedio = texelFetch(Sampler1, ivec2(columna + 2, fila), 0).rgb;
+    }
 }

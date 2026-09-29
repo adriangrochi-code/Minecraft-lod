@@ -476,14 +476,17 @@ Medición de partida (preset Medio, 1080p, antes del descarte de cuevas):
 
 Ideas adoptadas, en orden de implementación sugerido:
 
-1. **Formato de vértice compacto (idea de Voxy).** Voxy guarda un quad en
+1. **Formato de vértice compacto (idea de Voxy) — implementado: 12 B/vértice
+   (`GeometriaLod.escribirCompacto`, tabla de sprites en `PaletaTexturas`).** Voxy guarda un quad en
    64 bits (posición 5+5+5, tamaño 4+4, cara 3, estado, bioma, luz) y
    reconstruye los vértices en el shader. Nuestro equivalente compatible
    (sin GL crudo): `VertexFormat` propio con elementos empaquetados
    (posición relativa a la celda en shorts, color+luz en un int, UV
    derivada de posición+cara en el shader) → ~8-12 B/vértice contra ~36
    actuales, 3-4× menos VRAM y ancho de banda. Sin pérdida de calidad.
-2. **Mip por bloque representativo + paleta (idea de Voxy).** En vez de
+2. **Mip por bloque representativo + paleta (idea de Voxy) — implementado
+   el bloque representativo en `HierarchicalReducer`; color en cliente y
+   paleta pendientes (ver NOTES.md).** En vez de
    promediar color, el nivel superior elige el hijo más representativo
    (más opaco, preferencia al de arriba) y guarda `estado`; el color se
    resuelve en el cliente con `ColoresBloque`/resource pack activo. Mejora

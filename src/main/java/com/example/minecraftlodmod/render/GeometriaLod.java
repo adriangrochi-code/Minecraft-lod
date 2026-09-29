@@ -5,6 +5,8 @@ import com.example.minecraftlodmod.generation.GreedyMesher;
 import com.example.minecraftlodmod.generation.Quad;
 import com.example.minecraftlodmod.generation.VertexLightSampler;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Arrays;
 
 /**
@@ -19,11 +21,25 @@ import java.util.Arrays;
  *  - por vértice, la luz horneada de {@link VertexLightSampler}.
  * La perspectiva atmosférica (sección 17) todavía no se aplica acá: queda
  * para Pista B, cuando se pueda juzgar viéndola.
+ *
+ * Formato compacto de subida ({@link #escribirCompacto}, idea tomada de
+ * Voxy — sección 25 del documento de arquitectura, sin su código): 12
+ * bytes por vértice en vez de 36. Las posiciones son bloques enteros
+ * relativos a la celda (shorts), y la textura no viaja por vértice: solo
+ * el índice del sprite, que el shader resuelve con una tabla (ver
+ * {@link #texelesSprite}); la normal sale del índice de cara.
  */
 public final class GeometriaLod {
 
     /** Bits de {@code carasOmitidas}: caras laterales en el borde de la sección que no se dibujan. */
     public static final int OMITIR_X_NEG = 1, OMITIR_X_POS = 2, OMITIR_Z_NEG = 4, OMITIR_Z_POS = 8;
+
+    /** Bytes por vértice del formato compacto: 3 shorts de posición + short de sprite + RGBA. */
+    public static final int BYTES_COMPACTO = 12;
+    /** Texeles RGBA8 por sprite en la tabla que lee el shader. */
+    public static final int TEXELES_POR_SPRITE = 3;
+    /** Sprites por fila de la tabla (textura de 768 texeles de ancho). */
+    public static final int SPRITES_POR_FILA = 256;
 
     /** Brillo mínimo con luz horneada 0: el terreno a oscuras no queda negro puro. */
     static final float LUZ_MINIMA = 0.25f;
@@ -39,20 +55,21 @@ public final class GeometriaLod {
     }
 
     /**
-     * Textura de una cara: su rectángulo en el atlas, su color promedio, y
-     * si el color del vóxel (que ya trae el tinte del bioma) aplica a esta
+     * Textura de una cara: índice del sprite en la tabla del shader (1..65535;
+     * su rectángulo en el atlas y su promedio viven ahí), su color promedio,
+     * y si el color del vóxel (que ya trae el tinte del bioma) aplica a esta
      * cara. No aplica, por ejemplo, al costado de un bloque de pasto: la
      * tierra no se tiñe, así que ahí manda el promedio de su textura.
      */
-    public record Cara(float u0, float v0, float du, float dv, int promedioRgb, boolean usaColorDelVoxel) {
+    public record Cara(int sprite, int promedioRgb, boolean usaColorDelVoxel) {
     }
 
     private float[] posiciones = new float[3 * 1024];
     private int[] colores = new int[1024];
-    /** Por vértice: u0, v0, du, dv de la textura (du = 0: sin textura). */
-    private float[] texturas = new float[4 * 1024];
-    private int[] promedios = new int[1024];
-    private byte[] normales = new byte[3 * 1024];
+    /** Índice de sprite por vértice (0: sin textura). */
+    private int[] sprites = new int[1024];
+    /** Cara por vértice: 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z. */
+    private byte[] caras = new byte[1024];
     private int vertices;
     private Texturas fuenteTexturas;
     private boolean descartarSinLuz;
@@ -163,22 +180,8 @@ public final class GeometriaLod {
         posiciones[i + 1] = oy + y * escala;
         posiciones[i + 2] = oz + z * escala;
         colores[vertices] = color(rgbBase, sombra, luz);
-        int t = vertices * 4;
-        if (cara != null) {
-            texturas[t] = cara.u0();
-            texturas[t + 1] = cara.v0();
-            texturas[t + 2] = cara.du();
-            texturas[t + 3] = cara.dv();
-            promedios[vertices] = cara.promedioRgb();
-        } else {
-            texturas[t] = texturas[t + 1] = texturas[t + 2] = texturas[t + 3] = 0;
-            promedios[vertices] = 0;
-        }
-        int n = vertices * 3;
-        byte signo = (byte) (q.positivo() ? 127 : -127);
-        normales[n] = eje == Quad.Eje.X ? signo : 0;
-        normales[n + 1] = eje == Quad.Eje.Y ? signo : 0;
-        normales[n + 2] = eje == Quad.Eje.Z ? signo : 0;
+        sprites[vertices] = cara == null ? 0 : cara.sprite();
+        caras[vertices] = (byte) (eje.ordinal() * 2 + (q.positivo() ? 1 : 0));
         vertices++;
     }
 
@@ -206,9 +209,8 @@ public final class GeometriaLod {
         if (vertices == colores.length) {
             colores = Arrays.copyOf(colores, colores.length * 2);
             posiciones = Arrays.copyOf(posiciones, posiciones.length * 2);
-            texturas = Arrays.copyOf(texturas, texturas.length * 2);
-            promedios = Arrays.copyOf(promedios, promedios.length * 2);
-            normales = Arrays.copyOf(normales, normales.length * 2);
+            sprites = Arrays.copyOf(sprites, sprites.length * 2);
+            caras = Arrays.copyOf(caras, caras.length * 2);
         }
     }
 
@@ -235,39 +237,57 @@ public final class GeometriaLod {
 
     /** true si el vértice i lleva textura. */
     public boolean texturizado(int i) {
-        return texturas[i * 4 + 2] > 0;
+        return sprites[i] != 0;
     }
 
-    public float u0(int i) {
-        return texturas[i * 4];
+    public int sprite(int i) {
+        return sprites[i];
     }
 
-    public float v0(int i) {
-        return texturas[i * 4 + 1];
+    /** 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z. */
+    public int cara(int i) {
+        return caras[i];
     }
 
-    public float du(int i) {
-        return texturas[i * 4 + 2];
+    /**
+     * Escribe todos los vértices en el formato compacto
+     * ({@link #BYTES_COMPACTO} bytes c/u, little-endian como espera la GPU):
+     * x, y, z (short, bloques relativos a la celda), sprite (short sin signo),
+     * R, G, B (ya sombreados) y la cara en el byte de alfa.
+     *
+     * @throws IllegalStateException si una posición no es entera o no entra en un short
+     */
+    public void escribirCompacto(ByteBuffer destino) {
+        ByteBuffer b = destino.order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < vertices; i++) {
+            b.putShort(aShort(posiciones[i * 3]));
+            b.putShort(aShort(posiciones[i * 3 + 1]));
+            b.putShort(aShort(posiciones[i * 3 + 2]));
+            b.putShort((short) sprites[i]);
+            int c = colores[i];
+            b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c).put(caras[i]);
+        }
     }
 
-    public float dv(int i) {
-        return texturas[i * 4 + 3];
+    private static short aShort(float f) {
+        int v = (int) f;
+        if (v != f || v < Short.MIN_VALUE || v > Short.MAX_VALUE) {
+            throw new IllegalStateException("posición fuera del formato compacto: " + f);
+        }
+        return (short) v;
     }
 
-    /** Color promedio (RGB) de la textura del vértice i; el shader lo usa para extraer solo el detalle. */
-    public int promedioTextura(int i) {
-        return promedios[i];
-    }
-
-    public byte normalX(int i) {
-        return normales[i * 3];
-    }
-
-    public byte normalY(int i) {
-        return normales[i * 3 + 1];
-    }
-
-    public byte normalZ(int i) {
-        return normales[i * 3 + 2];
+    /**
+     * Los {@link #TEXELES_POR_SPRITE} texeles RGBA8 de un sprite en la tabla
+     * del shader, como enteros con R en el byte bajo (el orden de
+     * {@code NativeImage#setPixelRGBA}): (x, y) y (ancho, alto) en píxeles
+     * del atlas, 16 bits cada uno, y el color promedio de la textura.
+     */
+    public static int[] texelesSprite(int x, int y, int ancho, int alto, int promedioRgb) {
+        return new int[] {
+                (x & 0xFFFF) | (y & 0xFFFF) << 16,
+                (ancho & 0xFFFF) | (alto & 0xFFFF) << 16,
+                ((promedioRgb >> 16) & 0xFF) | (promedioRgb & 0xFF00) | (promedioRgb & 0xFF) << 16 | 0xFF000000
+        };
     }
 }

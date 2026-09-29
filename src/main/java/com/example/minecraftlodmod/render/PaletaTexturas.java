@@ -7,10 +7,12 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
 import com.example.minecraftlodmod.generation.Quad;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.FoliageColor;
 import net.minecraft.world.level.GrassColor;
@@ -22,6 +24,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.TextureAtlasStitchedEvent;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +47,14 @@ import java.util.Map;
 public final class PaletaTexturas {
 
     private static final Logger LOG = LogUtils.getLogger();
+
+    /**
+     * Tabla de sprites que lee el shader del LOD (ver
+     * {@link GeometriaLod#texelesSprite}): el vértice compacto solo lleva el
+     * índice del sprite, el rectángulo en el atlas y el promedio salen de acá.
+     */
+    public static final ResourceLocation TABLA_SPRITES =
+            ResourceLocation.fromNamespaceAndPath(com.example.minecraftlodmod.MinecraftLodMod.MOD_ID, "tabla_sprites");
 
     private volatile boolean pendiente = true;
 
@@ -101,6 +112,9 @@ public final class PaletaTexturas {
         GeometriaLod.Cara[] carasArriba = new GeometriaLod.Cara[total];
         GeometriaLod.Cara[] carasCostado = new GeometriaLod.Cara[total];
         Map<TextureAtlasSprite, Integer> promedios = new HashMap<>();
+        Map<TextureAtlasSprite, Integer> indices = new HashMap<>();
+        List<TextureAtlasSprite> sprites = new ArrayList<>();
+        sprites.add(null); // el índice 0 es "sin textura"
         RandomSource azar = RandomSource.create(42);
 
         for (BlockState estado : Block.BLOCK_STATE_REGISTRY) {
@@ -117,7 +131,7 @@ public final class PaletaTexturas {
                     continue;
                 }
                 base[id] = promedio;
-                carasArriba[id] = cara(sprite, promedio, true);
+                carasArriba[id] = cara(indice(sprite, indices, sprites), promedio, true);
                 BakedQuad quadCostado = quadCostado(modelo, estado, azar);
                 TextureAtlasSprite spriteCostado = quadCostado != null ? quadCostado.getSprite() : sprite;
                 int promedioCostado = promedios.computeIfAbsent(spriteCostado, PaletaTexturas::promedio);
@@ -126,7 +140,7 @@ public final class PaletaTexturas {
                 // corteza de un tronco), el costado usa el promedio de su propia textura.
                 boolean costadoUsaColor = spriteCostado == sprite || (quadCostado != null && quadCostado.isTinted());
                 carasCostado[id] = promedioCostado < 0 ? carasArriba[id]
-                        : cara(spriteCostado, promedioCostado, costadoUsaColor);
+                        : cara(indice(spriteCostado, indices, sprites), promedioCostado, costadoUsaColor);
                 // Por tipo de fluido y no por tag: en el menú principal los tags
                 // todavía no están cargados (llegan al entrar a un mundo).
                 boolean esAgua = estado.getBlock() instanceof LiquidBlock
@@ -147,13 +161,41 @@ public final class PaletaTexturas {
                 base[id] = -1;
             }
         }
+        subirTablaSprites(mc, sprites, promedios);
         tabla = new TablaTexturas(carasArriba, carasCostado);
         return new ColoresBloque.Paleta(base, tinte, fijo);
     }
 
-    private static GeometriaLod.Cara cara(TextureAtlasSprite sprite, int promedio, boolean usaColorDelVoxel) {
-        return new GeometriaLod.Cara(sprite.getU0(), sprite.getV0(), sprite.getU1() - sprite.getU0(),
-                sprite.getV1() - sprite.getV0(), promedio, usaColorDelVoxel);
+    private static GeometriaLod.Cara cara(int indice, int promedio, boolean usaColorDelVoxel) {
+        // Más de 65535 sprites distintos no entran en el vértice compacto: esos van con color plano.
+        return new GeometriaLod.Cara(indice > 0xFFFF ? 0 : indice, promedio, usaColorDelVoxel);
+    }
+
+    private static int indice(TextureAtlasSprite sprite, Map<TextureAtlasSprite, Integer> indices,
+                              List<TextureAtlasSprite> sprites) {
+        return indices.computeIfAbsent(sprite, s -> {
+            sprites.add(s);
+            return sprites.size() - 1;
+        });
+    }
+
+    /** Hilo de render: reemplaza la textura de la tabla (el TextureManager cierra la anterior). */
+    private static void subirTablaSprites(Minecraft mc, List<TextureAtlasSprite> sprites,
+                                          Map<TextureAtlasSprite, Integer> promedios) {
+        int cantidad = Math.min(sprites.size(), 0x10000);
+        int ancho = GeometriaLod.SPRITES_POR_FILA * GeometriaLod.TEXELES_POR_SPRITE;
+        int filas = Math.max(1, (cantidad + GeometriaLod.SPRITES_POR_FILA - 1) / GeometriaLod.SPRITES_POR_FILA);
+        NativeImage imagen = new NativeImage(ancho, filas, true);
+        for (int i = 1; i < cantidad; i++) {
+            TextureAtlasSprite s = sprites.get(i);
+            int[] texeles = GeometriaLod.texelesSprite(s.getX(), s.getY(), s.contents().width(),
+                    s.contents().height(), promedios.getOrDefault(s, 0));
+            int x = (i % GeometriaLod.SPRITES_POR_FILA) * GeometriaLod.TEXELES_POR_SPRITE;
+            for (int t = 0; t < texeles.length; t++) {
+                imagen.setPixelRGBA(x + t, i / GeometriaLod.SPRITES_POR_FILA, texeles[t]);
+            }
+        }
+        mc.getTextureManager().register(TABLA_SPRITES, new DynamicTexture(imagen));
     }
 
     private static BakedQuad quadCostado(BakedModel modelo, BlockState estado, RandomSource azar) {

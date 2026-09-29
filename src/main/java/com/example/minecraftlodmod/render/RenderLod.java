@@ -36,6 +36,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import org.joml.Matrix4f;
+import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
 
 import java.util.Comparator;
@@ -97,21 +98,24 @@ public final class RenderLod {
     static final int BYTES_POR_VERTICE = 16; // POSITION_COLOR: 3 floats + 4 bytes
 
     /**
-     * Formato texturizado (ver shaders/core/lod_textura.vsh): posición, color
-     * plano de la cara, esquina de la textura en el atlas (UV0), promedio de
-     * la textura empaquetado (UV1) y tamaño de la textura (UV2), normal.
-     * Solo elementos estándar de Minecraft: sin atributos propios.
+     * x, y, z y sprite como 4 shorts enteros ({@code ivec4} en el shader).
+     * Uso UV con tipo entero: Minecraft lo sube con glVertexAttribIPointer
+     * sin normalizar, igual que sus propios UV1/UV2.
+     */
+    static final VertexFormatElement POSICION_SPRITE = VertexFormatElement.register(
+            VertexFormatElement.findNextId(), 7, VertexFormatElement.Type.SHORT, VertexFormatElement.Usage.UV, 4);
+
+    /**
+     * Formato compacto texturizado, 12 bytes por vértice (ver
+     * {@link GeometriaLod#escribirCompacto} y shaders/core/lod_textura.vsh):
+     * posición + índice de sprite, y color ya sombreado con la cara en el alfa.
+     * Se arma con {@link VertexFormat.Builder} y se sube con {@link VertexBuffer}
+     * como cualquier formato del juego: sin llamadas GL propias.
      */
     public static final VertexFormat FORMATO_TEXTURA = VertexFormat.builder()
-            .add("Position", VertexFormatElement.POSITION)
+            .add("PosSprite", POSICION_SPRITE)
             .add("Color", VertexFormatElement.COLOR)
-            .add("UV0", VertexFormatElement.UV0)
-            .add("UV1", VertexFormatElement.UV1)
-            .add("UV2", VertexFormatElement.UV2)
-            .add("Normal", VertexFormatElement.NORMAL)
-            .padding(1)
             .build();
-    static final int ESCALA_TAMANO_UV = 32768;
 
     /** Shader texturizado, registrado como cualquier ShaderInstance del juego; null si no cargó. */
     private static volatile ShaderInstance shaderTextura;
@@ -141,7 +145,8 @@ public final class RenderLod {
             if (e.buffer != null) {
                 piezas++;
                 vertices += e.vertices;
-                bytesVram += (long) e.vertices * e.bytesVertice + (long) e.vertices / 4 * 6 * 4; // + índices
+                // Los índices de QUADS son un buffer secuencial compartido de Minecraft: no cuentan por malla.
+                bytesVram += (long) e.vertices * e.bytesVertice;
             }
         }
         long mallas = mallasArmadas.sumThenReset();
@@ -452,22 +457,25 @@ public final class RenderLod {
             }
             boolean texturizada = texturas != null;
             VertexFormat formato = texturizada ? FORMATO_TEXTURA : DefaultVertexFormat.POSITION_COLOR;
-            ByteBufferBuilder memoria = new ByteBufferBuilder(geometria.vertices() * formato.getVertexSize());
-            BufferBuilder builder = new BufferBuilder(memoria, VertexFormat.Mode.QUADS, formato);
-            for (int i = 0; i < geometria.vertices(); i++) {
-                var vertice = builder.addVertex(geometria.x(i), geometria.y(i), geometria.z(i))
-                        .setColor(geometria.color(i));
-                if (texturizada) {
-                    int promedio = geometria.promedioTextura(i);
-                    vertice.setUv(geometria.u0(i), geometria.v0(i))
-                            .setUv1((promedio >> 8) & 0xFFFF, promedio & 0xFF)
-                            .setUv2(Math.round(geometria.du(i) * ESCALA_TAMANO_UV),
-                                    Math.round(geometria.dv(i) * ESCALA_TAMANO_UV))
-                            .setNormal(geometria.normalX(i) / 127f, geometria.normalY(i) / 127f,
-                                    geometria.normalZ(i) / 127f);
+            int n = geometria.vertices();
+            ByteBufferBuilder memoria = new ByteBufferBuilder(n * formato.getVertexSize());
+            MeshData malla;
+            if (texturizada) {
+                // Formato propio: BufferBuilder exige POSITION en float, así que los
+                // bytes se escriben directo y se envuelven en un MeshData como el suyo.
+                int bytes = n * GeometriaLod.BYTES_COMPACTO;
+                geometria.escribirCompacto(MemoryUtil.memByteBuffer(memoria.reserve(bytes), bytes));
+                malla = new MeshData(memoria.build(), new MeshData.DrawState(formato, n,
+                        VertexFormat.Mode.QUADS.indexCount(n), VertexFormat.Mode.QUADS,
+                        VertexFormat.IndexType.least(n)));
+            } else {
+                BufferBuilder builder = new BufferBuilder(memoria, VertexFormat.Mode.QUADS, formato);
+                for (int i = 0; i < n; i++) {
+                    builder.addVertex(geometria.x(i), geometria.y(i), geometria.z(i)).setColor(geometria.color(i));
                 }
+                malla = builder.buildOrThrow();
             }
-            listas.add(new MallaLista(clave, celda, builder.buildOrThrow(), memoria, conDatos, texturizada));
+            listas.add(new MallaLista(clave, celda, malla, memoria, conDatos, texturizada));
             nanosArmado.add(System.nanoTime() - inicioArmado);
             mallasArmadas.increment();
         } catch (RuntimeException e) {
@@ -503,6 +511,7 @@ public final class RenderLod {
             // Atlas de bloques activo, con mipmaps: la textura se simplifica sola con la distancia.
             mc.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).setFilter(false, true);
             RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
+            RenderSystem.setShaderTexture(1, PaletaTexturas.TABLA_SPRITES);
             dibujarPasada(evento, camara, proyeccion, true, conTextura);
         }
         VertexBuffer.unbind();
