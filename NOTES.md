@@ -302,3 +302,13 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   replanificación; capturas con y sin oclusión idénticas salvo nubes.
   Relieve leído con tope de 32 regiones por replanificación. Pendiente: la
   curvatura/altura no se replanifica hasta moverse 8 bloques en Y o 3 s.
+- **Prioridad por vista (`PrioridadVista`):** costo = distancia² × factor
+  (1 en vista ±60°, 3 hasta ±100°, 8 atrás; todo "en vista" a menos de 48
+  bloques). Ordena el armado de mallas, los pendientes de extracción y el
+  pregenerador (ventana de 512 candidatos de la espiral).
+- **Zoom solo en lo que se mira:** `PlanCeldas.Vista` + `fovPara`: con FOV
+  efectivo menor al de las opciones, solo las piezas que tocan el cono de la
+  vista (media apertura horizontal del FOV con zoom + 10°) usan ese FOV; el
+  resto, el normal. Con zoom, girar más de 10° replanifica. Probado con
+  catalejo real: mismas 199 piezas, 8,0M → 10,7M vértices (solo lo mirado se
+  afinó). Pendiente de Pista B: juzgar la calidad con zoom en monitor real.

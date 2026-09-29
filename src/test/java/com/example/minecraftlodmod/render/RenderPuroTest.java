@@ -354,10 +354,32 @@ class RenderPuroTest {
         // Cámara en el chunk (0, 0), distancia vanilla 8: vanilla tiene todo menos el chunk (3, 0).
         long faltante = PlanCeldas.claveChunk(3, 0);
         List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(8, 8, 64, 8, clave -> clave != faltante,
-                Math.toRadians(70), 1080, 2.5);
+                null, Math.toRadians(70), 1080, 2.5);
         PlanCeldas.Celda celda = plan.stream().filter(c -> !c.esGrande() && c.celdaX() == 0 && c.celdaZ() == 0)
                 .findFirst().orElseThrow(() -> new AssertionError("La celda del chunk faltante tiene que estar en el plan"));
         assertFalse(celda.omitido(3, 0), "El chunk sin cargar lo dibuja el LOD");
         assertTrue(celda.omitido(2, 0), "Los que vanilla ya tiene se le dejan a vanilla");
+    }
+
+    @Test
+    void conZoomSoloLoQueSeMiraPideMasDetalle() {
+        double normal = Math.toRadians(70), zoom = Math.toRadians(10);
+        // Mirando a +X, cono de ±15°.
+        PlanCeldas.Vista vista = new PlanCeldas.Vista(1, 0, normal, Math.toRadians(15));
+        List<PlanCeldas.Celda> sinZoom = PlanCeldas.planificarConGrandes(8, 8, 96, 8, c -> true, vista, normal, 1080, 2.5);
+        List<PlanCeldas.Celda> conZoom = PlanCeldas.planificarConGrandes(8, 8, 96, 8, c -> true, vista, zoom, 1080, 2.5);
+
+        java.util.function.Function<List<PlanCeldas.Celda>, java.util.Map<Long, Integer>> niveles = plan -> {
+            java.util.Map<Long, Integer> m = new java.util.HashMap<>();
+            for (PlanCeldas.Celda c : plan) if (!c.esGrande()) m.put(((long) c.celdaX() << 32) ^ (c.celdaZ() & 0xFFFFFFFFL), c.nivel());
+            return m;
+        };
+        var antes = niveles.apply(sinZoom);
+        var despues = niveles.apply(conZoom);
+        // Adelante, a ~1000 bloques (celda x=15): más fino con zoom.
+        long adelante = (15L << 32);
+        long atras = ((long) -16 << 32);
+        assertTrue(despues.get(adelante) < antes.get(adelante), "Adelante, el zoom afina el nivel");
+        assertEquals(antes.get(atras), despues.get(atras), "Atrás, el zoom no cambia nada");
     }
 }

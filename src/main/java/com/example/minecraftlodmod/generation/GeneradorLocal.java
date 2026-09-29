@@ -204,8 +204,9 @@ public final class GeneradorLocal {
     }
 
     /**
-     * Reintenta pendientes empezando por los más cercanos a algún jugador:
-     * el LOD se completa del centro hacia afuera. Recorre todos los
+     * Reintenta pendientes empezando por los más cercanos a algún jugador,
+     * con prioridad a lo que mira ({@link PrioridadVista}): el LOD se
+     * completa del centro hacia afuera, primero en el campo visual. Recorre todos los
      * pendientes por tick (lineal, barato para miles), no hace falta
      * mantenerlos ordenados mientras los jugadores se mueven.
      */
@@ -272,8 +273,10 @@ public final class GeneradorLocal {
             double distancia = jugadores.isEmpty() ? 0 : Double.MAX_VALUE;
             for (ServerPlayer jugador : jugadores) {
                 if (jugador.level().dimension() == p.dimension()) {
-                    double dx = jugador.getX() - centroX, dz = jugador.getZ() - centroZ;
-                    distancia = Math.min(distancia, dx * dx + dz * dz);
+                    // Lo que el jugador mira primero (PrioridadVista), después el resto.
+                    var mirada = jugador.getLookAngle();
+                    distancia = Math.min(distancia, PrioridadVista.costo(centroX - jugador.getX(),
+                            centroZ - jugador.getZ(), mirada.x, mirada.z));
                 }
             }
             if (mejor == null || distancia < mejorDistancia) {

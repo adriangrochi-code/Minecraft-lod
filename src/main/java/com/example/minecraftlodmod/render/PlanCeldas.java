@@ -2,6 +2,7 @@ package com.example.minecraftlodmod.render;
 
 import com.example.minecraftlodmod.core.LodSelector;
 import com.example.minecraftlodmod.generation.NivelesGrandes;
+import com.example.minecraftlodmod.generation.PrioridadVista;
 import com.example.minecraftlodmod.generation.SectionExtractor;
 
 import org.joml.Matrix4f;
@@ -84,6 +85,39 @@ public final class PlanCeldas {
         return (chunkX & 0xFFFFFFFFL) | ((long) chunkZ << 32);
     }
 
+    /**
+     * Hacia dónde mira el jugador, para que el zoom (spyglass, mods de zoom:
+     * FOV efectivo más chico) pida detalle SOLO en lo que se ve. Sin esto el
+     * zoom le pedía detalle fino a todo el radio, también a lo de atrás, y
+     * cada zoom rearmaba todo el mapa.
+     *
+     * @param miraX, miraZ   dirección horizontal de la mirada
+     * @param fovNormal      FOV vertical sin zoom (el de las opciones), radianes
+     * @param mediaApertura  media apertura horizontal del cono con zoom, radianes
+     *                       (con margen); fuera de él se usa {@code fovNormal}
+     */
+    public record Vista(double miraX, double miraZ, double fovNormal, double mediaApertura) {
+    }
+
+    /** FOV para el nivel de una pieza: el efectivo si la pieza toca el cono de la vista, si no el normal. */
+    static double fovPara(Vista vista, double fovEfectivo, double camX, double camZ,
+                          double minX, double minZ, double lado) {
+        if (vista == null || fovEfectivo >= vista.fovNormal()) {
+            return fovEfectivo;
+        }
+        double[][] puntos = {{minX + lado / 2, minZ + lado / 2}, {minX, minZ}, {minX + lado, minZ},
+                {minX, minZ + lado}, {minX + lado, minZ + lado}};
+        for (double[] p : puntos) {
+            if (PrioridadVista.dentro(p[0] - camX, p[1] - camZ, vista.miraX(), vista.miraZ(), vista.mediaApertura())) {
+                return fovEfectivo;
+            }
+        }
+        if (camX >= minX && camX <= minX + lado && camZ >= minZ && camZ <= minZ + lado) {
+            return fovEfectivo;
+        }
+        return vista.fovNormal();
+    }
+
     /** Vanilla lista en todo su radio (tests y planes sin mundo). */
     private static final LongPredicate VANILLA_SIEMPRE = clave -> true;
 
@@ -99,7 +133,7 @@ public final class PlanCeldas {
     public static List<Celda> planificar(double camX, double camZ, int radioLodChunks, int distanciaVanilla,
                                          double fovRadianes, double alturaPantallaPx, double umbralPx) {
         List<Celda> plan = new ArrayList<>();
-        agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, VANILLA_SIEMPRE, fovRadianes,
+        agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, VANILLA_SIEMPRE, null, fovRadianes,
                 alturaPantallaPx, umbralPx, Integer.MIN_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE);
         return plan;
     }
@@ -115,7 +149,7 @@ public final class PlanCeldas {
      */
     public static List<Celda> planificarConGrandes(double camX, double camZ, int radioLodChunks, int distanciaVanilla,
                                                    double fovRadianes, double alturaPantallaPx, double umbralPx) {
-        return planificarConGrandes(camX, camZ, radioLodChunks, distanciaVanilla, VANILLA_SIEMPRE, fovRadianes,
+        return planificarConGrandes(camX, camZ, radioLodChunks, distanciaVanilla, VANILLA_SIEMPRE, null, fovRadianes,
                 alturaPantallaPx, umbralPx);
     }
 
@@ -128,7 +162,7 @@ public final class PlanCeldas {
      *                     renderability" de FarPlaneTwo (sección 25, punto 6).
      */
     public static List<Celda> planificarConGrandes(double camX, double camZ, int radioLodChunks, int distanciaVanilla,
-                                                   LongPredicate vanillaListo, double fovRadianes,
+                                                   LongPredicate vanillaListo, Vista vista, double fovRadianes,
                                                    double alturaPantallaPx, double umbralPx) {
         List<Celda> plan = new ArrayList<>();
         int nivel = NivelesGrandes.NIVEL_MAX;
@@ -138,7 +172,7 @@ public final class PlanCeldas {
         int desdeZ = (int) Math.floor((camZ - radio) / lado), hastaZ = (int) Math.floor((camZ + radio) / lado);
         for (int tx = desdeX; tx <= hastaX; tx++) {
             for (int tz = desdeZ; tz <= hastaZ; tz++) {
-                subdividir(plan, nivel, tx, tz, camX, camZ, radioLodChunks, distanciaVanilla, vanillaListo,
+                subdividir(plan, nivel, tx, tz, camX, camZ, radioLodChunks, distanciaVanilla, vanillaListo, vista,
                         fovRadianes, alturaPantallaPx, umbralPx);
             }
         }
@@ -147,7 +181,7 @@ public final class PlanCeldas {
 
     private static void subdividir(List<Celda> plan, int nivel, int tx, int tz, double camX, double camZ,
                                    int radioLodChunks, int distanciaVanilla, LongPredicate vanillaListo,
-                                   double fov, double alto, double umbral) {
+                                   Vista vista, double fov, double alto, double umbral) {
         int lado = NivelesGrandes.ladoEnBloques(nivel);
         double minX = (double) tx * lado, minZ = (double) tz * lado;
         double dx = Math.max(0, Math.max(minX - camX, camX - (minX + lado)));
@@ -157,25 +191,26 @@ public final class PlanCeldas {
             return;
         }
         boolean lejosDeVanilla = masCerca > distanciaVanilla * 16.0;
-        if (lejosDeVanilla && nivelPara(masCerca, fov, alto, umbral, NivelesGrandes.NIVEL_MAX) >= nivel) {
+        double fovTesela = fovPara(vista, fov, camX, camZ, minX, minZ, lado);
+        if (lejosDeVanilla && nivelPara(masCerca, fovTesela, alto, umbral, NivelesGrandes.NIVEL_MAX) >= nivel) {
             plan.add(new Celda(tx, tz, nivel, 0, true));
         } else if (nivel > NIVEL_TESELA_MIN) {
             for (int hx = 0; hx < 2; hx++) {
                 for (int hz = 0; hz < 2; hz++) {
                     subdividir(plan, nivel - 1, tx * 2 + hx, tz * 2 + hz, camX, camZ, radioLodChunks,
-                            distanciaVanilla, vanillaListo, fov, alto, umbral);
+                            distanciaVanilla, vanillaListo, vista, fov, alto, umbral);
                 }
             }
         } else {
             int celdasPorLado = lado / (LADO_CELDA * 16);
-            agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, vanillaListo, fov, alto, umbral,
+            agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, vanillaListo, vista, fov, alto, umbral,
                     tx * celdasPorLado, (tx + 1) * celdasPorLado - 1, tz * celdasPorLado, (tz + 1) * celdasPorLado - 1);
         }
     }
 
     /** Celdas de nivel 0-4 dentro del radio y del rango de celdas dado (inclusive). */
     private static void agregarCeldas(List<Celda> plan, double camX, double camZ, int radioLodChunks,
-                                      int distanciaVanilla, LongPredicate vanillaListo,
+                                      int distanciaVanilla, LongPredicate vanillaListo, Vista vista,
                                       double fovRadianes, double alturaPantallaPx,
                                       double umbralPx, int minCeldaX, int maxCeldaX, int minCeldaZ, int maxCeldaZ) {
         int chunkCamX = (int) Math.floor(camX / 16);
@@ -210,7 +245,9 @@ public final class PlanCeldas {
                 double centroX = (cx * LADO_CELDA + LADO_CELDA / 2.0) * 16;
                 double centroZ = (cz * LADO_CELDA + LADO_CELDA / 2.0) * 16;
                 double distancia = Math.hypot(centroX - camX, centroZ - camZ);
-                plan.add(new Celda(cx, cz, nivelPara(distancia, fovRadianes, alturaPantallaPx, umbralPx), mascara));
+                double fovCelda = fovPara(vista, fovRadianes, camX, camZ, cx * LADO_CELDA * 16.0,
+                        cz * LADO_CELDA * 16.0, LADO_CELDA * 16.0);
+                plan.add(new Celda(cx, cz, nivelPara(distancia, fovCelda, alturaPantallaPx, umbralPx), mascara));
             }
         }
     }

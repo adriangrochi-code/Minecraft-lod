@@ -28,6 +28,10 @@ import java.util.Map;
  * soltara al cargar, un chunk que esperaba lugar en la cola de extracción
  * se descargaría y se perdería).
  *
+ * Orden: la espiral va del centro hacia afuera, pero de una ventana de
+ * {@link #VENTANA} candidatos se pide primero lo que el jugador mira
+ * ({@link PrioridadVista}), así el LOD crece antes en su campo visual.
+ *
  * No compite con el juego: con el tick del servidor por encima de
  * {@link #MSPT_MAXIMO_NANOS} o con la extracción atrasada no pide chunks
  * nuevos. Los chunks generados se guardan en el mundo como los de Chunky:
@@ -51,6 +55,8 @@ public final class PregeneradorChunks {
     /** Si el jugador se aleja esto del centro, la espiral recomienza desde él. */
     static final int RECENTRAR_CHUNKS = 32;
     static final long PERIODO_LOG_NANOS = 30_000_000_000L;
+    /** Candidatos de la espiral que se ordenan por prioridad de vista antes de pedirlos. */
+    static final int VENTANA = 512;
 
     private final GeneradorLocal generador;
     private final int enVueloMaximo = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
@@ -60,6 +66,9 @@ public final class PregeneradorChunks {
     private int centroX, centroZ;
     /** Chunk (ChunkPos.toLong) → tick en que se pidió. */
     private final Map<Long, Integer> enVuelo = new HashMap<>();
+    /** Próximos chunks de la espiral que todavía no tienen LOD (x, z empaquetados con ChunkPos.asLong). */
+    private final java.util.ArrayList<Long> candidatos = new java.util.ArrayList<>();
+    private boolean espiralAgotada;
     private int tick;
     private long generados;
     private long ultimoLogNanos = System.nanoTime();
@@ -97,6 +106,8 @@ public final class PregeneradorChunks {
             centroX = jugadorX;
             centroZ = jugadorZ;
             espiral = new EspiralChunks(radio);
+            candidatos.clear();
+            espiralAgotada = false;
             avisoCompleto = false;
         }
         registrarAvance();
@@ -105,19 +116,37 @@ public final class PregeneradorChunks {
             return;
         }
         byte dimension = GeneradorLocal.idDimension(nivel.dimension());
+        // Llenar la ventana con los próximos de la espiral que todavía no tienen LOD.
         int revisados = 0;
-        while (enVuelo.size() < enVueloMaximo && revisados < REVISIONES_POR_TICK) {
+        while (candidatos.size() < VENTANA && revisados < REVISIONES_POR_TICK && !espiralAgotada) {
             if (!espiral.siguiente()) {
-                if (!avisoCompleto) {
-                    avisoCompleto = true;
-                    LOG.info("LOD: pregeneración completa ({} chunks de radio alrededor de {}, {})",
-                            radio, centroX * 16, centroZ * 16);
-                }
-                return;
+                espiralAgotada = true;
+                break;
             }
             revisados++;
             int x = centroX + espiral.dx(), z = centroZ + espiral.dz();
-            long clave = ChunkPos.asLong(x, z);
+            if (!store.contiene(GeneradorLocal.claveRegion(dimension, x, z), GeneradorLocal.claveMarca(x, z))) {
+                candidatos.add(ChunkPos.asLong(x, z));
+            }
+        }
+        if (candidatos.isEmpty()) {
+            if (espiralAgotada && enVuelo.isEmpty() && !avisoCompleto) {
+                avisoCompleto = true;
+                LOG.info("LOD: pregeneración completa ({} chunks de radio alrededor de {}, {})",
+                        radio, centroX * 16, centroZ * 16);
+            }
+            return;
+        }
+        // Primero lo que el jugador mira.
+        var mirada = jugador.getLookAngle();
+        double jx = jugador.getX(), jz = jugador.getZ();
+        candidatos.sort(java.util.Comparator.comparingDouble(c -> PrioridadVista.costo(
+                ChunkPos.getX(c) * 16 + 8 - jx, ChunkPos.getZ(c) * 16 + 8 - jz, mirada.x, mirada.z)));
+        Iterator<Long> it = candidatos.iterator();
+        while (enVuelo.size() < enVueloMaximo && it.hasNext()) {
+            long clave = it.next();
+            it.remove();
+            int x = ChunkPos.getX(clave), z = ChunkPos.getZ(clave);
             if (enVuelo.containsKey(clave)
                     || store.contiene(GeneradorLocal.claveRegion(dimension, x, z), GeneradorLocal.claveMarca(x, z))
                     || nivel.getChunkSource().getChunkNow(x, z) != null) {

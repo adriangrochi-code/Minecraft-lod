@@ -20,6 +20,7 @@ import com.example.minecraftlodmod.MinecraftLodMod;
 import net.minecraft.client.renderer.ShaderInstance;
 import com.mojang.blaze3d.shaders.Uniform;
 import com.example.minecraftlodmod.generation.GreedyMesher;
+import com.example.minecraftlodmod.generation.PrioridadVista;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
@@ -228,6 +229,11 @@ public final class RenderLod {
     private int chunkPlanX = Integer.MIN_VALUE, chunkPlanZ = Integer.MIN_VALUE;
     private double fovPlan;
     private double yPlan;
+    private double miraPlanX, miraPlanZ;
+    /** Con zoom, girar más que esto replanifica (el detalle fino sigue a la mirada). */
+    static final double REPLANIFICAR_GIRO = Math.toRadians(10);
+    /** Margen del cono con zoom, a cada lado, para que al girar un poco ya esté armado. */
+    static final double MARGEN_ZOOM = Math.toRadians(10);
     /** Si la cámara sube o baja esto, se replanifica (la oclusión por relieve depende de la altura). */
     static final double REPLANIFICAR_ALTURA = 8;
     /** Solo el relieve hasta esta distancia tapa (ver OclusionRelieve). */
@@ -404,10 +410,17 @@ public final class RenderLod {
         int chunkX = (int) Math.floor(camara.x / 16);
         int chunkZ = (int) Math.floor(camara.z / 16);
         long ahora = System.nanoTime();
-        if (chunkX == chunkPlanX && chunkZ == chunkPlanZ && Math.abs(fovGrados - fovPlan) < 1
+        org.joml.Vector3f mirada = mc.gameRenderer.getMainCamera().getLookVector();
+        double miraX = mirada.x(), miraZ = mirada.z();
+        double fovNormal = mc.options.fov().get();
+        boolean conZoom = fovGrados < fovNormal - 1;
+        boolean giro = conZoom && angulo(miraX, miraZ, miraPlanX, miraPlanZ) > REPLANIFICAR_GIRO;
+        if (chunkX == chunkPlanX && chunkZ == chunkPlanZ && Math.abs(fovGrados - fovPlan) < 1 && !giro
                 && Math.abs(camara.y - yPlan) < REPLANIFICAR_ALTURA && ahora - ultimoPlanNanos < REPLANIFICAR_NANOS) {
             return;
         }
+        miraPlanX = miraX;
+        miraPlanZ = miraZ;
         chunkPlanX = chunkX;
         chunkPlanZ = chunkZ;
         fovPlan = fovGrados;
@@ -431,10 +444,15 @@ public final class RenderLod {
             }
         }
         Set<Long> cubiertos = Set.copyOf(deVanilla);
+        // Con zoom, el detalle extra solo para lo que entra en el cono de la vista (+ margen).
+        double aspecto = (double) mc.getWindow().getWidth() / Math.max(1, mc.getWindow().getHeight());
+        double mediaApertura = Math.atan(Math.tan(Math.toRadians(fovGrados) / 2) * aspecto) + MARGEN_ZOOM;
+        PlanCeldas.Vista vista = new PlanCeldas.Vista(miraX, miraZ, Math.toRadians(fovNormal), mediaApertura);
         List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, c.radioLodChunks(),
-                distanciaVanilla, cubiertos::contains, Math.toRadians(fovGrados), mc.getWindow().getHeight(),
+                distanciaVanilla, cubiertos::contains, vista, Math.toRadians(fovGrados), mc.getWindow().getHeight(),
                 c.umbralPx());
-        plan.sort(Comparator.comparingDouble(celda -> distancia2(celda, camara)));
+        // Primero lo que se mira, después el margen, al final lo de atrás.
+        plan.sort(Comparator.comparingDouble(celda -> prioridad(celda, camara, miraX, miraZ)));
         byte dimension = GeneradorLocal.idDimension(mc.level.dimension());
         boolean[] ocultas = ocultasPorRelieve(plan, camara, store, dimension, mc.level.getMinSection(),
                 mc.level.getMaxSection(), c.radioLodChunks());
@@ -462,7 +480,7 @@ public final class RenderLod {
             if (!estado.enConstruccion && (cambio || incompleta) && encoladas < ENCOLADAS_POR_PLAN) {
                 estado.enConstruccion = true;
                 encoladas++;
-                hiloMallas.execute(new TareaMalla(distancia2(celda, camara), secuenciaTareas.incrementAndGet(),
+                hiloMallas.execute(new TareaMalla(prioridad(celda, camara, miraX, miraZ), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
                                 cubiertos, texturas, oclusion)));
             }
@@ -947,11 +965,18 @@ public final class RenderLod {
         return (float) Math.sqrt(maximo);
     }
 
-    private static double distancia2(PlanCeldas.Celda celda, Vec3 camara) {
+    private static double prioridad(PlanCeldas.Celda celda, Vec3 camara, double miraX, double miraZ) {
         double mitad = celda.ladoEnBloques() / 2.0;
-        double cx = celda.origenX() + mitad - camara.x;
-        double cz = celda.origenZ() + mitad - camara.z;
-        return cx * cx + cz * cz;
+        return PrioridadVista.costo(celda.origenX() + mitad - camara.x, celda.origenZ() + mitad - camara.z,
+                miraX, miraZ);
+    }
+
+    private static double angulo(double ax, double az, double bx, double bz) {
+        double na = Math.hypot(ax, az), nb = Math.hypot(bx, bz);
+        if (na < 1e-9 || nb < 1e-9) {
+            return Math.PI;
+        }
+        return Math.acos(Math.max(-1, Math.min(1, (ax * bx + az * bz) / (na * nb))));
     }
 
     /** Teselas y celdas en espacios de clave distintos (bit 62), y teselas separadas por nivel. */
