@@ -18,6 +18,12 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.material.MapColor;
 
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.phys.shapes.VoxelShape;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,6 +39,52 @@ import java.util.List;
 public final class LectorSeccionMinecraft implements SectionExtractor.LectorSeccion {
 
     private final PalettedContainer<BlockState> estados;
+    /** Estados de la sección de arriba (para cubiertas sobre la fila y=15), o null si es solo aire. */
+    private final PalettedContainer<BlockState> estadosArriba;
+
+    /**
+     * Cómo se representa un estado de bloque en el LOD, por su FORMA: el
+     * LOD dibuja cubos, y dibujar como cubo lo que no lo es (pasto, flores,
+     * antorchas, nieve fina) llena el paisaje de "cubitos" que vanilla no
+     * tiene.
+     */
+    enum Forma {
+        /** Se dibuja como cubo. */
+        NORMAL,
+        /** Sin colisión y no es una capa: plantas, flores, antorchas, rieles. Se omite (queda el suelo). */
+        DECORACION,
+        /** Capa fina que cubre toda la base (nieve, alfombras): pinta la cara de arriba del bloque de abajo. */
+        CUBIERTA,
+        /** Decoración sumergida (algas, pasto marino): cuenta como agua, sin huecos bajo el agua. */
+        SUMERGIDA
+    }
+
+    private static final Map<BlockState, Forma> FORMAS = new ConcurrentHashMap<>();
+    private static final BlockState AGUA = Blocks.WATER.defaultBlockState();
+
+    static Forma forma(BlockState estado) {
+        return FORMAS.computeIfAbsent(estado, LectorSeccionMinecraft::calcularForma);
+    }
+
+    private static Forma calcularForma(BlockState estado) {
+        if (estado.isAir() || estado.getBlock() instanceof LiquidBlock) {
+            return Forma.NORMAL; // el aire y el agua/lava se resuelven por material
+        }
+        try {
+            VoxelShape forma = estado.getShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
+            if (!forma.isEmpty() && forma.max(Direction.Axis.Y) <= 0.25
+                    && forma.min(Direction.Axis.X) <= 0.01 && forma.max(Direction.Axis.X) >= 0.99
+                    && forma.min(Direction.Axis.Z) <= 0.01 && forma.max(Direction.Axis.Z) >= 0.99) {
+                return Forma.CUBIERTA;
+            }
+            if (estado.getCollisionShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).isEmpty()) {
+                return estado.getFluidState().getType().isSame(Fluids.WATER) ? Forma.SUMERGIDA : Forma.DECORACION;
+            }
+        } catch (RuntimeException e) {
+            // Bloque de un mod que necesita el mundo para su forma: como cubo.
+        }
+        return Forma.NORMAL;
+    }
     private final boolean soloAire;
     // Luz de la sección y de la de arriba (la capa de arriba ilumina la cara
     // superior de la fila y=15). Null si el motor de luz no la tiene todavía.
@@ -41,7 +93,8 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
     private final Biome[] biomas;
     private final int origenX, origenZ;
 
-    private LectorSeccionMinecraft(PalettedContainer<BlockState> estados, boolean soloAire,
+    private LectorSeccionMinecraft(PalettedContainer<BlockState> estados, PalettedContainer<BlockState> estadosArriba,
+                                   boolean soloAire,
                                    DataLayer cielo, DataLayer bloque,
                                    DataLayer cieloArriba, DataLayer bloqueArriba,
                                    Biome[] biomas, int origenX, int origenZ) {
@@ -49,6 +102,7 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         this.origenX = origenX;
         this.origenZ = origenZ;
         this.estados = estados;
+        this.estadosArriba = estadosArriba;
         this.soloAire = soloAire;
         this.cielo = cielo;
         this.bloque = bloque;
@@ -84,8 +138,10 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
             int seccionY = chunk.getSectionYFromSectionIndex(i);
             SectionPos pos = SectionPos.of(chunkX, seccionY, chunkZ);
             SectionPos arriba = SectionPos.of(chunkX, seccionY + 1, chunkZ);
+            LevelChunkSection deArriba = i + 1 < secciones.length ? secciones[i + 1] : null;
             capturas.add(new Captura(chunkX, seccionY, chunkZ, new LectorSeccionMinecraft(
-                    seccion.getStates().copy(), false,
+                    seccion.getStates().copy(),
+                    deArriba == null || deArriba.hasOnlyAir() ? null : deArriba.getStates().copy(), false,
                     copiar(luzCielo.getDataLayerData(pos)),
                     copiar(luzBloque.getDataLayerData(pos)),
                     copiar(luzCielo.getDataLayerData(arriba)),
@@ -123,15 +179,39 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         // el mundo: con un único estado en la paleta la sección es homogénea.
         int[] distintos = {0};
         estados.count((estado, cantidad) -> distintos[0]++);
-        return distintos[0] == 1;
+        if (distintos[0] != 1) {
+            return false;
+        }
+        // Una cubierta encima cambia la cara de arriba: ya no es uniforme.
+        if (estadosArriba != null) {
+            for (int x = 0; x < 16; x++) {
+                for (int z = 0; z < 16; z++) {
+                    if (forma(estadosArriba.get(x, 0, z)) == Forma.CUBIERTA) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     @Override
     public SuperVoxel voxel(int x, int y, int z) {
         BlockState estado = estados.get(x, y, z);
+        switch (forma(estado)) {
+            case DECORACION, CUBIERTA -> estado = Blocks.AIR.defaultBlockState();
+            case SUMERGIDA -> estado = AGUA;
+            case NORMAL -> { }
+        }
         SuperVoxel.Material material = material(estado);
         if (material == SuperVoxel.Material.AIRE) {
             return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) y, material, (byte) 0);
+        }
+        // Nieve fina o alfombra encima: la cara de arriba de este bloque es la de la cubierta.
+        BlockState encima = y < SectionExtractor.LADO - 1 ? estados.get(x, y + 1, z)
+                : estadosArriba != null ? estadosArriba.get(x, 0, z) : null;
+        if (encima != null && forma(encima) == Forma.CUBIERTA) {
+            estado = encima;
         }
         Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
         int rgb = ColoresBloque.rgb(estado, bioma, origenX + x, origenZ + z);

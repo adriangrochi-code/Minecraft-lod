@@ -100,6 +100,22 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   dithering de la sección 6), y medir en hardware real el costo de armar
   teselas de nivel 3-4 (leen hasta 4096 nodos por sección).
 
+- **Calidad visual vs. vanilla (2026-09-29):** comparación a 1920×1080,
+  preset Medio (umbral 2.5): vanilla 32 chunks contra vanilla 8 + LOD, mismo
+  lugar. El LOD conserva forma, texturas y tonos del terreno lejano. Falta
+  para acercarse más: oclusión ambiental por vértice (vanilla oscurece
+  esquinas; el LOD es más plano), y el tono del cielo/niebla lejana (la
+  niebla estirada cambia el color del cielo cerca del horizonte).
+  Las pruebas anteriores con umbral 6-16 px y ventana 854×480 exageraban
+  los cubos: no usar esos valores para juzgar calidad.
+- Plantas, flores, pasto, antorchas y rieles ya no se dibujan como cubos
+  (se ve el suelo); nieve fina y alfombras pintan la cara de arriba del
+  bloque de abajo; algas/pasto marino cuentan como agua
+  (`LectorSeccionMinecraft.Forma`). Bloques no cúbicos con colisión
+  (cercas, escaleras, losas) siguen como cubos.
+- Almacenamiento ya es por sección cúbica 16×16×16 (vacías no se guardan,
+  uniformes = un vóxel). Con niveles grandes: ~27 KB por chunk.
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~
