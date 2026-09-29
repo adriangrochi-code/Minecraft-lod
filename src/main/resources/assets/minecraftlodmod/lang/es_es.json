@@ -50,5 +50,7 @@
   "minecraftlodmod.configuration.pregenerar": "Pregenerar chunks para el LOD",
   "minecraftlodmod.configuration.pregenerar.tooltip": "Genera el mundo desde vos hacia afuera (como Chunky) para que el LOD llegue lejos sin tener que recorrerlo. Usa CPU y disco: los chunks quedan guardados en el mundo. Se frena solo si el juego se pone lento.",
   "minecraftlodmod.configuration.radioPregeneracion": "Radio de pregeneración (chunks)",
-  "minecraftlodmod.configuration.radioPregeneracion.tooltip": "256 ≈ 200 mil chunks: 1-2 GB y decenas de minutos. 1024 ≈ 3 millones: decenas de GB y horas. 2048 ≈ 13 millones: cientos de GB y días."
+  "minecraftlodmod.configuration.radioPregeneracion.tooltip": "256 ≈ 200 mil chunks: 1-2 GB y decenas de minutos. 1024 ≈ 3 millones: decenas de GB y horas. 2048 ≈ 13 millones: cientos de GB y días.",
+  "minecraftlodmod.configuration.ocultarTapado": "Ocultar lo tapado por montañas",
+  "minecraftlodmod.configuration.ocultarTapado.tooltip": "No arma ni dibuja el terreno lejano que queda escondido detrás del relieve. Menos trabajo en zonas montañosas; si ves que algo aparece tarde al subir una colina, apagalo."
 }

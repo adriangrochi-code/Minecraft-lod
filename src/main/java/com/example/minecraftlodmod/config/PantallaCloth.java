@@ -83,6 +83,11 @@ final class PantallaCloth {
                 .setTooltip(texto("descartarCuevas.tooltip"))
                 .setSaveConsumer(c.descartarCuevas::set)
                 .build());
+        general.addEntry(e.startBooleanToggle(texto("ocultarTapado"), c.ocultarTapado.get())
+                .setDefaultValue(c.ocultarTapado.getDefault())
+                .setTooltip(texto("ocultarTapado.tooltip"))
+                .setSaveConsumer(c.ocultarTapado::set)
+                .build());
         general.addEntry(e.startBooleanToggle(texto("oclusionAmbiental"), c.oclusionAmbiental.get())
                 .setDefaultValue(c.oclusionAmbiental.getDefault())
                 .setTooltip(texto("oclusionAmbiental.tooltip"))

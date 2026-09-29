@@ -292,3 +292,13 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
     cliente). Pendiente: versión para servidor dedicado (config de servidor),
     y "rough generation" para radios de miles de chunks, que con generación
     vanilla completa ocupan cientos de GB y tardan días.
+- **Oclusión por relieve (raycasting grueso, `OclusionRelieve`):** horizonte
+  por dirección (2048 sectores) armado con columnas de 32 bloques del nivel 5,
+  de cerca a lejos; una pieza se oculta si su tope queda bajo el horizonte de
+  lo estrictamente más cercano. Conservador (suelo del vóxel más alto como
+  oclusor, tope de las columnas tocadas como ocluido, nada dentro de 64
+  bloques, nada bajo tierra). Medido en un valle nevado del benchmark: 77 de
+  218 piezas ocultas, −33% llamadas, −13% vértices dibujados, 0,8 ms por
+  replanificación; capturas con y sin oclusión idénticas salvo nubes.
+  Relieve leído con tope de 32 regiones por replanificación. Pendiente: la
+  curvatura/altura no se replanifica hasta moverse 8 bloques en Y o 3 s.

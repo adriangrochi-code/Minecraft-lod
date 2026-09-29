@@ -41,6 +41,7 @@ import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -160,10 +161,11 @@ public final class RenderLod {
         Runtime rt = Runtime.getRuntime();
         LOG.info("LOD stats: fps={} | dibujo LOD {} ms/frame, {} llamadas/frame, {} vértices dibujados/frame | "
                         + "{} piezas, {} vértices ({} triángulos), VRAM LOD ~{} MB | mallas armadas {} ({} ms prom) "
-                        + "| heap {} / {} MB",
+                        + "| ocultas por relieve {} ({} ms) | heap {} / {} MB",
                 mc.getFps(), String.format("%.2f", nanosDibujo / 1e6 / Math.max(1, framesDesdeEstadistica)),
                 llamadasUltimoFrame, verticesUltimoFrame, piezas, vertices, vertices / 2, bytesVram >> 20, mallas,
                 mallas == 0 ? 0 : String.format("%.1f", nanos / 1e6 / mallas),
+                piezasOcultas, String.format("%.1f", nanosOclusion / 1e6),
                 (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20);
         ultimaEstadisticaNanos = ahora;
         framesDesdeEstadistica = 0;
@@ -225,6 +227,14 @@ public final class RenderLod {
     private volatile ParametrosCalidad calidad;
     private int chunkPlanX = Integer.MIN_VALUE, chunkPlanZ = Integer.MIN_VALUE;
     private double fovPlan;
+    private double yPlan;
+    /** Si la cámara sube o baja esto, se replanifica (la oclusión por relieve depende de la altura). */
+    static final double REPLANIFICAR_ALTURA = 8;
+    /** Solo el relieve hasta esta distancia tapa (ver OclusionRelieve). */
+    static final double RADIO_OCLUSORES = 4096;
+    private final CacheRelieve relieve = new CacheRelieve();
+    private int piezasOcultas;
+    private long nanosOclusion;
     private long ultimoPlanNanos;
     private ClientLevel nivelActual;
 
@@ -240,6 +250,8 @@ public final class RenderLod {
         int vertices;
         int bytesVertice;
         boolean enConstruccion;
+        /** Escondida detrás del relieve en el último plan: ni se arma ni se dibuja (la malla se conserva). */
+        boolean oculta;
         int chunksConDatos;
         boolean texturizada;
         long construidaNanos;
@@ -393,12 +405,13 @@ public final class RenderLod {
         int chunkZ = (int) Math.floor(camara.z / 16);
         long ahora = System.nanoTime();
         if (chunkX == chunkPlanX && chunkZ == chunkPlanZ && Math.abs(fovGrados - fovPlan) < 1
-                && ahora - ultimoPlanNanos < REPLANIFICAR_NANOS) {
+                && Math.abs(camara.y - yPlan) < REPLANIFICAR_ALTURA && ahora - ultimoPlanNanos < REPLANIFICAR_NANOS) {
             return;
         }
         chunkPlanX = chunkX;
         chunkPlanZ = chunkZ;
         fovPlan = fovGrados;
+        yPlan = camara.y;
         ultimoPlanNanos = ahora;
 
         ParametrosCalidad c = calidad;
@@ -422,19 +435,26 @@ public final class RenderLod {
                 distanciaVanilla, cubiertos::contains, Math.toRadians(fovGrados), mc.getWindow().getHeight(),
                 c.umbralPx());
         plan.sort(Comparator.comparingDouble(celda -> distancia2(celda, camara)));
+        byte dimension = GeneradorLocal.idDimension(mc.level.dimension());
+        boolean[] ocultas = ocultasPorRelieve(plan, camara, store, dimension, mc.level.getMinSection(),
+                mc.level.getMaxSection(), c.radioLodChunks());
 
         Set<Long> vigentes = new HashSet<>();
         int encoladas = 0;
-        byte dimension = GeneradorLocal.idDimension(mc.level.dimension());
         GeometriaLod.Texturas texturas = texturasEnUso ? PaletaTexturas.tabla() : null;
         boolean oclusion = oclusionEnUso;
         int minSeccion = mc.level.getMinSection();
         int maxSeccion = mc.level.getMaxSection();
-        for (PlanCeldas.Celda celda : plan) {
+        for (int i = 0; i < plan.size(); i++) {
+            PlanCeldas.Celda celda = plan.get(i);
             long clave = clave(celda);
             vigentes.add(clave);
             EstadoCelda estado = celdas.computeIfAbsent(clave, k -> new EstadoCelda());
             estado.plan = celda;
+            estado.oculta = ocultas[i];
+            if (estado.oculta) {
+                continue; // tapada por el relieve: no gastar en armarla; si ya tenía malla, queda guardada
+            }
             boolean cambio = !celda.equals(estado.construidaCon);
             boolean incompleta = estado.construidaCon != null
                     && estado.chunksConDatos < chunksDibujables(celda)
@@ -656,7 +676,8 @@ public final class RenderLod {
             shader.apply();
         }
         for (EstadoCelda estado : celdas.values()) {
-            if (!estado.tieneMalla || estado.construidaCon == null || estado.texturizada != texturizadas) {
+            if (!estado.tieneMalla || estado.construidaCon == null || estado.texturizada != texturizadas
+                    || estado.oculta) {
                 continue;
             }
             double origenX = estado.construidaCon.origenX(), origenZ = estado.construidaCon.origenZ();
@@ -733,6 +754,127 @@ public final class RenderLod {
         return conDatos;
     }
 
+    /**
+     * Oclusión por relieve (ver {@link OclusionRelieve}); todo false si está
+     * apagada en la config. Antes lee (con tope) el relieve que falte.
+     */
+    private boolean[] ocultasPorRelieve(List<PlanCeldas.Celda> plan, Vec3 camara, RegionFileStore store,
+                                        byte dimension, int minSeccion, int maxSeccion, int radioLodChunks) {
+        if (!ConfigLod.CLIENTE.ocultarTapado.get()) {
+            piezasOcultas = 0;
+            return new boolean[plan.size()];
+        }
+        long inicio = System.nanoTime();
+        double radioOclusores = Math.min(RADIO_OCLUSORES, radioLodChunks * 16.0);
+        relieve.preparar(store, dimension, minSeccion, maxSeccion, camara.x, camara.z, radioLodChunks * 16.0);
+        List<OclusionRelieve.Pieza> piezas = new ArrayList<>(plan.size());
+        for (PlanCeldas.Celda celda : plan) {
+            piezas.add(new OclusionRelieve.Pieza(celda.origenX(), celda.origenZ(), celda.ladoEnBloques()));
+        }
+        boolean[] ocultas = OclusionRelieve.ocultas(camara.x, camara.y, camara.z, piezas, relieve, radioOclusores);
+        int cuantas = 0;
+        for (boolean o : ocultas) {
+            if (o) cuantas++;
+        }
+        piezasOcultas = cuantas;
+        nanosOclusion = System.nanoTime() - inicio;
+        return ocultas;
+    }
+
+    /**
+     * Relieve por región de 512 bloques, leído del nivel 5 guardado (una
+     * grilla 16³ de vóxeles de 32 bloques por banda vertical). Se lee de a
+     * poco ({@link #LECTURAS_POR_PLAN}) y se refresca cada
+     * {@link #VIGENCIA_NANOS}: lo que todavía no se leyó cuenta como "sin
+     * datos", que nunca oculta nada. Solo hilo de render.
+     */
+    private static final class CacheRelieve implements OclusionRelieve.Relieve {
+        static final int LECTURAS_POR_PLAN = 32;
+        static final long VIGENCIA_NANOS = 60_000_000_000L;
+
+        private record Datos(float[] suelos, float tope, long leidoNanos) {
+        }
+
+        private final Map<Long, Datos> regiones = new HashMap<>();
+        private byte dimension = -1;
+
+        void preparar(RegionFileStore store, byte dimension, int minSeccion, int maxSeccion,
+                      double camX, double camZ, double radio) {
+            if (dimension != this.dimension) {
+                regiones.clear();
+                this.dimension = dimension;
+            }
+            int r = OclusionRelieve.REGION;
+            int desdeX = Math.floorDiv((int) Math.floor(camX - radio), r), hastaX = Math.floorDiv((int) Math.floor(camX + radio), r);
+            int desdeZ = Math.floorDiv((int) Math.floor(camZ - radio), r), hastaZ = Math.floorDiv((int) Math.floor(camZ + radio), r);
+            int centroX = Math.floorDiv((int) Math.floor(camX), r), centroZ = Math.floorDiv((int) Math.floor(camZ), r);
+            // Del centro hacia afuera: con el tope de lecturas, primero lo que más tapa.
+            List<long[]> faltan = new ArrayList<>();
+            long ahora = System.nanoTime();
+            for (int rx = desdeX; rx <= hastaX; rx++) {
+                for (int rz = desdeZ; rz <= hastaZ; rz++) {
+                    Datos d = regiones.get(PlanCeldas.claveChunk(rx, rz));
+                    if (d == null || ahora - d.leidoNanos() > VIGENCIA_NANOS) {
+                        long dx = rx - centroX, dz = rz - centroZ;
+                        faltan.add(new long[]{dx * dx + dz * dz, rx, rz});
+                    }
+                }
+            }
+            faltan.sort(Comparator.comparingLong(f -> f[0]));
+            for (int i = 0; i < Math.min(LECTURAS_POR_PLAN, faltan.size()); i++) {
+                int rx = (int) faltan.get(i)[1], rz = (int) faltan.get(i)[2];
+                regiones.put(PlanCeldas.claveChunk(rx, rz), leer(store, dimension, rx, rz, minSeccion, maxSeccion, ahora));
+            }
+            // Las muy alejadas de la cámara ya no sirven: se sueltan.
+            regiones.keySet().removeIf(k -> {
+                int rx = (int) k.longValue(), rz = (int) (k >> 32);
+                return rx < desdeX - 2 || rx > hastaX + 2 || rz < desdeZ - 2 || rz > hastaZ + 2;
+            });
+        }
+
+        private static Datos leer(RegionFileStore store, byte dimension, int rx, int rz, int minSeccion,
+                                  int maxSeccion, long ahora) {
+            int n = OclusionRelieve.COLUMNAS_POR_REGION;
+            int nivel = NivelesGrandes.NIVEL_MIN;
+            int seccionesPorBanda = NivelesGrandes.ladoEnSecciones(nivel);
+            float[] suelos = new float[n * n];
+            java.util.Arrays.fill(suelos, Float.NaN);
+            boolean alguna = false;
+            float tope = Float.NEGATIVE_INFINITY;
+            // De la banda de arriba hacia abajo: el primer sólido por columna es el suelo.
+            for (int banda = Math.floorDiv(maxSeccion - 1, seccionesPorBanda);
+                 banda >= Math.floorDiv(minSeccion, seccionesPorBanda); banda--) {
+                SuperVoxel[] grilla = leerGrande(store, dimension, nivel, rx, banda, rz);
+                if (grilla == null) {
+                    continue;
+                }
+                alguna = true;
+                for (int x = 0; x < n; x++) {
+                    for (int z = 0; z < n; z++) {
+                        if (!Float.isNaN(suelos[x * n + z])) {
+                            continue;
+                        }
+                        for (int y = n - 1; y >= 0; y--) {
+                            if (grilla[(x * n + y) * n + z].material() != SuperVoxel.Material.AIRE) {
+                                float suelo = banda * seccionesPorBanda * 16f + y * OclusionRelieve.COLUMNA;
+                                suelos[x * n + z] = suelo;
+                                tope = Math.max(tope, suelo + OclusionRelieve.COLUMNA);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            return alguna ? new Datos(suelos, tope, ahora) : new Datos(null, Float.NaN, ahora);
+        }
+
+        @Override
+        public float[] suelos(int regionX, int regionZ) {
+            Datos d = regiones.get(PlanCeldas.claveChunk(regionX, regionZ));
+            return d == null ? null : d.suelos();
+        }
+    }
+
     private static SuperVoxel[] leerGrande(RegionFileStore store, byte dimension, int nivel, int x, int banda, int z) {
         byte[] bytes = store.leer(new RegionFileStore.ClaveRegion(dimension,
                 NivelesGrandes.regionDe(nivel, x), NivelesGrandes.regionDe(nivel, z)),
@@ -794,7 +936,7 @@ public final class RenderLod {
     private float alcance(Vec3 camara) {
         double maximo = 0;
         for (EstadoCelda e : celdas.values()) {
-            if (!e.tieneMalla || e.construidaCon == null) {
+            if (!e.tieneMalla || e.construidaCon == null || e.oculta) {
                 continue;
             }
             PlanCeldas.Celda c = e.construidaCon;

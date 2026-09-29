@@ -38,6 +38,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue fpsObjetivo;
         public final ModConfigSpec.BooleanValue autoAjuste;
         public final ModConfigSpec.BooleanValue lodActivo;
+        public final ModConfigSpec.BooleanValue ocultarTapado;
         public final ModConfigSpec.BooleanValue pregenerar;
         public final ModConfigSpec.IntValue radioPregeneracion;
         public final ModConfigSpec.BooleanValue texturasLod;
@@ -64,6 +65,8 @@ public final class ConfigLod {
             radioPregeneracion = b.comment("Radio de la pregeneración, en chunks. 256 ≈ 200 mil chunks (del orden de",
                             "1-2 GB y decenas de minutos); 2048 ≈ 13 millones (cientos de GB, días).")
                     .defineInRange("radioPregeneracion", 256, 16, ParametrosCalidad.RADIO_MAX);
+            ocultarTapado = b.comment("No armar ni dibujar el LOD escondido detrás de montañas (oclusión por relieve).")
+                    .define("ocultarTapado", true);
             texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
                             "con la distancia). Apagado: colores planos, un poco más barato en GPU.")
                     .define("texturasLod", true);
