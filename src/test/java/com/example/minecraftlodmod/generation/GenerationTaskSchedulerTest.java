@@ -35,9 +35,18 @@ class GenerationTaskSchedulerTest {
         try {
             int cantidadTareas = 200;
             List<Future<Long>> futuros = new ArrayList<>();
+            // Sin esta barrera el test era no determinista: con tareas casi
+            // instantáneas, a veces un solo hilo las terminaba todas antes de
+            // que otro llegara a robar. Cada tarea espera a que haya al menos
+            // dos corriendo a la vez, lo que obliga a repartir.
+            CountDownLatch dosEnParalelo = new CountDownLatch(2);
 
             for (int i = 0; i < cantidadTareas; i++) {
-                futuros.add(scheduler.enviar(() -> Thread.currentThread().threadId()));
+                futuros.add(scheduler.enviar(() -> {
+                    dosEnParalelo.countDown();
+                    dosEnParalelo.await(5, TimeUnit.SECONDS);
+                    return Thread.currentThread().threadId();
+                }));
             }
 
             var hilosDistintos = new java.util.HashSet<Long>();

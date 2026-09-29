@@ -71,4 +71,68 @@ class PerformanceAutoTunerTest {
         assertEquals(320, tuner.radioActivo());
         assertTrue(tuner.umbralPx() < 5.0, "Con el radio en el techo, debería mejorar detalle");
     }
+
+    private PerformanceAutoTuner tunerConTresPerillas(int concurrenciaInicialEsMaxima) {
+        return new PerformanceAutoTuner(
+                2.5, 160, 0.5, 8.0, 0, 320, 0.5, 16,
+                1, concurrenciaInicialEsMaxima);
+    }
+
+    @Test
+    void conFrameTimeAltoPrimeroBajaLaConcurrenciaDeGeneracion() {
+        PerformanceAutoTuner tuner = tunerConTresPerillas(3);
+
+        tuner.ajustar(30.0, 16.6);
+
+        assertEquals(2, tuner.limiteConcurrencia());
+        assertEquals(2.5, tuner.umbralPx(), "El umbral no debería tocarse todavía");
+        assertEquals(160, tuner.radioActivo(), "El radio no debería tocarse todavía");
+    }
+
+    @Test
+    void conConcurrenciaEnElPisoRecienAhiSubeElUmbral() {
+        PerformanceAutoTuner tuner = tunerConTresPerillas(3);
+
+        tuner.ajustar(30.0, 16.6);
+        tuner.ajustar(30.0, 16.6);
+        assertEquals(1, tuner.limiteConcurrencia());
+        assertEquals(2.5, tuner.umbralPx());
+
+        tuner.ajustar(30.0, 16.6);
+        assertEquals(1, tuner.limiteConcurrencia(), "Nunca baja de la concurrencia mínima");
+        assertTrue(tuner.umbralPx() > 2.5);
+    }
+
+    @Test
+    void conMargenDeSobraPrimeroRecuperaConcurrenciaAntesQueRadio() {
+        PerformanceAutoTuner tuner = tunerConTresPerillas(2);
+        tuner.ajustar(30.0, 16.6); // baja a 1
+
+        tuner.ajustar(5.0, 16.6);
+
+        assertEquals(2, tuner.limiteConcurrencia());
+        assertEquals(160, tuner.radioActivo(), "El radio se recupera recién con la concurrencia en su techo");
+
+        tuner.ajustar(5.0, 16.6);
+        assertEquals(2, tuner.limiteConcurrencia(), "Nunca supera la concurrencia máxima");
+        assertTrue(tuner.radioActivo() > 160);
+    }
+
+    @Test
+    void elPisoAbsolutoExigeLasTresPerillasAlMinimo() {
+        PerformanceAutoTuner tuner = new PerformanceAutoTuner(
+                8.0, 0, 0.5, 8.0, 0, 320, 0.5, 16, 1, 2);
+        assertFalse(tuner.enPisoAbsoluto(), "Todavía puede bajar la concurrencia");
+
+        tuner.ajustar(30.0, 16.6);
+        assertTrue(tuner.enPisoAbsoluto());
+    }
+
+    @Test
+    void rechazaRangoDeConcurrenciaInvalido() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new PerformanceAutoTuner(2.5, 160, 0.5, 8.0, 0, 320, 0.5, 16, 0, 2));
+        assertThrows(IllegalArgumentException.class,
+                () -> new PerformanceAutoTuner(2.5, 160, 0.5, 8.0, 0, 320, 0.5, 16, 3, 2));
+    }
 }

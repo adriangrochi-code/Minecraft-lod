@@ -6,7 +6,7 @@ package com.example.minecraftlodmod.config;
  * parte queda completamente funcional sin necesitar compilar contra NeoForge.
  *
  * La integración con Cloth Config (pantalla in-game, persistencia del
- * archivo de config) todavía no está implementada — ver ConfigScreenPlaceholder.
+ * archivo de config) todavía no está implementada (Pista A, ítem 5).
  */
 public enum QualityPreset {
 

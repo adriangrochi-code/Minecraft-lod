@@ -123,6 +123,11 @@ public final class RegionHeader {
         return header;
     }
 
+    /** Claves de todos los nodos registrados (copia, para iterar sin exponer la tabla interna). */
+    public java.util.Set<Long> claves() {
+        return java.util.Set.copyOf(tablaOffsets.keySet());
+    }
+
     public int cantidadNodos() {
         return tablaOffsets.size();
     }
