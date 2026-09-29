@@ -115,4 +115,42 @@ class RenderPuroTest {
         assertEquals(2, sinLaterales.agregarSeccion(grid, 2, 0, 0, 0, 8, todosLosLados),
                 "Quedan solo arriba y abajo");
     }
+
+    @Test
+    void lasCarasTexturizadasLlevanSuRectanguloYElColorQueCorresponde() {
+        SuperVoxel pasto = new SuperVoxel((byte) 80, (byte) 160, (byte) 40, (byte) 0,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 9).conLuzHorneada(15);
+        GeometriaLod g = new GeometriaLod();
+        // Arriba: textura teñida (usa el color del vóxel). Costados: tierra sin tinte.
+        g.usarTexturas((estado, eje, positivo) -> eje == com.example.minecraftlodmod.generation.Quad.Eje.Y && positivo
+                ? new GeometriaLod.Cara(0.5f, 0.25f, 0.01f, 0.02f, 0x7F7F7F, true)
+                : new GeometriaLod.Cara(0.1f, 0.1f, 0.01f, 0.01f, 0x86603F, false));
+        g.agregarSeccion(new SuperVoxel[]{pasto}, 1, 0, 0, 0, 1);
+
+        boolean vioArriba = false, vioCostado = false;
+        for (int i = 0; i < g.vertices(); i++) {
+            assertTrue(g.texturizado(i));
+            if (g.normalY(i) > 0) {
+                vioArriba = true;
+                assertEquals(0.5f, g.u0(i));
+                assertEquals(0x7F7F7F, g.promedioTextura(i));
+                assertEquals(160, (g.color(i) >> 8) & 0xFF, "Arriba manda el color del vóxel (con tinte)");
+            } else if (g.normalX(i) != 0) {
+                vioCostado = true;
+                assertEquals(0x86 * 6 / 10, (g.color(i) >> 16) & 0xFF, 1,
+                        "El costado usa el promedio de su propia textura, con sombra 0.6");
+            }
+        }
+        assertTrue(vioArriba && vioCostado);
+    }
+
+    @Test
+    void sinEstadoOSinFuenteQuedaConColorPlano() {
+        GeometriaLod g = new GeometriaLod();
+        g.usarTexturas((estado, eje, positivo) -> new GeometriaLod.Cara(0, 0, 0.01f, 0.01f, 0, true));
+        g.agregarSeccion(new SuperVoxel[]{solido(15)}, 1, 0, 0, 0, 1); // solido() no tiene estado
+        for (int i = 0; i < g.vertices(); i++) {
+            assertFalse(g.texturizado(i));
+        }
+    }
 }

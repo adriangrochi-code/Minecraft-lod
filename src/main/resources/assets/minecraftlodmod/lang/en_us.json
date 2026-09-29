@@ -36,5 +36,7 @@
   "minecraftlodmod.configuration.calibrar.enMundo": "Only available from the main menu.",
   "minecraftlodmod.calibracion.terminada": "LOD calibration finished",
   "minecraftlodmod.calibracion.resultado": "Saved as Custom: LOD radius %s chunks",
-  "minecraftlodmod.calibracion.piso": "Your hardware is at the lightest level; saved as Custom"
+  "minecraftlodmod.calibracion.piso": "Your hardware is at the lightest level; saved as Custom",
+  "minecraftlodmod.configuration.texturasLod": "LOD textures",
+  "minecraftlodmod.configuration.texturasLod.tooltip": "Draw distant terrain with the textures of the active resource pack; they simplify with distance. Off: flat colors."
 }

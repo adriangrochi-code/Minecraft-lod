@@ -46,6 +46,7 @@ public class MinecraftLodMod {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             PaletaTexturas paleta = new PaletaTexturas();
             modEventBus.addListener(paleta::alCoserAtlas);
+            modEventBus.addListener(RenderLod::registrarShaders);
             NeoForge.EVENT_BUS.addListener(paleta::alTerminarTick);
             RenderLod render = new RenderLod(generador);
             NeoForge.EVENT_BUS.register(render);

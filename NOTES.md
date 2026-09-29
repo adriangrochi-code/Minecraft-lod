@@ -80,6 +80,16 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   (guardar el id de bloque dominante en los 2 bytes reservados del
   supervóxel). Revisar con resource packs y bloques de mods.
 
+- **Texturas en el LOD (estilo Voxy):** cada supervóxel guarda el estado de
+  bloque dominante de su superficie (2 bytes antes reservados, sección 5) y
+  el shader `lod_textura` dibuja la textura del atlas activo repetida por
+  bloque, con mipmaps; la textura aporta solo detalle (textura / su
+  promedio), así el color medio y el tinte de bioma se conservan. Revisar
+  en hardware real: costo del shader en iGPU, mezcla de mipmaps entre
+  texturas vecinas del atlas a mucha distancia, y cómo se ve con resource
+  packs de 32x/64x y con Embeddium. Iris/shaderpacks no aplican a este
+  shader. Los ids de estado > 65535 (muchos mods) quedan sin textura.
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~

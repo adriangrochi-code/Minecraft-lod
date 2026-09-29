@@ -36,5 +36,7 @@
   "minecraftlodmod.configuration.calibrar.enMundo": "Solo disponible desde el menú principal.",
   "minecraftlodmod.calibracion.terminada": "Calibración de LOD terminada",
   "minecraftlodmod.calibracion.resultado": "Guardado como Personalizado: radio LOD %s chunks",
-  "minecraftlodmod.calibracion.piso": "Tu hardware quedó en el escalón más liviano; guardado como Personalizado"
+  "minecraftlodmod.calibracion.piso": "Tu hardware quedó en el escalón más liviano; guardado como Personalizado",
+  "minecraftlodmod.configuration.texturasLod": "Texturas en el LOD",
+  "minecraftlodmod.configuration.texturasLod.tooltip": "Dibuja el terreno lejano con las texturas del paquete de texturas activo; se simplifican solas con la distancia. Apagado: colores planos."
 }

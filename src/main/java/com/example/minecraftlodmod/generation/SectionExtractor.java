@@ -141,7 +141,7 @@ public final class SectionExtractor {
                 // Una sección llena de un solo bloque tiene su superficie arriba de todo.
                 byte altura = seccion.homogeneaEnOrigen() ? (byte) (LADO - 1) : unico.alturaLocal();
                 SuperVoxel marcado = new SuperVoxel(unico.r(), unico.g(), unico.b(), altura,
-                        unico.material(), (byte) (unico.flags() | 0b0000_0001));
+                        unico.material(), (byte) (unico.flags() | 0b0000_0001), unico.estado());
                 niveles.add(OctreeNode.homogeneo(nivel, ox, oy, oz, LADO, marcado));
             } else {
                 niveles.add(OctreeNode.mixto(nivel, ox, oy, oz, LADO, actual));
@@ -177,7 +177,7 @@ public final class SectionExtractor {
     }
 
     private static SuperVoxel conAltura(SuperVoxel v, int y) {
-        return new SuperVoxel(v.r(), v.g(), v.b(), (byte) y, v.material(), v.flags());
+        return new SuperVoxel(v.r(), v.g(), v.b(), (byte) y, v.material(), v.flags(), v.estado());
     }
 
     private static boolean todosIguales(SuperVoxel[] voxeles) {

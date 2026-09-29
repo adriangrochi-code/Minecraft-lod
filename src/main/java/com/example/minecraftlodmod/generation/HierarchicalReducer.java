@@ -14,9 +14,14 @@ import com.example.minecraftlodmod.core.SuperVoxel;
  *    vóxeles visibles queda visible, así las superficies de un bloque de
  *    espesor no se "hunden" al subir de nivel;
  *  - el material es el más votado entre los vóxeles visibles;
- *  - color, altura y luz horneada se promedian solo sobre los visibles: el
- *    aire no aporta color (antes entraba como negro y oscurecía todo nivel
- *    reducido, y la luz se perdía — corregido con el primer render).
+ *  - la altura se promedia sobre los visibles;
+ *  - color, luz horneada y estado de bloque salen de la SUPERFICIE vista
+ *    desde arriba (por columna, el vóxel visible más alto): el terreno
+ *    lejano se ve desde arriba, y una ladera de pasto tiene que seguir
+ *    siendo pasto, no la tierra o piedra que hay debajo. El estado es el
+ *    más frecuente de esa superficie (define la textura en el render).
+ *  - el aire nunca aporta color (antes entraba como negro y oscurecía todo
+ *    nivel reducido, y la luz se perdía — corregido con el primer render).
  */
 public final class HierarchicalReducer {
 
@@ -47,24 +52,27 @@ public final class HierarchicalReducer {
     }
 
     private static SuperVoxel fusionarBloque(SuperVoxel[] entrada, int lado, int ox, int oy, int oz) {
-        int sumaR = 0, sumaG = 0, sumaB = 0, sumaAltura = 0, sumaLuz = 0;
+        int sumaAltura = 0;
         int[] votosMaterial = new int[SuperVoxel.Material.values().length];
         int visibles = 0;
+        SuperVoxel[] superficie = new SuperVoxel[4];
+        int enSuperficie = 0;
 
         for (int dx = 0; dx < 2; dx++) {
-            for (int dy = 0; dy < 2; dy++) {
-                for (int dz = 0; dz < 2; dz++) {
+            for (int dz = 0; dz < 2; dz++) {
+                SuperVoxel masAlto = null;
+                for (int dy = 0; dy < 2; dy++) {
                     SuperVoxel v = entrada[indice(ox + dx, oy + dy, oz + dz, lado)];
                     if (v.material() == SuperVoxel.Material.AIRE) {
                         continue;
                     }
-                    sumaR += v.r() & 0xFF;
-                    sumaG += v.g() & 0xFF;
-                    sumaB += v.b() & 0xFF;
                     sumaAltura += v.alturaLocal() & 0xFF;
-                    sumaLuz += v.luzHorneada();
                     votosMaterial[v.material().ordinal()]++;
                     visibles++;
+                    masAlto = v; // dy crece: el último visible es el más alto
+                }
+                if (masAlto != null) {
+                    superficie[enSuperficie++] = masAlto;
                 }
             }
         }
@@ -72,14 +80,42 @@ public final class HierarchicalReducer {
         if (visibles * 2 < 8) {
             return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
         }
+        int sumaR = 0, sumaG = 0, sumaB = 0, sumaLuz = 0;
+        for (int i = 0; i < enSuperficie; i++) {
+            SuperVoxel v = superficie[i];
+            sumaR += v.r() & 0xFF;
+            sumaG += v.g() & 0xFF;
+            sumaB += v.b() & 0xFF;
+            sumaLuz += v.luzHorneada();
+        }
         return new SuperVoxel(
-                (byte) (sumaR / visibles),
-                (byte) (sumaG / visibles),
-                (byte) (sumaB / visibles),
+                (byte) (sumaR / enSuperficie),
+                (byte) (sumaG / enSuperficie),
+                (byte) (sumaB / enSuperficie),
                 (byte) (sumaAltura / visibles),
                 materialMasVotado(votosMaterial),
-                (byte) 0
-        ).conLuzHorneada(Math.round(sumaLuz / (float) visibles));
+                (byte) 0,
+                estadoMasFrecuente(superficie, enSuperficie)
+        ).conLuzHorneada(Math.round(sumaLuz / (float) enSuperficie));
+    }
+
+    /** Estado más repetido entre (a lo sumo 4) vóxeles; en empate, el primero encontrado. */
+    private static short estadoMasFrecuente(SuperVoxel[] voxeles, int cantidad) {
+        short mejor = SuperVoxel.SIN_ESTADO;
+        int mejorCuenta = 0;
+        for (int i = 0; i < cantidad; i++) {
+            int cuenta = 0;
+            for (int j = 0; j < cantidad; j++) {
+                if (voxeles[j].estado() == voxeles[i].estado()) {
+                    cuenta++;
+                }
+            }
+            if (cuenta > mejorCuenta) {
+                mejor = voxeles[i].estado();
+                mejorCuenta = cuenta;
+            }
+        }
+        return mejor;
     }
 
     private static SuperVoxel.Material materialMasVotado(int[] votos) {

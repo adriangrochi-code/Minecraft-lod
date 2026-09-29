@@ -88,4 +88,26 @@ class HierarchicalReducerTest {
 
         assertEquals(SuperVoxel.Material.AIRE, HierarchicalReducer.reducir(entrada, 2)[0].material());
     }
+
+    @Test
+    void laSuperficieDecideColorYEstadoAunqueAbajoHayaMasVolumen() {
+        SuperVoxel pasto = new SuperVoxel((byte) 90, (byte) 160, (byte) 60, (byte) 1,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 9).conLuzHorneada(15);
+        SuperVoxel tierra = new SuperVoxel((byte) 120, (byte) 85, (byte) 60, (byte) 0,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 10).conLuzHorneada(0);
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        for (int x = 0; x < 2; x++) {
+            for (int y = 0; y < 2; y++) {
+                for (int z = 0; z < 2; z++) {
+                    entrada[(x * 2 + y) * 2 + z] = y == 1 ? pasto : tierra;
+                }
+            }
+        }
+
+        SuperVoxel r = HierarchicalReducer.reducir(entrada, 2)[0];
+
+        assertEquals(9, r.idEstado(), "La textura es la del pasto de arriba");
+        assertEquals(160, r.g() & 0xFF, "El color es el de la superficie");
+        assertEquals(15, r.luzHorneada(), "Y la luz, la de la superficie");
+    }
 }

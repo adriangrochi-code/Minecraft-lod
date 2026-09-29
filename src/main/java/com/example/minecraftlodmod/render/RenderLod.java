@@ -13,6 +13,13 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.VertexBuffer;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormatElement;
+import com.example.minecraftlodmod.MinecraftLodMod;
+import net.minecraft.client.renderer.ShaderInstance;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.client.event.RegisterShadersEvent;
+import java.io.IOException;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -86,6 +93,47 @@ public final class RenderLod {
     static final float NEAR_LOD = 16f;
     static final int BYTES_POR_VERTICE = 16; // POSITION_COLOR: 3 floats + 4 bytes
 
+    /**
+     * Formato texturizado (ver shaders/core/lod_textura.vsh): posición, color
+     * plano de la cara, esquina de la textura en el atlas (UV0), promedio de
+     * la textura empaquetado (UV1) y tamaño de la textura (UV2), normal.
+     * Solo elementos estándar de Minecraft: sin atributos propios.
+     */
+    public static final VertexFormat FORMATO_TEXTURA = VertexFormat.builder()
+            .add("Position", VertexFormatElement.POSITION)
+            .add("Color", VertexFormatElement.COLOR)
+            .add("UV0", VertexFormatElement.UV0)
+            .add("UV1", VertexFormatElement.UV1)
+            .add("UV2", VertexFormatElement.UV2)
+            .add("Normal", VertexFormatElement.NORMAL)
+            .padding(1)
+            .build();
+    static final int ESCALA_TAMANO_UV = 32768;
+
+    /** Shader texturizado, registrado como cualquier ShaderInstance del juego; null si no cargó. */
+    private static volatile ShaderInstance shaderTextura;
+    /** Sube cada vez que cambian las texturas (resource pack, F3+T): hay que rearmar todo. */
+    private static volatile int versionTexturas;
+    private int versionTexturasVista = -1;
+    private boolean texturasEnUso;
+
+    /** Bus del mod, solo cliente. */
+    public static void registrarShaders(RegisterShadersEvent evento) {
+        try {
+            evento.registerShader(new ShaderInstance(evento.getResourceProvider(),
+                    ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, "lod_textura"), FORMATO_TEXTURA),
+                    cargado -> shaderTextura = cargado);
+        } catch (IOException e) {
+            LOG.error("LOD: no se pudo cargar el shader de texturas; se dibuja con colores planos", e);
+            shaderTextura = null;
+        }
+    }
+
+    /** Lo avisa {@link PaletaTexturas} al recalcular la tabla con el atlas nuevo. */
+    static void texturasCambiaron() {
+        versionTexturas++;
+    }
+
     private final GeneradorLocal generador;
     /**
      * Un hilo con cola de PRIORIDAD por distancia a la cámara: las celdas se
@@ -133,12 +181,13 @@ public final class RenderLod {
         VertexBuffer buffer;
         boolean enConstruccion;
         int chunksConDatos;
+        boolean texturizada;
         long construidaNanos;
     }
 
     /** Resultado del hilo de mallas; {@code malla} y {@code memoria} null = la celda no tiene nada que dibujar. */
     private record MallaLista(long clave, PlanCeldas.Celda celda, MeshData malla, ByteBufferBuilder memoria,
-                              int chunksConDatos) {
+                              int chunksConDatos, boolean texturizada) {
     }
 
     public RenderLod(GeneradorLocal generador) {
@@ -198,6 +247,19 @@ public final class RenderLod {
             LOG.info("LOD: render activo ({} chunks, umbral {} px)", calidad.radioLodChunks(), calidad.umbralPx());
         }
 
+        // Cambiaron las texturas o se prendió/apagó la opción: rearmar todas las
+        // celdas (las viejas se siguen dibujando hasta que llegue su reemplazo).
+        boolean usarTexturas = shaderTextura != null && PaletaTexturas.tabla() != null
+                && ConfigLod.CLIENTE.texturasLod.get();
+        if (versionTexturas != versionTexturasVista || usarTexturas != texturasEnUso) {
+            versionTexturasVista = versionTexturas;
+            texturasEnUso = usarTexturas;
+            LOG.info("LOD: texturas {} (shader {}, tabla {}, opción {})", usarTexturas ? "activas" : "apagadas",
+                    shaderTextura != null ? "ok" : "sin cargar", PaletaTexturas.tabla() != null ? "ok" : "sin calcular",
+                    ConfigLod.CLIENTE.texturasLod.get());
+            celdas.values().forEach(e -> e.construidaCon = null);
+            chunkPlanX = Integer.MIN_VALUE;
+        }
         subirMallasListas();
         Camera camara = evento.getCamera();
         replanificarSiHaceFalta(mc, camara.getPosition(), store);
@@ -230,6 +292,7 @@ public final class RenderLod {
             }
             estado.construidaCon = lista.celda();
             estado.chunksConDatos = lista.chunksConDatos();
+            estado.texturizada = lista.texturizada();
             estado.construidaNanos = System.nanoTime();
             estado.enConstruccion = false;
         }
@@ -259,6 +322,7 @@ public final class RenderLod {
         Set<Long> vigentes = new HashSet<>();
         int encoladas = 0;
         byte dimension = GeneradorLocal.idDimension(mc.level.dimension());
+        GeometriaLod.Texturas texturas = texturasEnUso ? PaletaTexturas.tabla() : null;
         int minSeccion = mc.level.getMinSection();
         int maxSeccion = mc.level.getMaxSection();
         for (PlanCeldas.Celda celda : plan) {
@@ -275,7 +339,7 @@ public final class RenderLod {
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(distancia2(celda, camara), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                chunkX, chunkZ, distanciaVanilla)));
+                                chunkX, chunkZ, distanciaVanilla, texturas)));
             }
         }
         celdas.entrySet().removeIf(e -> {
@@ -289,9 +353,11 @@ public final class RenderLod {
 
     /** Hilo de mallas: lee los nodos del nivel elegido y arma los vértices de la celda. */
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
-                       int minSeccion, int maxSeccion, int chunkCamX, int chunkCamZ, int distanciaVanilla) {
+                       int minSeccion, int maxSeccion, int chunkCamX, int chunkCamZ, int distanciaVanilla,
+                       GeometriaLod.Texturas texturas) {
         try {
             GeometriaLod geometria = new GeometriaLod();
+            geometria.usarTexturas(texturas);
             int nivel = celda.nivel();
             int lado = SectionExtractor.LADO >> nivel;
             int total = SectionExtractor.voxelesPorNodo(nivel);
@@ -333,18 +399,30 @@ public final class RenderLod {
                 }
             }
             if (geometria.vertices() == 0) {
-                listas.add(new MallaLista(clave, celda, null, null, conDatos));
+                listas.add(new MallaLista(clave, celda, null, null, conDatos, false));
                 return;
             }
-            ByteBufferBuilder memoria = new ByteBufferBuilder(geometria.vertices() * BYTES_POR_VERTICE);
-            BufferBuilder builder = new BufferBuilder(memoria, VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+            boolean texturizada = texturas != null;
+            VertexFormat formato = texturizada ? FORMATO_TEXTURA : DefaultVertexFormat.POSITION_COLOR;
+            ByteBufferBuilder memoria = new ByteBufferBuilder(geometria.vertices() * formato.getVertexSize());
+            BufferBuilder builder = new BufferBuilder(memoria, VertexFormat.Mode.QUADS, formato);
             for (int i = 0; i < geometria.vertices(); i++) {
-                builder.addVertex(geometria.x(i), geometria.y(i), geometria.z(i)).setColor(geometria.color(i));
+                var vertice = builder.addVertex(geometria.x(i), geometria.y(i), geometria.z(i))
+                        .setColor(geometria.color(i));
+                if (texturizada) {
+                    int promedio = geometria.promedioTextura(i);
+                    vertice.setUv(geometria.u0(i), geometria.v0(i))
+                            .setUv1((promedio >> 8) & 0xFFFF, promedio & 0xFF)
+                            .setUv2(Math.round(geometria.du(i) * ESCALA_TAMANO_UV),
+                                    Math.round(geometria.dv(i) * ESCALA_TAMANO_UV))
+                            .setNormal(geometria.normalX(i) / 127f, geometria.normalY(i) / 127f,
+                                    geometria.normalZ(i) / 127f);
+                }
             }
-            listas.add(new MallaLista(clave, celda, builder.buildOrThrow(), memoria, conDatos));
+            listas.add(new MallaLista(clave, celda, builder.buildOrThrow(), memoria, conDatos, texturizada));
         } catch (RuntimeException e) {
             LOG.error("LOD: no se pudo armar la celda {},{}", celda.celdaX(), celda.celdaZ(), e);
-            listas.add(new MallaLista(clave, celda, null, null, 0));
+            listas.add(new MallaLista(clave, celda, null, null, 0, false));
         }
     }
 
@@ -359,10 +437,28 @@ public final class RenderLod {
         RenderSystem.disableBlend();
         // Sin culling: el orden de vértices todavía no está unificado por cara (Pista B).
         RenderSystem.disableCull();
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        var shader = GameRenderer.getPositionColorShader();
+        dibujarPasada(evento, camara, proyeccion, false, GameRenderer.getPositionColorShader());
+        ShaderInstance conTextura = shaderTextura;
+        if (conTextura != null) {
+            // Atlas de bloques activo, con mipmaps: la textura se simplifica sola con la distancia.
+            mc.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).setFilter(false, true);
+            RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
+            dibujarPasada(evento, camara, proyeccion, true, conTextura);
+        }
+        VertexBuffer.unbind();
+        RenderSystem.enableCull();
+        // GL_DEPTH_BUFFER_BIT: el terreno vanilla se dibuja después, siempre delante del LOD.
+        RenderSystem.clear(256, Minecraft.ON_OSX);
+    }
+
+    private void dibujarPasada(RenderLevelStageEvent evento, Vec3 camara, Matrix4f proyeccion,
+                               boolean texturizadas, ShaderInstance shader) {
+        if (shader == null) {
+            return;
+        }
+        RenderSystem.setShader(() -> shader);
         for (EstadoCelda estado : celdas.values()) {
-            if (estado.buffer == null || estado.construidaCon == null) {
+            if (estado.buffer == null || estado.construidaCon == null || estado.texturizada != texturizadas) {
                 continue;
             }
             float ox = (float) (estado.construidaCon.celdaX() * PlanCeldas.LADO_CELDA * 16 - camara.x);
@@ -371,10 +467,6 @@ public final class RenderLod {
             estado.buffer.bind();
             estado.buffer.drawWithShader(vista, proyeccion, shader);
         }
-        VertexBuffer.unbind();
-        RenderSystem.enableCull();
-        // GL_DEPTH_BUFFER_BIT: el terreno vanilla se dibuja después, siempre delante del LOD.
-        RenderSystem.clear(256, Minecraft.ON_OSX);
     }
 
     /**

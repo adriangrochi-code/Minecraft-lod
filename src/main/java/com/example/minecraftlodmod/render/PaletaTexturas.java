@@ -9,6 +9,7 @@ import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
+import com.example.minecraftlodmod.generation.Quad;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.FoliageColor;
@@ -46,6 +47,29 @@ public final class PaletaTexturas {
 
     private volatile boolean pendiente = true;
 
+    /** Texturas por estado de bloque para el render (null hasta la primera carga). */
+    private static volatile TablaTexturas tabla;
+
+    public static TablaTexturas tabla() {
+        return tabla;
+    }
+
+    /**
+     * Cara de arriba y de costado (también usada abajo) de cada estado de
+     * bloque, con su rectángulo en el atlas de bloques ACTIVO: cambiar de
+     * paquete de texturas recalcula la tabla y el LOD se redibuja con él.
+     */
+    public record TablaTexturas(GeometriaLod.Cara[] arriba, GeometriaLod.Cara[] costado)
+            implements GeometriaLod.Texturas {
+        @Override
+        public GeometriaLod.Cara cara(int idEstado, Quad.Eje eje, boolean positivo) {
+            if (idEstado < 0 || idEstado >= arriba.length) {
+                return null;
+            }
+            return eje == Quad.Eje.Y && positivo ? arriba[idEstado] : costado[idEstado];
+        }
+    }
+
     /** Bus del mod: el atlas cambió (arranque, F3+T, resource pack). */
     public void alCoserAtlas(TextureAtlasStitchedEvent evento) {
         pendiente = true;
@@ -60,6 +84,7 @@ public final class PaletaTexturas {
         long inicio = System.nanoTime();
         ColoresBloque.Paleta paleta = calcular();
         ColoresBloque.publicar(paleta);
+        RenderLod.texturasCambiaron();
         long conColor = Arrays.stream(paleta.rgbBase()).filter(c -> c >= 0).count();
         LOG.info("LOD: paleta de texturas lista ({} estados con color) en {} ms", conColor,
                 (System.nanoTime() - inicio) / 1_000_000);
@@ -73,6 +98,8 @@ public final class PaletaTexturas {
         byte[] tinte = new byte[total];
         int[] fijo = new int[total];
         Arrays.fill(base, -1);
+        GeometriaLod.Cara[] carasArriba = new GeometriaLod.Cara[total];
+        GeometriaLod.Cara[] carasCostado = new GeometriaLod.Cara[total];
         Map<TextureAtlasSprite, Integer> promedios = new HashMap<>();
         RandomSource azar = RandomSource.create(42);
 
@@ -90,6 +117,16 @@ public final class PaletaTexturas {
                     continue;
                 }
                 base[id] = promedio;
+                carasArriba[id] = cara(sprite, promedio, true);
+                BakedQuad quadCostado = quadCostado(modelo, estado, azar);
+                TextureAtlasSprite spriteCostado = quadCostado != null ? quadCostado.getSprite() : sprite;
+                int promedioCostado = promedios.computeIfAbsent(spriteCostado, PaletaTexturas::promedio);
+                // El color del vóxel (textura de arriba × tinte) vale para el costado solo
+                // si es la misma textura o también se tiñe; si no (tierra bajo el pasto,
+                // corteza de un tronco), el costado usa el promedio de su propia textura.
+                boolean costadoUsaColor = spriteCostado == sprite || (quadCostado != null && quadCostado.isTinted());
+                carasCostado[id] = promedioCostado < 0 ? carasArriba[id]
+                        : cara(spriteCostado, promedioCostado, costadoUsaColor);
                 // Por tipo de fluido y no por tag: en el menú principal los tags
                 // todavía no están cargados (llegan al entrar a un mundo).
                 boolean esAgua = estado.getBlock() instanceof LiquidBlock
@@ -110,7 +147,19 @@ public final class PaletaTexturas {
                 base[id] = -1;
             }
         }
+        tabla = new TablaTexturas(carasArriba, carasCostado);
         return new ColoresBloque.Paleta(base, tinte, fijo);
+    }
+
+    private static GeometriaLod.Cara cara(TextureAtlasSprite sprite, int promedio, boolean usaColorDelVoxel) {
+        return new GeometriaLod.Cara(sprite.getU0(), sprite.getV0(), sprite.getU1() - sprite.getU0(),
+                sprite.getV1() - sprite.getV0(), promedio, usaColorDelVoxel);
+    }
+
+    private static BakedQuad quadCostado(BakedModel modelo, BlockState estado, RandomSource azar) {
+        azar.setSeed(42);
+        List<BakedQuad> norte = modelo.getQuads(estado, Direction.NORTH, azar);
+        return norte.isEmpty() ? null : norte.get(0);
     }
 
     private static BakedQuad primerQuad(BakedModel modelo, BlockState estado, RandomSource azar) {

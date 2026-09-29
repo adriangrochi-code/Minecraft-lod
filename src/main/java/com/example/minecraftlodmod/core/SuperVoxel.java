@@ -4,7 +4,7 @@ package com.example.minecraftlodmod.core;
  * Un supervóxel: la unidad mínima de terreno LOD simplificado.
  * Corresponde 1:1 al formato binario de 8 bytes definido en la arquitectura
  * (ver sección 5 del documento): color (3), altura local (1), material (1),
- * flags (1), reservado (2).
+ * flags (1), estado de bloque (2) — los 2 bytes antes "reservados".
  *
  * Es un record inmutable a propósito: los supervóxeles se generan una vez
  * en el pipeline de generation/ y no se mutan después — cualquier cambio
@@ -18,10 +18,37 @@ public record SuperVoxel(
         byte r, byte g, byte b,
         byte alturaLocal,
         Material material,
-        byte flags
+        byte flags,
+        short estado
 ) {
 
     public static final int BYTES = 8;
+
+    /** Sin estado de bloque conocido: se dibuja con color plano. */
+    public static final short SIN_ESTADO = 0;
+
+    /**
+     * Supervóxel sin estado de bloque (solo color).
+     */
+    public SuperVoxel(byte r, byte g, byte b, byte alturaLocal, Material material, byte flags) {
+        this(r, g, b, alturaLocal, material, flags, SIN_ESTADO);
+    }
+
+    /**
+     * Id global del estado de bloque que representa (el dominante, en niveles
+     * reducidos), 0-65535; {@link #SIN_ESTADO} si no hay. Permite dibujar el
+     * LOD con la TEXTURA real del paquete de texturas activo en el cliente,
+     * no solo con su color — ver {@code render/PaletaTexturas}.
+     */
+    public int idEstado() {
+        return estado & 0xFFFF;
+    }
+
+    /** Copia con el estado de bloque indicado (0-65535; fuera de rango queda sin estado). */
+    public SuperVoxel conEstado(int idEstado) {
+        short nuevo = idEstado > 0 && idEstado <= 0xFFFF ? (short) idEstado : SIN_ESTADO;
+        return new SuperVoxel(r, g, b, alturaLocal, material, flags, nuevo);
+    }
 
     public enum Material {
         AIRE((byte) 0),
@@ -67,7 +94,7 @@ public record SuperVoxel(
         }
         int flagsBajos = flags & 0x0F; // preservar bit de homogéneo y los demás bits bajos
         byte nuevosFlags = (byte) (flagsBajos | (nivelLuz << 4));
-        return new SuperVoxel(r, g, b, alturaLocal, material, nuevosFlags);
+        return new SuperVoxel(r, g, b, alturaLocal, material, nuevosFlags, estado);
     }
 
     /** Serializa este supervóxel al formato binario de 8 bytes (big-endian, campo a campo). */
@@ -78,8 +105,8 @@ public record SuperVoxel(
         destino[offset + 3] = alturaLocal;
         destino[offset + 4] = material.codigo;
         destino[offset + 5] = flags;
-        destino[offset + 6] = 0; // reservado
-        destino[offset + 7] = 0; // reservado
+        destino[offset + 6] = (byte) (estado >> 8);
+        destino[offset + 7] = (byte) estado;
     }
 
     public static SuperVoxel leerDe(byte[] origen, int offset) {
@@ -89,7 +116,8 @@ public record SuperVoxel(
                 origen[offset + 2],
                 origen[offset + 3],
                 Material.fromCodigo(origen[offset + 4]),
-                origen[offset + 5]
+                origen[offset + 5],
+                (short) (((origen[offset + 6] & 0xFF) << 8) | (origen[offset + 7] & 0xFF))
         );
     }
 }

@@ -57,6 +57,11 @@ final class PantallaCloth {
                 .setTooltip(texto("fpsObjetivo.tooltip"))
                 .setSaveConsumer(c.fpsObjetivo::set)
                 .build());
+        general.addEntry(e.startBooleanToggle(texto("texturasLod"), c.texturasLod.get())
+                .setDefaultValue(c.texturasLod.getDefault())
+                .setTooltip(texto("texturasLod.tooltip"))
+                .setSaveConsumer(c.texturasLod::set)
+                .build());
         general.addEntry(e.startBooleanToggle(texto("autoAjuste"), c.autoAjuste.get())
                 .setDefaultValue(c.autoAjuste.getDefault())
                 .setTooltip(texto("autoAjuste.tooltip"))

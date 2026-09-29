@@ -37,6 +37,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue colapsoDesdeNivel;
         public final ModConfigSpec.IntValue fpsObjetivo;
         public final ModConfigSpec.BooleanValue autoAjuste;
+        public final ModConfigSpec.BooleanValue texturasLod;
 
         Cliente(ModConfigSpec.Builder b) {
             ParametrosCalidad medio = ParametrosCalidad.de(QualityPreset.MEDIO);
@@ -49,6 +50,9 @@ public final class ConfigLod {
                             ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX);
             autoAjuste = b.comment("Ajustar detalle, radio y generación en caliente para sostener el FPS objetivo.")
                     .define("autoAjuste", true);
+            texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
+                            "con la distancia). Apagado: colores planos, un poco más barato en GPU.")
+                    .define("texturasLod", true);
 
             b.comment("Valores usados solo con preset = PERSONALIZADO (o guardados por la calibración).")
                     .push("personalizado");

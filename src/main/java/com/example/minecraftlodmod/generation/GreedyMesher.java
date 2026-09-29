@@ -40,10 +40,14 @@ public final class GreedyMesher {
         return v == null || v.material() == SuperVoxel.Material.AIRE;
     }
 
-    /** true si dos vóxeles se pueden fusionar en el mismo quad (mismo material y color). */
+    /**
+     * true si dos vóxeles se pueden fusionar en el mismo quad: mismo
+     * material, color y estado de bloque (distinto estado = distinta
+     * textura, no se pueden dibujar como una sola cara).
+     */
     private static boolean mismaSuperficie(SuperVoxel a, SuperVoxel b) {
         if (a == null || b == null) return false;
-        return a.material() == b.material()
+        return a.material() == b.material() && a.estado() == b.estado()
                 && a.r() == b.r() && a.g() == b.g() && a.b() == b.b();
     }
 

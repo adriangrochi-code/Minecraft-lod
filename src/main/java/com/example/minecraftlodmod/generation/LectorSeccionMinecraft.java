@@ -9,6 +9,7 @@ import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
@@ -135,7 +136,8 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
         int rgb = ColoresBloque.rgb(estado, bioma, origenX + x, origenZ + z);
         return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) y, material, (byte) 0)
-                .conLuzHorneada(luz(x, y, z));
+                .conLuzHorneada(luz(x, y, z))
+                .conEstado(Block.getId(estado)); // para dibujar su textura; ids > 65535 quedan sin estado
     }
 
     /**
