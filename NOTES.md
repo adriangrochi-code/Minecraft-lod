@@ -90,6 +90,16 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   packs de 32x/64x y con Embeddium. Iris/shaderpacks no aplican a este
   shader. Los ids de estado > 65535 (muchos mods) quedan sin textura.
 
+- **Niveles grandes + quadtree (hecho, a ajustar en Pista B):** nodos de 16³
+  vóxeles de 2^L bloques para L = 5..8 (`NivelesGrandes`, reconstruidos
+  por lotes cada 5 s desde el nivel 4), y el plan de render es un quadtree
+  de teselas (niveles 3-8) que baja a celdas de 4×4 chunks solo cerca. En
+  6 km de radio el plan tiene < 3000 piezas en vez de ~15.000 celdas.
+  Pendiente: paredes en los bordes de las teselas (no se omiten caras
+  contra la tesela vecina), transición visible entre niveles (falta el
+  dithering de la sección 6), y medir en hardware real el costo de armar
+  teselas de nivel 3-4 (leen hasta 4096 nodos por sección).
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~

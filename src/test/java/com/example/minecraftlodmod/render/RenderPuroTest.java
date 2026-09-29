@@ -153,4 +153,44 @@ class RenderPuroTest {
             assertFalse(g.texturizado(i));
         }
     }
+
+    @Test
+    void elQuadtreeCubreElRadioSinSuperponerYLejosUsaNivelesGrandes() {
+        double camX = 100, camZ = -50;
+        int radioChunks = 400; // 6.4 km
+        int vanilla = 8;
+        List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camX, camZ, radioChunks, vanilla,
+                Math.toRadians(70), 720, 4);
+
+        assertTrue(plan.stream().anyMatch(PlanCeldas.Celda::esGrande), "A km de distancia tiene que haber teselas grandes");
+        assertTrue(plan.stream().anyMatch(c -> !c.esGrande()), "Cerca, celdas finas");
+        assertTrue(plan.size() < 3000, "Muchas menos piezas que celdas de 4×4 chunks en 6 km: " + plan.size());
+
+        // Cada chunk dentro del radio (y fuera de vanilla) cubierto exactamente una vez.
+        int camChunkX = (int) Math.floor(camX / 16), camChunkZ = (int) Math.floor(camZ / 16);
+        java.util.Map<Long, Integer> cobertura = new java.util.HashMap<>();
+        for (PlanCeldas.Celda c : plan) {
+            int ladoChunks = c.ladoEnBloques() / 16;
+            for (int dx = 0; dx < ladoChunks; dx++) {
+                for (int dz = 0; dz < ladoChunks; dz++) {
+                    if (!c.esGrande() && c.omitido(dx, dz)) {
+                        continue;
+                    }
+                    long chunk = ((long) (c.origenX() / 16 + dx) << 32) | ((c.origenZ() / 16 + dz) & 0xFFFFFFFFL);
+                    cobertura.merge(chunk, 1, Integer::sum);
+                }
+            }
+        }
+        assertTrue(cobertura.values().stream().allMatch(n -> n == 1), "Ningún chunk en dos piezas");
+        for (int x = -radioChunks + 20; x < radioChunks - 20; x += 37) {
+            for (int z = -radioChunks + 20; z < radioChunks - 20; z += 41) {
+                long ddx = x, ddz = z;
+                if (ddx * ddx + ddz * ddz > (long) (radioChunks - 20) * (radioChunks - 20) || ddx * ddx + ddz * ddz < 100) {
+                    continue;
+                }
+                long chunk = ((long) (camChunkX + x) << 32) | ((camChunkZ + z) & 0xFFFFFFFFL);
+                assertTrue(cobertura.containsKey(chunk), "Hueco en el chunk " + (camChunkX + x) + "," + (camChunkZ + z));
+            }
+        }
+    }
 }

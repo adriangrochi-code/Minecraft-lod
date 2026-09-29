@@ -3,6 +3,8 @@ package com.example.minecraftlodmod.render;
 import com.example.minecraftlodmod.config.ConfigLod;
 import com.example.minecraftlodmod.config.ParametrosCalidad;
 import com.example.minecraftlodmod.generation.GeneradorLocal;
+import com.example.minecraftlodmod.generation.NivelesGrandes;
+import com.example.minecraftlodmod.core.SuperVoxel;
 import com.example.minecraftlodmod.generation.SectionExtractor;
 import com.example.minecraftlodmod.storage.OctreeNodeCodec;
 import com.example.minecraftlodmod.storage.RegionFileStore;
@@ -315,7 +317,7 @@ public final class RenderLod {
         // Vanilla dibuja hasta su distancia de render; se deja un chunk de
         // solapamiento para que no queden huecos en el borde (vanilla queda encima).
         int distanciaVanilla = Math.max(0, mc.options.getEffectiveRenderDistance() - 1);
-        List<PlanCeldas.Celda> plan = PlanCeldas.planificar(camara.x, camara.z, c.radioLodChunks(),
+        List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, c.radioLodChunks(),
                 distanciaVanilla, Math.toRadians(fovGrados), mc.getWindow().getHeight(), c.umbralPx());
         plan.sort(Comparator.comparingDouble(celda -> distancia2(celda, camara)));
 
@@ -326,7 +328,7 @@ public final class RenderLod {
         int minSeccion = mc.level.getMinSection();
         int maxSeccion = mc.level.getMaxSection();
         for (PlanCeldas.Celda celda : plan) {
-            long clave = clave(celda.celdaX(), celda.celdaZ());
+            long clave = clave(celda);
             vigentes.add(clave);
             EstadoCelda estado = celdas.computeIfAbsent(clave, k -> new EstadoCelda());
             estado.plan = celda;
@@ -361,8 +363,8 @@ public final class RenderLod {
             int nivel = celda.nivel();
             int lado = SectionExtractor.LADO >> nivel;
             int total = SectionExtractor.voxelesPorNodo(nivel);
-            int conDatos = 0;
-            for (int dx = 0; dx < PlanCeldas.LADO_CELDA; dx++) {
+            int conDatos = celda.esGrande() ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion) : 0;
+            for (int dx = 0; dx < PlanCeldas.LADO_CELDA && !celda.esGrande(); dx++) {
                 for (int dz = 0; dz < PlanCeldas.LADO_CELDA; dz++) {
                     if (celda.omitido(dx, dz)) {
                         continue;
@@ -461,8 +463,8 @@ public final class RenderLod {
             if (estado.buffer == null || estado.construidaCon == null || estado.texturizada != texturizadas) {
                 continue;
             }
-            float ox = (float) (estado.construidaCon.celdaX() * PlanCeldas.LADO_CELDA * 16 - camara.x);
-            float oz = (float) (estado.construidaCon.celdaZ() * PlanCeldas.LADO_CELDA * 16 - camara.z);
+            float ox = (float) (estado.construidaCon.origenX() - camara.x);
+            float oz = (float) (estado.construidaCon.origenZ() - camara.z);
             Matrix4f vista = new Matrix4f(evento.getModelViewMatrix()).translate(ox, (float) -camara.y, oz);
             estado.buffer.bind();
             estado.buffer.drawWithShader(vista, proyeccion, shader);
@@ -484,18 +486,105 @@ public final class RenderLod {
                 GeneradorLocal.claveMarca(chunkX, chunkZ));
     }
 
+    /**
+     * Tesela del quadtree: por cada banda vertical, una grilla de 16³
+     * vóxeles de 2^nivel bloques — leída de {@link NivelesGrandes} (nivel
+     * ≥ 5) o armada con los nodos por sección del mismo nivel (3 y 4).
+     * Una sola grilla por banda también evita paredes entre secciones.
+     *
+     * @return bandas con datos
+     */
+    private static int armarTesela(GeometriaLod geometria, PlanCeldas.Celda tesela, RegionFileStore store,
+                                   byte dimension, int minSeccion, int maxSeccion) {
+        int nivel = tesela.nivel();
+        int seccionesPorLado = NivelesGrandes.ladoEnSecciones(nivel);
+        int conDatos = 0;
+        for (int banda = Math.floorDiv(minSeccion, seccionesPorLado);
+             banda <= Math.floorDiv(maxSeccion - 1, seccionesPorLado); banda++) {
+            SuperVoxel[] grilla = nivel >= NivelesGrandes.NIVEL_MIN
+                    ? leerGrande(store, dimension, nivel, tesela.celdaX(), banda, tesela.celdaZ())
+                    : desdeSecciones(store, dimension, nivel, tesela.celdaX(), banda, tesela.celdaZ(),
+                    minSeccion, maxSeccion);
+            if (grilla == null) {
+                continue;
+            }
+            conDatos++;
+            geometria.agregarSeccion(grilla, NivelesGrandes.LADO, 0, banda * seccionesPorLado * 16f, 0, 1 << nivel);
+        }
+        return conDatos;
+    }
+
+    private static SuperVoxel[] leerGrande(RegionFileStore store, byte dimension, int nivel, int x, int banda, int z) {
+        byte[] bytes = store.leer(new RegionFileStore.ClaveRegion(dimension,
+                NivelesGrandes.regionDe(nivel, x), NivelesGrandes.regionDe(nivel, z)),
+                NivelesGrandes.clave(nivel, x, banda, z));
+        return bytes == null ? null
+                : OctreeNodeCodec.deserializar(bytes, 0, GeneradorLocal.VOXELES_GRANDE).voxeles();
+    }
+
+    /** Niveles 3-4: las (2^nivel)³ secciones de la tesela, cada una con su grilla de 16>>nivel. */
+    private static SuperVoxel[] desdeSecciones(RegionFileStore store, byte dimension, int nivel, int teselaX,
+                                               int banda, int teselaZ, int minSeccion, int maxSeccion) {
+        int porLado = NivelesGrandes.ladoEnSecciones(nivel);
+        int ladoSeccion = SectionExtractor.LADO >> nivel;
+        int total = SectionExtractor.voxelesPorNodo(nivel);
+        int lado = NivelesGrandes.LADO;
+        SuperVoxel[] grilla = new SuperVoxel[lado * lado * lado];
+        java.util.Arrays.fill(grilla, AIRE);
+        boolean alguno = false;
+        for (int sy = 0; sy < porLado; sy++) {
+            int seccionY = banda * porLado + sy;
+            if (seccionY < minSeccion || seccionY >= maxSeccion) {
+                continue;
+            }
+            for (int sx = 0; sx < porLado; sx++) {
+                for (int sz = 0; sz < porLado; sz++) {
+                    int seccionX = teselaX * porLado + sx, seccionZ = teselaZ * porLado + sz;
+                    byte[] bytes = store.leer(GeneradorLocal.claveRegion(dimension, seccionX, seccionZ),
+                            SectionExtractor.claveNodo(nivel, seccionX, seccionY, seccionZ));
+                    if (bytes == null) {
+                        continue;
+                    }
+                    SuperVoxel[] nodo = OctreeNodeCodec.deserializar(bytes, 0, total).voxeles();
+                    alguno = true;
+                    for (int x = 0; x < ladoSeccion; x++) {
+                        for (int y = 0; y < ladoSeccion; y++) {
+                            for (int z = 0; z < ladoSeccion; z++) {
+                                grilla[((sx * ladoSeccion + x) * lado + sy * ladoSeccion + y) * lado
+                                        + sz * ladoSeccion + z] = nodo[(x * ladoSeccion + y) * ladoSeccion + z];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return alguno ? grilla : null;
+    }
+
+    private static final SuperVoxel AIRE =
+            new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+
     private static int chunksDibujables(PlanCeldas.Celda celda) {
+        if (celda.esGrande()) {
+            return 1; // "incompleta" = ninguna banda con datos todavía
+        }
         return PlanCeldas.LADO_CELDA * PlanCeldas.LADO_CELDA - Integer.bitCount(celda.mascaraOmitidos());
     }
 
     private static double distancia2(PlanCeldas.Celda celda, Vec3 camara) {
-        double cx = (celda.celdaX() * PlanCeldas.LADO_CELDA + PlanCeldas.LADO_CELDA / 2.0) * 16 - camara.x;
-        double cz = (celda.celdaZ() * PlanCeldas.LADO_CELDA + PlanCeldas.LADO_CELDA / 2.0) * 16 - camara.z;
+        double mitad = celda.ladoEnBloques() / 2.0;
+        double cx = celda.origenX() + mitad - camara.x;
+        double cz = celda.origenZ() + mitad - camara.z;
         return cx * cx + cz * cz;
     }
 
-    private static long clave(int celdaX, int celdaZ) {
-        return ((long) celdaX << 32) | (celdaZ & 0xFFFFFFFFL);
+    /** Teselas y celdas en espacios de clave distintos (bit 62), y teselas separadas por nivel. */
+    private static long clave(PlanCeldas.Celda celda) {
+        if (celda.esGrande()) {
+            return (1L << 62) | ((long) celda.nivel() << 56)
+                    | ((long) (celda.celdaX() & 0x0FFFFFFF) << 28) | (celda.celdaZ() & 0x0FFFFFFF);
+        }
+        return ((long) (celda.celdaX() & 0x3FFFFFFF) << 30) | (celda.celdaZ() & 0x3FFFFFFF);
     }
 
     private static void cerrarBuffer(EstadoCelda estado) {

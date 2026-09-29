@@ -3,6 +3,7 @@ package com.example.minecraftlodmod.generation;
 import com.example.minecraftlodmod.config.PresupuestoMemoria;
 import com.example.minecraftlodmod.config.ParametrosCalidad;
 import com.example.minecraftlodmod.core.OctreeNode;
+import com.example.minecraftlodmod.core.SuperVoxel;
 import com.example.minecraftlodmod.storage.OctreeNodeCodec;
 import com.example.minecraftlodmod.storage.RegionFileStore;
 import com.mojang.logging.LogUtils;
@@ -24,7 +25,12 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.List;
 import java.util.function.Function;
 
@@ -59,7 +65,7 @@ public final class GeneradorLocal {
      * Versión del algoritmo de extracción/reducción, mezclada en el
      * {@code hashFuente} del cache: subirla invalida todo lo generado antes.
      */
-    public static final long VERSION_ALGORITMO = 5;
+    public static final long VERSION_ALGORITMO = 6;
 
     /** Nivel reservado en {@link SectionExtractor#claveNodo} para marcar "este chunk ya se generó". */
     private static final int NIVEL_MARCA_CHUNK = 15;
@@ -72,6 +78,17 @@ public final class GeneradorLocal {
     }
 
     private final LinkedHashSet<Pendiente> pendientes = new LinkedHashSet<>();
+
+    /** Cada cuántos ticks se reconstruyen los niveles grandes de lo recién generado (5 s). */
+    static final int TICKS_ENTRE_LOTES_GRANDES = 100;
+
+    /** Chunks generados desde el último lote de niveles grandes, por dimensión (los escriben los hilos del pool). */
+    private record Dimension(byte id, int minSeccion, int maxSeccion) {
+    }
+
+    private final ConcurrentHashMap<Dimension, Set<Long>> chunksSucios = new ConcurrentHashMap<>();
+    private final AtomicBoolean loteGrandeEnCurso = new AtomicBoolean();
+    private int ticksDesdeLote;
 
     private final Function<MinecraftServer, ParametrosCalidad> resolverCalidad;
     private volatile ParametrosCalidad calidad;
@@ -128,6 +145,7 @@ public final class GeneradorLocal {
                     descartadosPorColaLlena, pendientes.size());
         }
         pendientes.clear();
+        chunksSucios.clear();
         descartadosPorColaLlena = 0;
     }
 
@@ -158,6 +176,10 @@ public final class GeneradorLocal {
      */
     @SubscribeEvent
     public void alTerminarTick(ServerTickEvent.Post evento) {
+        if (++ticksDesdeLote >= TICKS_ENTRE_LOTES_GRANDES) {
+            ticksDesdeLote = 0;
+            lanzarLoteGrande();
+        }
         if (pendientes.isEmpty() || store == null) {
             return;
         }
@@ -200,6 +222,80 @@ public final class GeneradorLocal {
         return mejor;
     }
 
+    /**
+     * Reconstruye en el pool los niveles grandes ({@link NivelesGrandes})
+     * de los chunks generados desde el lote anterior. Un lote a la vez; si
+     * la cola está llena, los chunks esperan al próximo intento.
+     */
+    private void lanzarLoteGrande() {
+        RegionFileStore destino = store;
+        if (destino == null || scheduler == null || chunksSucios.isEmpty()
+                || !loteGrandeEnCurso.compareAndSet(false, true)) {
+            return;
+        }
+        Map<Dimension, Set<Long>> lote = new HashMap<>();
+        for (Dimension d : chunksSucios.keySet()) {
+            Set<Long> sucios = chunksSucios.remove(d);
+            if (sucios != null && !sucios.isEmpty()) {
+                lote.put(d, sucios);
+            }
+        }
+        var tarea = scheduler.intentarEnviar(() -> {
+            try {
+                long inicio = System.nanoTime();
+                int nodos = 0;
+                for (Map.Entry<Dimension, Set<Long>> e : lote.entrySet()) {
+                    Dimension d = e.getKey();
+                    nodos += NivelesGrandes.actualizar(e.getValue(), d.minSeccion(), d.maxSeccion(),
+                            new AccesoStore(destino, d.id()));
+                }
+                LOG.debug("LOD: niveles grandes: {} nodos en {} ms", nodos, (System.nanoTime() - inicio) / 1_000_000);
+            } catch (RuntimeException ex) {
+                LOG.error("LOD: falló la reconstrucción de niveles grandes", ex);
+            } finally {
+                loteGrandeEnCurso.set(false);
+            }
+            return null;
+        });
+        if (tarea == null) {
+            // Cola llena: devolver los chunks para el próximo lote.
+            lote.forEach((d, sucios) -> chunksSucios.computeIfAbsent(d, k -> ConcurrentHashMap.newKeySet()).addAll(sucios));
+            loteGrandeEnCurso.set(false);
+        }
+    }
+
+    /** {@link NivelesGrandes.Acceso} sobre el cache de disco de una dimensión. */
+    private record AccesoStore(RegionFileStore store, byte dimension) implements NivelesGrandes.Acceso {
+        @Override
+        public SuperVoxel[] seccion(int nivel, int seccionX, int seccionY, int seccionZ) {
+            byte[] bytes = store.leer(claveRegion(dimension, seccionX, seccionZ),
+                    SectionExtractor.claveNodo(nivel, seccionX, seccionY, seccionZ));
+            return bytes == null ? null
+                    : OctreeNodeCodec.deserializar(bytes, 0, SectionExtractor.voxelesPorNodo(nivel)).voxeles();
+        }
+
+        @Override
+        public SuperVoxel[] grande(int nivel, int nodoX, int nodoY, int nodoZ) {
+            byte[] bytes = store.leer(regionGrande(nivel, nodoX, nodoZ), NivelesGrandes.clave(nivel, nodoX, nodoY, nodoZ));
+            return bytes == null ? null : OctreeNodeCodec.deserializar(bytes, 0, VOXELES_GRANDE).voxeles();
+        }
+
+        @Override
+        public void guardarGrande(int nivel, int nodoX, int nodoY, int nodoZ, SuperVoxel[] grilla) {
+            int lado = NivelesGrandes.ladoEnBloques(nivel);
+            OctreeNode nodo = OctreeNode.mixto(nivel, nodoX * lado, nodoY * lado, nodoZ * lado, lado, grilla);
+            store.guardar(regionGrande(nivel, nodoX, nodoZ), NivelesGrandes.clave(nivel, nodoX, nodoY, nodoZ),
+                    OctreeNodeCodec.serializar(nodo, VOXELES_GRANDE));
+        }
+
+        private RegionFileStore.ClaveRegion regionGrande(int nivel, int nodoX, int nodoZ) {
+            return new RegionFileStore.ClaveRegion(dimension,
+                    NivelesGrandes.regionDe(nivel, nodoX), NivelesGrandes.regionDe(nivel, nodoZ));
+        }
+    }
+
+    public static final int VOXELES_GRANDE = NivelesGrandes.LADO * NivelesGrandes.LADO * NivelesGrandes.LADO;
+
     private void encolar(ServerLevel nivel, ChunkAccess chunk) {
         if (!encolarSinPendiente(nivel, chunk)) {
             pendientes.add(new Pendiente(nivel.dimension(), chunk.getPos().toLong()));
@@ -216,6 +312,8 @@ public final class GeneradorLocal {
         long marca = claveMarca(chunk);
         RegionFileStore destino = store;
         int colapsoDesde = calidad.colapsoDesdeNivel();
+        Dimension dimension = new Dimension(idDimension(nivel.dimension()), nivel.getMinSection(), nivel.getMaxSection());
+        long chunkEmpaquetado = NivelesGrandes.empaquetar(chunk.getPos().x, chunk.getPos().z);
 
         var tarea = scheduler.intentarEnviar(() -> {
             for (LectorSeccionMinecraft.Captura captura : capturas) {
@@ -231,6 +329,7 @@ public final class GeneradorLocal {
                 }
             }
             destino.guardar(region, marca, MARCA);
+            chunksSucios.computeIfAbsent(dimension, d -> ConcurrentHashMap.newKeySet()).add(chunkEmpaquetado);
             return null;
         });
         if (tarea == null) {

@@ -1,6 +1,7 @@
 package com.example.minecraftlodmod.render;
 
 import com.example.minecraftlodmod.core.LodSelector;
+import com.example.minecraftlodmod.generation.NivelesGrandes;
 import com.example.minecraftlodmod.generation.SectionExtractor;
 
 import java.util.ArrayList;
@@ -25,11 +26,44 @@ public final class PlanCeldas {
 
     public static final int LADO_CELDA = 4;
     public static final int NIVEL_MAXIMO = SectionExtractor.NIVELES - 1;
+    /**
+     * Nivel más fino con teselas: 16³ vóxeles de 8 bloques = 128 bloques,
+     * 2×2 celdas. Por debajo, celdas de 4×4 chunks (con máscara de vanilla).
+     */
+    public static final int NIVEL_TESELA_MIN = 3;
 
     /**
      * @param mascaraOmitidos bit (dx * LADO_CELDA + dz) = 1 si el chunk lo dibuja vanilla
      */
-    public record Celda(int celdaX, int celdaZ, int nivel, int mascaraOmitidos) {
+    public record Celda(int celdaX, int celdaZ, int nivel, int mascaraOmitidos, boolean tesela) {
+
+        public Celda(int celdaX, int celdaZ, int nivel, int mascaraOmitidos) {
+            this(celdaX, celdaZ, nivel, mascaraOmitidos, false);
+        }
+
+        /**
+         * true = TESELA del quadtree: una grilla de 16³ vóxeles de 2^nivel
+         * bloques que cubre {@link #ladoEnBloques()} (celdaX/Z en unidades de
+         * ese lado). Desde el nivel 5 sale de {@link NivelesGrandes}; en los
+         * niveles 3 y 4 se arma con los datos por sección. Nunca omite nada:
+         * solo se usa lejos de lo que dibuja vanilla.
+         */
+        public boolean esGrande() {
+            return tesela;
+        }
+
+        public int ladoEnBloques() {
+            return esGrande() ? NivelesGrandes.ladoEnBloques(nivel) : LADO_CELDA * 16;
+        }
+
+        public int origenX() {
+            return celdaX * ladoEnBloques();
+        }
+
+        public int origenZ() {
+            return celdaZ * ladoEnBloques();
+        }
+
         public boolean omitido(int dx, int dz) {
             return (mascaraOmitidos & (1 << (dx * LADO_CELDA + dz))) != 0;
         }
@@ -54,6 +88,68 @@ public final class PlanCeldas {
     public static List<Celda> planificar(double camX, double camZ, int radioLodChunks, int distanciaVanilla,
                                          double fovRadianes, double alturaPantallaPx, double umbralPx) {
         List<Celda> plan = new ArrayList<>();
+        agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, fovRadianes, alturaPantallaPx, umbralPx,
+                Integer.MIN_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        return plan;
+    }
+
+    /**
+     * Plan con niveles grandes (quadtree, como el selector de la sección 3):
+     * teselas de nivel {@link NivelesGrandes#NIVEL_MAX} que cubren el radio,
+     * subdivididas mientras el nivel que pide el error en pantalla (medido en
+     * el punto de la tesela MÁS CERCANO a la cámara) sea más fino que el de
+     * la tesela. Una tesela de nivel 5 que todavía pide más detalle se
+     * reemplaza por las celdas de siempre (niveles 0-4) que caen en ella.
+     * El resultado: lejos, pocas piezas enormes; cerca, celdas finas.
+     */
+    public static List<Celda> planificarConGrandes(double camX, double camZ, int radioLodChunks, int distanciaVanilla,
+                                                   double fovRadianes, double alturaPantallaPx, double umbralPx) {
+        List<Celda> plan = new ArrayList<>();
+        int nivel = NivelesGrandes.NIVEL_MAX;
+        int lado = NivelesGrandes.ladoEnBloques(nivel);
+        double radio = radioLodChunks * 16.0;
+        int desdeX = (int) Math.floor((camX - radio) / lado), hastaX = (int) Math.floor((camX + radio) / lado);
+        int desdeZ = (int) Math.floor((camZ - radio) / lado), hastaZ = (int) Math.floor((camZ + radio) / lado);
+        for (int tx = desdeX; tx <= hastaX; tx++) {
+            for (int tz = desdeZ; tz <= hastaZ; tz++) {
+                subdividir(plan, nivel, tx, tz, camX, camZ, radioLodChunks, distanciaVanilla,
+                        fovRadianes, alturaPantallaPx, umbralPx);
+            }
+        }
+        return plan;
+    }
+
+    private static void subdividir(List<Celda> plan, int nivel, int tx, int tz, double camX, double camZ,
+                                   int radioLodChunks, int distanciaVanilla, double fov, double alto, double umbral) {
+        int lado = NivelesGrandes.ladoEnBloques(nivel);
+        double minX = (double) tx * lado, minZ = (double) tz * lado;
+        double dx = Math.max(0, Math.max(minX - camX, camX - (minX + lado)));
+        double dz = Math.max(0, Math.max(minZ - camZ, camZ - (minZ + lado)));
+        double masCerca = Math.hypot(dx, dz);
+        if (masCerca > radioLodChunks * 16.0) {
+            return;
+        }
+        boolean lejosDeVanilla = masCerca > distanciaVanilla * 16.0;
+        if (lejosDeVanilla && nivelPara(masCerca, fov, alto, umbral, NivelesGrandes.NIVEL_MAX) >= nivel) {
+            plan.add(new Celda(tx, tz, nivel, 0, true));
+        } else if (nivel > NIVEL_TESELA_MIN) {
+            for (int hx = 0; hx < 2; hx++) {
+                for (int hz = 0; hz < 2; hz++) {
+                    subdividir(plan, nivel - 1, tx * 2 + hx, tz * 2 + hz, camX, camZ, radioLodChunks,
+                            distanciaVanilla, fov, alto, umbral);
+                }
+            }
+        } else {
+            int celdasPorLado = lado / (LADO_CELDA * 16);
+            agregarCeldas(plan, camX, camZ, radioLodChunks, distanciaVanilla, fov, alto, umbral,
+                    tx * celdasPorLado, (tx + 1) * celdasPorLado - 1, tz * celdasPorLado, (tz + 1) * celdasPorLado - 1);
+        }
+    }
+
+    /** Celdas de nivel 0-4 dentro del radio y del rango de celdas dado (inclusive). */
+    private static void agregarCeldas(List<Celda> plan, double camX, double camZ, int radioLodChunks,
+                                      int distanciaVanilla, double fovRadianes, double alturaPantallaPx,
+                                      double umbralPx, int minCeldaX, int maxCeldaX, int minCeldaZ, int maxCeldaZ) {
         int chunkCamX = (int) Math.floor(camX / 16);
         int chunkCamZ = (int) Math.floor(camZ / 16);
         int radioCeldas = Math.floorDiv(radioLodChunks, LADO_CELDA) + 1;
@@ -62,8 +158,8 @@ public final class PlanCeldas {
         long radio2 = (long) radioLodChunks * radioLodChunks;
         long vanilla2 = (long) distanciaVanilla * distanciaVanilla;
 
-        for (int cx = celdaCamX - radioCeldas; cx <= celdaCamX + radioCeldas; cx++) {
-            for (int cz = celdaCamZ - radioCeldas; cz <= celdaCamZ + radioCeldas; cz++) {
+        for (int cx = Math.max(minCeldaX, celdaCamX - radioCeldas); cx <= Math.min(maxCeldaX, celdaCamX + radioCeldas); cx++) {
+            for (int cz = Math.max(minCeldaZ, celdaCamZ - radioCeldas); cz <= Math.min(maxCeldaZ, celdaCamZ + radioCeldas); cz++) {
                 int mascara = 0;
                 boolean algunoEnRadio = false;
                 for (int dx = 0; dx < LADO_CELDA; dx++) {
@@ -87,7 +183,6 @@ public final class PlanCeldas {
                 plan.add(new Celda(cx, cz, nivelPara(distancia, fovRadianes, alturaPantallaPx, umbralPx), mascara));
             }
         }
-        return plan;
     }
 
     /**
@@ -95,7 +190,13 @@ public final class PlanCeldas {
      * supera el umbral a esa distancia; si ni el nivel 0 cumple, el 0.
      */
     public static int nivelPara(double distancia, double fovRadianes, double alturaPantallaPx, double umbralPx) {
-        for (int nivel = NIVEL_MAXIMO; nivel > 0; nivel--) {
+        return nivelPara(distancia, fovRadianes, alturaPantallaPx, umbralPx, NIVEL_MAXIMO);
+    }
+
+    /** Como {@link #nivelPara(double, double, double, double)}, hasta {@code nivelMaximo}. */
+    public static int nivelPara(double distancia, double fovRadianes, double alturaPantallaPx, double umbralPx,
+                                int nivelMaximo) {
+        for (int nivel = nivelMaximo; nivel > 0; nivel--) {
             double tamanoVoxel = 1 << nivel;
             if (LodSelector.errorDePantalla(tamanoVoxel, distancia, fovRadianes, alturaPantallaPx) <= umbralPx) {
                 return nivel;
