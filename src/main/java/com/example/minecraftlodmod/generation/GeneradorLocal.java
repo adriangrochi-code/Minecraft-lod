@@ -17,10 +17,14 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.minecraft.world.level.ChunkPos;
 import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.function.Function;
 
@@ -39,6 +43,11 @@ import java.util.function.Function;
  * si quedó modificado — invalidación gruesa pero barata (sección 10); la
  * fina por evento de bloque queda para cuando network/ la necesite.
  *
+ * Si la cola de generación está llena el chunk queda PENDIENTE y se
+ * reintenta de a {@link #REINTENTOS_POR_TICK} por tick mientras siga
+ * cargado: sin esto, los chunks que nunca se descargan (spawn, forceload)
+ * se perdían para siempre al llenarse la cola una sola vez.
+ *
  * Se registra en {@code NeoForge.EVENT_BUS}; una instancia vive lo que dura
  * un servidor.
  */
@@ -50,12 +59,19 @@ public final class GeneradorLocal {
      * Versión del algoritmo de extracción/reducción, mezclada en el
      * {@code hashFuente} del cache: subirla invalida todo lo generado antes.
      */
-    public static final long VERSION_ALGORITMO = 1;
+    public static final long VERSION_ALGORITMO = 2;
 
     /** Nivel reservado en {@link SectionExtractor#claveNodo} para marcar "este chunk ya se generó". */
     private static final int NIVEL_MARCA_CHUNK = 15;
     private static final byte[] MARCA = new byte[0];
     private static final long PERIODO_ESCRITURA_MS = 3000;
+    static final int REINTENTOS_POR_TICK = 8;
+
+    /** Chunks que no entraron en la cola; solo hilo del servidor. */
+    private record Pendiente(ResourceKey<Level> dimension, long chunk) {
+    }
+
+    private final LinkedHashSet<Pendiente> pendientes = new LinkedHashSet<>();
 
     private final Function<MinecraftServer, ParametrosCalidad> resolverCalidad;
     private volatile ParametrosCalidad calidad;
@@ -106,9 +122,11 @@ public final class GeneradorLocal {
             store = null;
         }
         if (descartadosPorColaLlena > 0) {
-            LOG.info("LOD: {} chunks no se generaron por cola llena (se reintentan al recargarse)",
-                    descartadosPorColaLlena);
+            LOG.info("LOD: {} veces la cola estuvo llena; {} chunks quedaron pendientes al cerrar",
+                    descartadosPorColaLlena, pendientes.size());
         }
+        pendientes.clear();
+        descartadosPorColaLlena = 0;
     }
 
     @SubscribeEvent
@@ -130,9 +148,39 @@ public final class GeneradorLocal {
         }
     }
 
-    private void encolar(ServerLevel nivel, ChunkAccess chunk) {
-        if (store == null || scheduler == null) {
+    @SubscribeEvent
+    public void alTerminarTick(ServerTickEvent.Post evento) {
+        if (pendientes.isEmpty() || store == null) {
             return;
+        }
+        Iterator<Pendiente> it = pendientes.iterator();
+        for (int i = 0; i < REINTENTOS_POR_TICK && it.hasNext(); i++) {
+            Pendiente p = it.next();
+            ServerLevel nivel = evento.getServer().getLevel(p.dimension());
+            LevelChunk chunk = nivel == null ? null
+                    : nivel.getChunkSource().getChunkNow(ChunkPos.getX(p.chunk()), ChunkPos.getZ(p.chunk()));
+            // Descargado: se regenera en la próxima carga. Ya generado: nada que hacer.
+            if (chunk == null || store.contiene(claveRegion(nivel, chunk), claveMarca(chunk))) {
+                it.remove();
+                continue;
+            }
+            if (!encolarSinPendiente(nivel, chunk)) {
+                return; // cola todavía llena: seguir el próximo tick
+            }
+            it.remove();
+        }
+    }
+
+    private void encolar(ServerLevel nivel, ChunkAccess chunk) {
+        if (!encolarSinPendiente(nivel, chunk)) {
+            pendientes.add(new Pendiente(nivel.dimension(), chunk.getPos().toLong()));
+        }
+    }
+
+    /** @return false si la cola estaba llena y el chunk no se encoló */
+    private boolean encolarSinPendiente(ServerLevel nivel, ChunkAccess chunk) {
+        if (store == null || scheduler == null) {
+            return true;
         }
         List<LectorSeccionMinecraft.Captura> capturas = LectorSeccionMinecraft.capturar(nivel, chunk);
         RegionFileStore.ClaveRegion region = claveRegion(nivel, chunk);
@@ -158,7 +206,9 @@ public final class GeneradorLocal {
         });
         if (tarea == null) {
             descartadosPorColaLlena++;
+            return false;
         }
+        return true;
     }
 
     /** Calidad con que genera el servidor en curso, o null si no hay servidor corriendo. */

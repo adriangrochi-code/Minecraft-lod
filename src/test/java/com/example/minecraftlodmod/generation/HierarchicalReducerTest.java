@@ -54,4 +54,38 @@ class HierarchicalReducerTest {
         entrada[7] = voxel(99, SuperVoxel.Material.AGUA);
         assertTrue(!HierarchicalReducer.esBloqueHomogeneo(entrada, 2, 0, 0, 0));
     }
+
+    @Test
+    void elAireNoOscureceElColorNiPierdeLaLuz() {
+        SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        SuperVoxel nieve = new SuperVoxel((byte) 250, (byte) 250, (byte) 250, (byte) 7,
+                SuperVoxel.Material.SOLIDO, (byte) 0).conLuzHorneada(15);
+        // Superficie: la mitad de abajo sólida, la de arriba aire (índice (x*2+y)*2+z, y=1 es arriba).
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        for (int x = 0; x < 2; x++) {
+            for (int y = 0; y < 2; y++) {
+                for (int z = 0; z < 2; z++) {
+                    entrada[(x * 2 + y) * 2 + z] = y == 0 ? nieve : aire;
+                }
+            }
+        }
+
+        SuperVoxel r = HierarchicalReducer.reducir(entrada, 2)[0];
+
+        assertEquals(SuperVoxel.Material.SOLIDO, r.material(), "Con la mitad visible, la superficie no desaparece");
+        assertEquals(250, r.r() & 0xFF, "El aire no entra en el promedio de color");
+        assertEquals(15, r.luzHorneada(), "La luz horneada se conserva al reducir");
+    }
+
+    @Test
+    void conMenosDeLaMitadVisibleQuedaAire() {
+        SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        java.util.Arrays.fill(entrada, aire);
+        entrada[0] = voxel(10, SuperVoxel.Material.SOLIDO);
+        entrada[1] = voxel(10, SuperVoxel.Material.SOLIDO);
+        entrada[2] = voxel(10, SuperVoxel.Material.SOLIDO);
+
+        assertEquals(SuperVoxel.Material.AIRE, HierarchicalReducer.reducir(entrada, 2)[0].material());
+    }
 }

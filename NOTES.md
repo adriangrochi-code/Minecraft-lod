@@ -56,6 +56,24 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   inviable: evaluar no persistir el nivel 0 (se puede re-extraer del mundo)
   o comprimir por bloques (ver la contradicción de la sección 5 anotada abajo).
 
+- **render/: primer render funcional (2026-09-29), a optimizar en Pista B:**
+  - Un nivel de LOD por celda de 4×4 chunks (no por nodo), elegido por
+    error en pantalla con el FOV efectivo. Falta blend/dithering entre
+    niveles (sección 6) y el selector jerárquico real.
+  - Sin culling de caras traseras (el orden de vértices no está unificado)
+    y sin culling por frustum de celdas: se dibujan todas.
+  - Sin perspectiva atmosférica: el LOD termina en un borde duro donde se
+    acaban los datos. `AtmosphericPerspective` está lista para usarse.
+  - Proyección propia (near 16, far 1.5× radio): no incluye el balanceo de
+    cámara al caminar; en espectador no se nota.
+  - La luz horneada es fija (de día): de noche el LOD queda claro.
+  - Solo singleplayer: lee el cache del servidor integrado. En multiplayer
+    falta guardar en el cliente lo que llega por red.
+  - `RenderBackend` (interfaz) quedó sin implementar: el render real
+    necesita la grilla (para la luz por vértice), no solo la lista de Quad.
+    Rediseñar la interfaz cuando llegue el backend de alto rendimiento.
+  - Probado con Embeddium: NO (no hay Embeddium en el entorno de dev).
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~
@@ -65,6 +83,13 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Mejoras notadas, no aplicadas todavía
 
+- **Bug corregido en `HierarchicalReducer` (visto con el primer render):**
+  promediaba el aire como negro y descartaba la luz horneada, así que todo
+  nivel ≥1 salía oscuro; además en empate aire/sólido ganaba el aire y las
+  superficies finas se hundían. `VERSION_ALGORITMO` subió a 2.
+- `GeneradorLocal`: los chunks que no entran a la cola quedan pendientes y
+  se reintentan por tick (antes los chunks que nunca se descargan, como
+  spawn o forceload, se perdían para siempre).
 - **Generación LOCAL (`GeneradorLocal`), limitaciones conocidas:**
   - Invalidación gruesa: un chunk se regenera al descargarse si
     `isUnsaved()`. No está verificado que el Unload llegue antes del guardado
@@ -76,7 +101,6 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   - `idDimension` usa hash para dimensiones no vanilla: dos dimensiones de
     mods pueden caer en el mismo id (1/253) y pisarse nodos. Solución real:
     un mapa id↔dimensión persistido junto al cache.
-  - Chunks descartados por cola llena se reintentan solo al recargarse.
 - **network/, decisiones a revisar:**
   - Ritmo por jugador fijo (1024 nodos/s, ráfaga 2048) y radio servido =
     `radioLodChunks` del preset del SERVIDOR. Deberían salir de la config

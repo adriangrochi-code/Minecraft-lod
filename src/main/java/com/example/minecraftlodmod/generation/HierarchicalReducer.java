@@ -9,8 +9,14 @@ import com.example.minecraftlodmod.core.SuperVoxel;
  * O(n * niveles) — ver sección 2 y 4 del documento de arquitectura.
  *
  * Fusiona bloques de 2x2x2 supervóxeles del nivel de entrada en 1
- * supervóxel del nivel de salida, promediando color/altura y votando el
- * material dominante.
+ * supervóxel del nivel de salida:
+ *  - es AIRE solo si más de la mitad del bloque es aire; con 4 o más
+ *    vóxeles visibles queda visible, así las superficies de un bloque de
+ *    espesor no se "hunden" al subir de nivel;
+ *  - el material es el más votado entre los vóxeles visibles;
+ *  - color, altura y luz horneada se promedian solo sobre los visibles: el
+ *    aire no aporta color (antes entraba como negro y oscurecía todo nivel
+ *    reducido, y la luz se perdía — corregido con el primer render).
  */
 public final class HierarchicalReducer {
 
@@ -41,34 +47,39 @@ public final class HierarchicalReducer {
     }
 
     private static SuperVoxel fusionarBloque(SuperVoxel[] entrada, int lado, int ox, int oy, int oz) {
-        int sumaR = 0, sumaG = 0, sumaB = 0, sumaAltura = 0;
+        int sumaR = 0, sumaG = 0, sumaB = 0, sumaAltura = 0, sumaLuz = 0;
         int[] votosMaterial = new int[SuperVoxel.Material.values().length];
-        int total = 0;
+        int visibles = 0;
 
         for (int dx = 0; dx < 2; dx++) {
             for (int dy = 0; dy < 2; dy++) {
                 for (int dz = 0; dz < 2; dz++) {
                     SuperVoxel v = entrada[indice(ox + dx, oy + dy, oz + dz, lado)];
+                    if (v.material() == SuperVoxel.Material.AIRE) {
+                        continue;
+                    }
                     sumaR += v.r() & 0xFF;
                     sumaG += v.g() & 0xFF;
                     sumaB += v.b() & 0xFF;
                     sumaAltura += v.alturaLocal() & 0xFF;
+                    sumaLuz += v.luzHorneada();
                     votosMaterial[v.material().ordinal()]++;
-                    total++;
+                    visibles++;
                 }
             }
         }
 
-        SuperVoxel.Material materialDominante = materialMasVotado(votosMaterial);
-
+        if (visibles * 2 < 8) {
+            return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        }
         return new SuperVoxel(
-                (byte) (sumaR / total),
-                (byte) (sumaG / total),
-                (byte) (sumaB / total),
-                (byte) (sumaAltura / total),
-                materialDominante,
+                (byte) (sumaR / visibles),
+                (byte) (sumaG / visibles),
+                (byte) (sumaB / visibles),
+                (byte) (sumaAltura / visibles),
+                materialMasVotado(votosMaterial),
                 (byte) 0
-        );
+        ).conLuzHorneada(Math.round(sumaLuz / (float) visibles));
     }
 
     private static SuperVoxel.Material materialMasVotado(int[] votos) {
