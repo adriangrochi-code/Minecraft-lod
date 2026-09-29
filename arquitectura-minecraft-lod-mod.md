@@ -463,3 +463,59 @@ atrás natural, sin necesitar lógica adicional en quien pide la generación.
 `BoundedRegionCache` deberían derivarse de `QualityPreset.cacheRamMb` (más
 un estimado de tamaño promedio de tarea) al construir el scheduler/cache
 para cada preset, no quedar como valores libres.
+
+## 25. Análisis de Voxy y FarPlaneTwo: rendimiento sin perder calidad (2026-09-29)
+
+**Licencias:** Voxy (MCRcortex) es "All rights reserved, do not
+redistribute" → solo se toman IDEAS, nunca código. FarPlaneTwo
+(DaPorkchop_) es MIT → se puede adaptar código con crédito explícito
+(autor + enlace al repo) en el archivo que lo use.
+
+Medición de partida (preset Medio, 1080p, antes del descarte de cuevas):
+~34M vértices / 17M triángulos / ~1,4 GB de VRAM — inviable en iGPU.
+
+Ideas adoptadas, en orden de implementación sugerido:
+
+1. **Formato de vértice compacto (idea de Voxy).** Voxy guarda un quad en
+   64 bits (posición 5+5+5, tamaño 4+4, cara 3, estado, bioma, luz) y
+   reconstruye los vértices en el shader. Nuestro equivalente compatible
+   (sin GL crudo): `VertexFormat` propio con elementos empaquetados
+   (posición relativa a la celda en shorts, color+luz en un int, UV
+   derivada de posición+cara en el shader) → ~8-12 B/vértice contra ~36
+   actuales, 3-4× menos VRAM y ancho de banda. Sin pérdida de calidad.
+2. **Mip por bloque representativo + paleta (idea de Voxy).** En vez de
+   promediar color, el nivel superior elige el hijo más representativo
+   (más opaco, preferencia al de arriba) y guarda `estado`; el color se
+   resuelve en el cliente con `ColoresBloque`/resource pack activo. Mejora
+   nitidez lejana (sin "barro" promediado), arregla colores en
+   multiplayer y permite almacenamiento por paleta (índices de 1-2 bytes
+   + Deflate) → nodos en disco/RAM mucho más chicos.
+3. **Agrupación de quads por dirección de cara (Voxy).** Seis rangos por
+   malla; se omite el dibujo de las caras que miran en sentido contrario
+   a la cámara (hasta ~50% menos triángulos procesados) usando rangos de
+   `VertexBuffer` por dirección — sin GL crudo.
+4. **Culling de caras entre secciones vecinas (Voxy).** Máscara de
+   opacidad del borde de la sección vecina al mallar: elimina caras
+   internas en los límites de sección/tesela (hoy solo se omiten caras
+   laterales cubiertas a nivel celda).
+5. **Oclusión ambiental horneada por vértice.** Voxy usa SSAO de
+   postproceso; lo nuestro compatible es AO por vértice al mallar (0 costo
+   en GPU, gran aporte de profundidad visual). SSAO queda para el backend
+   opt-in.
+6. **Exclusión exacta del área vanilla (FP2, "vanilla renderability").**
+   Máscara por chunk de qué renderiza vanilla realmente, en vez de un radio
+   fijo → sin geometría LOD duplicada bajo el terreno cercano ni huecos.
+7. **Generación aproximada por funciones de densidad (FP2, MIT).** Para el
+   horizonte de varios km: samplear `NoiseRouter.finalDensity` de
+   1.21 a baja resolución para regiones nunca visitadas, sin generar
+   chunks. Es lo que hace sostenible el preset Horizonte (secciones 17-18).
+8. **Texturas horneadas de modelos no cúbicos (Voxy).** Rasterizar por
+   software cada estado de bloque a 6 caras para escaleras/losas/etc.
+   Mejora de calidad, prioridad baja.
+
+**NO adoptado en el backend por defecto:** HiZ occlusion + recorrido
+jerárquico en GPU por compute + multidraw indirecto de Voxy (requiere GL
+4.5/4.6, int64 en shaders, llamadas GL directas) y árbol de render
+off-heap con GL crudo de FP2. Ambos rompen la regla de compatibilidad
+(secciones 6, 15, 20) y el hardware de la A275 no los soporta bien; quedan
+como candidatos para el backend de alto rendimiento opt-in (sección 20).
