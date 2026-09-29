@@ -38,5 +38,7 @@
   "minecraftlodmod.calibracion.resultado": "Guardado como Personalizado: radio LOD %s chunks",
   "minecraftlodmod.calibracion.piso": "Tu hardware quedó en el escalón más liviano; guardado como Personalizado",
   "minecraftlodmod.configuration.texturasLod": "Texturas en el LOD",
-  "minecraftlodmod.configuration.texturasLod.tooltip": "Dibuja el terreno lejano con las texturas del paquete de texturas activo; se simplifican solas con la distancia. Apagado: colores planos."
+  "minecraftlodmod.configuration.texturasLod.tooltip": "Dibuja el terreno lejano con las texturas del paquete de texturas activo; se simplifican solas con la distancia. Apagado: colores planos.",
+  "minecraftlodmod.configuration.descartarCuevas": "Descartar cuevas",
+  "minecraftlodmod.configuration.descartarCuevas.tooltip": "No dibuja en el LOD caras sin luz (interiores de cuevas, caras enterradas). Mucha menos geometría; puede dejar huecos al mirar dentro de una cueva lejana."
 }

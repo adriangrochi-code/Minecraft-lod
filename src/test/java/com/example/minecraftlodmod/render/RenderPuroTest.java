@@ -193,4 +193,16 @@ class RenderPuroTest {
             }
         }
     }
+
+    @Test
+    void lasCarasSinLuzSeDescartanSoloSiSePide() {
+        SuperVoxel enterrado = solido(0);
+        GeometriaLod todas = new GeometriaLod();
+        GeometriaLod sinCuevas = new GeometriaLod();
+        sinCuevas.descartarCarasSinLuz(true);
+
+        assertEquals(6, todas.agregarSeccion(new SuperVoxel[]{enterrado}, 1, 0, 0, 0, 16));
+        assertEquals(0, sinCuevas.agregarSeccion(new SuperVoxel[]{enterrado}, 1, 0, 0, 0, 16));
+        assertEquals(6, sinCuevas.agregarSeccion(new SuperVoxel[]{solido(8)}, 1, 0, 0, 0, 16), "Con luz se dibuja");
+    }
 }

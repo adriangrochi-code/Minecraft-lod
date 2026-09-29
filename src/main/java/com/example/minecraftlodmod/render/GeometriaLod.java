@@ -55,6 +55,17 @@ public final class GeometriaLod {
     private byte[] normales = new byte[3 * 1024];
     private int vertices;
     private Texturas fuenteTexturas;
+    private boolean descartarSinLuz;
+
+    /**
+     * Descartar caras sin ninguna luz (cielo ni bloque) en sus cuatro
+     * esquinas: interiores de cuevas y caras enterradas, invisibles desde
+     * afuera. Es el "cave culling" de Distant Horizons; sin esto el LOD de
+     * un radio grande dibuja decenas de millones de vértices ocultos.
+     */
+    public void descartarCarasSinLuz(boolean descartar) {
+        this.descartarSinLuz = descartar;
+    }
 
     /** Fuente de texturas para lo que se agregue después; null = todo con color plano. */
     public void usarTexturas(Texturas fuente) {
@@ -86,8 +97,9 @@ public final class GeometriaLod {
             if (omitida(q, lado, carasOmitidas)) {
                 continue;
             }
-            agregarQuad(grid, lado, q, ox, oy, oz, escala);
-            agregados++;
+            if (agregarQuad(grid, lado, q, ox, oy, oz, escala)) {
+                agregados++;
+            }
         }
         return agregados;
     }
@@ -105,7 +117,8 @@ public final class GeometriaLod {
         };
     }
 
-    private void agregarQuad(SuperVoxel[] grid, int lado, Quad q, float ox, float oy, float oz, float escala) {
+    /** @return false si la cara se descartó (sin luz) */
+    private boolean agregarQuad(SuperVoxel[] grid, int lado, Quad q, float ox, float oy, float oz, float escala) {
         // Descomposición (capa, u, v) inversa a GreedyMesher#construirQuad:
         // X -> u=y (alto), v=z (ancho) | Y -> u=x (ancho), v=z (alto) | Z -> u=x (ancho), v=y (alto)
         int capa, u0, v0, largoU, largoV;
@@ -116,6 +129,9 @@ public final class GeometriaLod {
         }
         float plano = capa + (q.positivo() ? 1 : 0);
         VertexLightSampler.LuzEsquinas luz = VertexLightSampler.calcular(grid, lado, q);
+        if (descartarSinLuz && luz.minMin() == 0 && luz.maxMin() == 0 && luz.minMax() == 0 && luz.maxMax() == 0) {
+            return false;
+        }
         float sombra = sombraDeCara(q.eje(), q.positivo());
         SuperVoxel v = q.voxelRepresentativo();
         Cara cara = fuenteTexturas == null || v.idEstado() == SuperVoxel.SIN_ESTADO ? null
@@ -129,6 +145,7 @@ public final class GeometriaLod {
         vertice(q, plano, u0 + largoU, v0, luz.maxMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
         vertice(q, plano, u0 + largoU, v0 + largoV, luz.maxMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
         vertice(q, plano, u0, v0 + largoV, luz.minMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
+        return true;
     }
 
     private void vertice(Quad q, float plano, int u, int v, int luz, int rgbBase, Cara cara, float sombra,

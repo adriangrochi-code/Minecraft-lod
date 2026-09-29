@@ -221,13 +221,39 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
     }
 
     /**
-     * Luz que recibe la cara expuesta del bloque: la del bloque de arriba,
-     * que es la que ve la superficie del terreno desde el cielo.
+     * Luz horneada del bloque: la MÁXIMA de sus vecinos (arriba, costados y
+     * abajo), es decir la luz del aire que toca alguna de sus caras. Antes
+     * era solo la del bloque de arriba, y la cara de un acantilado quedaba
+     * "a oscuras" aunque le dé el sol de costado. Un bloque enterrado (todos
+     * sus vecinos sólidos) queda con luz 0: eso es lo que permite descartar
+     * cuevas y caras enterradas en el render.
+     *
+     * Vecinos fuera de la sección: arriba se lee la sección de arriba; a los
+     * costados no hay dato y se asume luz plena (no descartar caras de un
+     * acantilado justo en el borde de un chunk); abajo, sin luz.
      */
     private int luz(int x, int y, int z) {
-        DataLayer capaCielo = y < SectionExtractor.LADO - 1 ? cielo : cieloArriba;
-        DataLayer capaBloque = y < SectionExtractor.LADO - 1 ? bloque : bloqueArriba;
-        int ly = (y + 1) & 15;
+        int max = luzEn(x, y + 1, z);
+        if (max == 15) {
+            return 15;
+        }
+        max = Math.max(max, luzEn(x - 1, y, z));
+        max = Math.max(max, luzEn(x + 1, y, z));
+        max = Math.max(max, luzEn(x, y, z - 1));
+        max = Math.max(max, luzEn(x, y, z + 1));
+        return Math.max(max, luzEn(x, y - 1, z));
+    }
+
+    private int luzEn(int x, int y, int z) {
+        if (x < 0 || x > 15 || z < 0 || z > 15) {
+            return 15;
+        }
+        if (y < 0) {
+            return 0;
+        }
+        DataLayer capaCielo = y < SectionExtractor.LADO ? cielo : cieloArriba;
+        DataLayer capaBloque = y < SectionExtractor.LADO ? bloque : bloqueArriba;
+        int ly = y & 15;
         // Sin datos de luz del cielo (motor de luz todavía no corrió, o
         // sección por encima de todo): asumir cielo abierto.
         int deCielo = capaCielo == null ? 15 : capaCielo.get(x, ly, z);

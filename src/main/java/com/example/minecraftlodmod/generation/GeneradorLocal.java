@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.List;
 import java.util.function.Function;
 
@@ -65,7 +66,7 @@ public final class GeneradorLocal {
      * Versión del algoritmo de extracción/reducción, mezclada en el
      * {@code hashFuente} del cache: subirla invalida todo lo generado antes.
      */
-    public static final long VERSION_ALGORITMO = 7;
+    public static final long VERSION_ALGORITMO = 8;
 
     /** Nivel reservado en {@link SectionExtractor#claveNodo} para marcar "este chunk ya se generó". */
     private static final int NIVEL_MARCA_CHUNK = 15;
@@ -89,6 +90,35 @@ public final class GeneradorLocal {
     private final ConcurrentHashMap<Dimension, Set<Long>> chunksSucios = new ConcurrentHashMap<>();
     private final AtomicBoolean loteGrandeEnCurso = new AtomicBoolean();
     private int ticksDesdeLote;
+
+    // Estadísticas para estimar el costo en cada hardware (log cada 10 s si hubo trabajo).
+    private final LongAdder nanosChunks = new LongAdder();
+    private final LongAdder chunksHechos = new LongAdder();
+    private final LongAdder nanosLotesGrandes = new LongAdder();
+    private long nanosCapturaHiloServidor;
+    private int ticksDesdeEstadistica;
+
+    private void registrarEstadisticas() {
+        if (++ticksDesdeEstadistica < 200) {
+            return;
+        }
+        ticksDesdeEstadistica = 0;
+        long chunks = chunksHechos.sumThenReset();
+        long nanos = nanosChunks.sumThenReset();
+        long nanosGrandes = nanosLotesGrandes.sumThenReset();
+        if (chunks == 0 && pendientes.isEmpty()) {
+            nanosCapturaHiloServidor = 0;
+            return;
+        }
+        RegionFileStore s = store;
+        LOG.info("LOD gen: {} chunks en 10 s ({} ms/chunk en el pool, {} ms/chunk en el hilo del servidor), "
+                        + "niveles grandes {} ms, {} pendientes | RAM LOD: {} MB por escribir, {} MB en cache",
+                chunks, chunks == 0 ? 0 : String.format("%.1f", nanos / 1e6 / chunks),
+                chunks == 0 ? 0 : String.format("%.2f", nanosCapturaHiloServidor / 1e6 / chunks),
+                nanosGrandes / 1_000_000, pendientes.size(),
+                s == null ? 0 : s.bytesPendientes() >> 20, s == null ? 0 : s.bytesEnCache() >> 20);
+        nanosCapturaHiloServidor = 0;
+    }
 
     private final Function<MinecraftServer, ParametrosCalidad> resolverCalidad;
     private volatile ParametrosCalidad calidad;
@@ -176,6 +206,7 @@ public final class GeneradorLocal {
      */
     @SubscribeEvent
     public void alTerminarTick(ServerTickEvent.Post evento) {
+        registrarEstadisticas();
         if (++ticksDesdeLote >= TICKS_ENTRE_LOTES_GRANDES) {
             ticksDesdeLote = 0;
             lanzarLoteGrande();
@@ -244,10 +275,14 @@ public final class GeneradorLocal {
             try {
                 long inicio = System.nanoTime();
                 int nodos = 0;
+                try {
                 for (Map.Entry<Dimension, Set<Long>> e : lote.entrySet()) {
                     Dimension d = e.getKey();
                     nodos += NivelesGrandes.actualizar(e.getValue(), d.minSeccion(), d.maxSeccion(),
                             new AccesoStore(destino, d.id()));
+                }
+                } finally {
+                    nanosLotesGrandes.add(System.nanoTime() - inicio);
                 }
                 LOG.debug("LOD: niveles grandes: {} nodos en {} ms", nodos, (System.nanoTime() - inicio) / 1_000_000);
             } catch (RuntimeException ex) {
@@ -307,7 +342,9 @@ public final class GeneradorLocal {
         if (store == null || scheduler == null) {
             return true;
         }
+        long inicioCaptura = System.nanoTime();
         List<LectorSeccionMinecraft.Captura> capturas = LectorSeccionMinecraft.capturar(nivel, chunk);
+        nanosCapturaHiloServidor += System.nanoTime() - inicioCaptura;
         RegionFileStore.ClaveRegion region = claveRegion(nivel, chunk);
         long marca = claveMarca(chunk);
         RegionFileStore destino = store;
@@ -316,6 +353,7 @@ public final class GeneradorLocal {
         long chunkEmpaquetado = NivelesGrandes.empaquetar(chunk.getPos().x, chunk.getPos().z);
 
         var tarea = scheduler.intentarEnviar(() -> {
+            long inicioTarea = System.nanoTime();
             for (LectorSeccionMinecraft.Captura captura : capturas) {
                 SectionExtractor.SeccionExtraida seccion = captura.extraer();
                 if (seccion == null) {
@@ -329,6 +367,8 @@ public final class GeneradorLocal {
                 }
             }
             destino.guardar(region, marca, MARCA);
+            nanosChunks.add(System.nanoTime() - inicioTarea);
+            chunksHechos.increment();
             chunksSucios.computeIfAbsent(dimension, d -> ConcurrentHashMap.newKeySet()).add(chunkEmpaquetado);
             return null;
         });

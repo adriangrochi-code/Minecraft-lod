@@ -38,5 +38,7 @@
   "minecraftlodmod.calibracion.resultado": "Saved as Custom: LOD radius %s chunks",
   "minecraftlodmod.calibracion.piso": "Your hardware is at the lightest level; saved as Custom",
   "minecraftlodmod.configuration.texturasLod": "LOD textures",
-  "minecraftlodmod.configuration.texturasLod.tooltip": "Draw distant terrain with the textures of the active resource pack; they simplify with distance. Off: flat colors."
+  "minecraftlodmod.configuration.texturasLod.tooltip": "Draw distant terrain with the textures of the active resource pack; they simplify with distance. Off: flat colors.",
+  "minecraftlodmod.configuration.descartarCuevas": "Cave culling",
+  "minecraftlodmod.configuration.descartarCuevas.tooltip": "Skip unlit faces (cave interiors, buried faces) in the LOD. Much less geometry; distant cave openings may show gaps."
 }

@@ -50,6 +50,7 @@ import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Render de LOD, backend compatible (sección 6 y 20): primer render
@@ -119,6 +120,44 @@ public final class RenderLod {
     private int versionTexturasVista = -1;
     private boolean texturasEnUso;
 
+    // Estadísticas para estimar el costo en cada hardware (log cada 10 s).
+    static final long PERIODO_ESTADISTICAS_NANOS = 10_000_000_000L;
+    private final LongAdder nanosArmado = new LongAdder();
+    private final LongAdder mallasArmadas = new LongAdder();
+    private long ultimaEstadisticaNanos = System.nanoTime();
+    private long framesDesdeEstadistica;
+    private long nanosDibujo;
+    private int llamadasUltimoFrame;
+
+    private void registrarEstadisticas(Minecraft mc) {
+        framesDesdeEstadistica++;
+        long ahora = System.nanoTime();
+        if (ahora - ultimaEstadisticaNanos < PERIODO_ESTADISTICAS_NANOS) {
+            return;
+        }
+        long vertices = 0, bytesVram = 0;
+        int piezas = 0;
+        for (EstadoCelda e : celdas.values()) {
+            if (e.buffer != null) {
+                piezas++;
+                vertices += e.vertices;
+                bytesVram += (long) e.vertices * e.bytesVertice + (long) e.vertices / 4 * 6 * 4; // + índices
+            }
+        }
+        long mallas = mallasArmadas.sumThenReset();
+        long nanos = nanosArmado.sumThenReset();
+        Runtime rt = Runtime.getRuntime();
+        LOG.info("LOD stats: fps={} | dibujo LOD {} ms/frame, {} llamadas/frame | {} piezas, {} vértices "
+                        + "({} triángulos), VRAM LOD ~{} MB | mallas armadas {} ({} ms prom) | heap {} / {} MB",
+                mc.getFps(), String.format("%.2f", nanosDibujo / 1e6 / Math.max(1, framesDesdeEstadistica)),
+                llamadasUltimoFrame, piezas, vertices, vertices / 2, bytesVram >> 20, mallas,
+                mallas == 0 ? 0 : String.format("%.1f", nanos / 1e6 / mallas),
+                (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20);
+        ultimaEstadisticaNanos = ahora;
+        framesDesdeEstadistica = 0;
+        nanosDibujo = 0;
+    }
+
     /** Bus del mod, solo cliente. */
     public static void registrarShaders(RegisterShadersEvent evento) {
         try {
@@ -181,6 +220,8 @@ public final class RenderLod {
         PlanCeldas.Celda plan;
         PlanCeldas.Celda construidaCon;
         VertexBuffer buffer;
+        int vertices;
+        int bytesVertice;
         boolean enConstruccion;
         int chunksConDatos;
         boolean texturizada;
@@ -266,6 +307,7 @@ public final class RenderLod {
         Camera camara = evento.getCamera();
         replanificarSiHaceFalta(mc, camara.getPosition(), store);
         dibujar(mc, evento, camara.getPosition());
+        registrarEstadisticas(mc);
     }
 
     private void subirMallasListas() {
@@ -285,6 +327,8 @@ public final class RenderLod {
                 if (estado.buffer == null) {
                     estado.buffer = new VertexBuffer(VertexBuffer.Usage.STATIC);
                 }
+                estado.vertices = lista.malla().drawState().vertexCount();
+                estado.bytesVertice = lista.malla().drawState().format().getVertexSize();
                 estado.buffer.bind();
                 estado.buffer.upload(lista.malla()); // cierra el MeshData
                 VertexBuffer.unbind();
@@ -357,9 +401,11 @@ public final class RenderLod {
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
                        int minSeccion, int maxSeccion, int chunkCamX, int chunkCamZ, int distanciaVanilla,
                        GeometriaLod.Texturas texturas) {
+        long inicioArmado = System.nanoTime();
         try {
             GeometriaLod geometria = new GeometriaLod();
             geometria.usarTexturas(texturas);
+            geometria.descartarCarasSinLuz(ConfigLod.CLIENTE.descartarCuevas.get());
             int nivel = celda.nivel();
             int lado = SectionExtractor.LADO >> nivel;
             int total = SectionExtractor.voxelesPorNodo(nivel);
@@ -422,6 +468,8 @@ public final class RenderLod {
                 }
             }
             listas.add(new MallaLista(clave, celda, builder.buildOrThrow(), memoria, conDatos, texturizada));
+            nanosArmado.add(System.nanoTime() - inicioArmado);
+            mallasArmadas.increment();
         } catch (RuntimeException e) {
             LOG.error("LOD: no se pudo armar la celda {},{}", celda.celdaX(), celda.celdaZ(), e);
             listas.add(new MallaLista(clave, celda, null, null, 0, false));
@@ -429,6 +477,16 @@ public final class RenderLod {
     }
 
     private void dibujar(Minecraft mc, RenderLevelStageEvent evento, Vec3 camara) {
+        long inicio = System.nanoTime();
+        try {
+            dibujarLod(mc, evento, camara);
+        } finally {
+            nanosDibujo += System.nanoTime() - inicio;
+        }
+    }
+
+    private void dibujarLod(Minecraft mc, RenderLevelStageEvent evento, Vec3 camara) {
+        llamadasUltimoFrame = 0;
         ParametrosCalidad c = calidad;
         float far = Math.max(NEAR_LOD * 2, c.radioLodChunks() * 16f * 1.5f);
         Matrix4f proyeccion = new Matrix4f().perspective((float) Math.toRadians(fovGrados),
@@ -468,6 +526,7 @@ public final class RenderLod {
             Matrix4f vista = new Matrix4f(evento.getModelViewMatrix()).translate(ox, (float) -camara.y, oz);
             estado.buffer.bind();
             estado.buffer.drawWithShader(vista, proyeccion, shader);
+            llamadasUltimoFrame++;
         }
     }
 

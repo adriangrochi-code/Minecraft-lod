@@ -38,6 +38,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue fpsObjetivo;
         public final ModConfigSpec.BooleanValue autoAjuste;
         public final ModConfigSpec.BooleanValue texturasLod;
+        public final ModConfigSpec.BooleanValue descartarCuevas;
 
         Cliente(ModConfigSpec.Builder b) {
             ParametrosCalidad medio = ParametrosCalidad.de(QualityPreset.MEDIO);
@@ -53,6 +54,9 @@ public final class ConfigLod {
             texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
                             "con la distancia). Apagado: colores planos, un poco más barato en GPU.")
                     .define("texturasLod", true);
+            descartarCuevas = b.comment("No dibujar en el LOD caras sin ninguna luz (interiores de cuevas, caras enterradas).",
+                            "Reduce mucho la geometría; puede dejar huecos al mirar dentro de una cueva lejana.")
+                    .define("descartarCuevas", true);
 
             b.comment("Valores usados solo con preset = PERSONALIZADO (o guardados por la calibración).")
                     .push("personalizado");

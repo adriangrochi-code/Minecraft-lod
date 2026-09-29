@@ -62,6 +62,11 @@ final class PantallaCloth {
                 .setTooltip(texto("texturasLod.tooltip"))
                 .setSaveConsumer(c.texturasLod::set)
                 .build());
+        general.addEntry(e.startBooleanToggle(texto("descartarCuevas"), c.descartarCuevas.get())
+                .setDefaultValue(c.descartarCuevas.getDefault())
+                .setTooltip(texto("descartarCuevas.tooltip"))
+                .setSaveConsumer(c.descartarCuevas::set)
+                .build());
         general.addEntry(e.startBooleanToggle(texto("autoAjuste"), c.autoAjuste.get())
                 .setDefaultValue(c.autoAjuste.getDefault())
                 .setTooltip(texto("autoAjuste.tooltip"))
