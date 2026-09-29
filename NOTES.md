@@ -222,4 +222,24 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
     puede recalcular el tinte; haría falta agregar el bioma (cambia el
     formato de 8 bytes de la sección 5), a decidir junto con el cache
     cliente de multiplayer.
-  - Puntos 3-8 de la sección 25 siguen pendientes.
+  - Puntos 5-8 de la sección 25 siguen pendientes.
+- **Sección 25, puntos 3 y 4 aplicados:**
+  - Una malla por dirección de cara por celda, con su plano mínimo/máximo;
+    `RenderLod.dibujarPasada` saltea los grupos que miran para el otro lado
+    y el resto lo descarta el culling de caras traseras (vértices
+    antihorarios desde afuera, `GeometriaLod.antihorarioDirecto`).
+  - Dibujo al estilo del terreno vanilla: shader y uniforms una vez por
+    pasada, y por buffer solo `ChunkOffset` + `draw()`. El fallback con
+    `position_color` (sin ChunkOffset) sigue con `drawWithShader`.
+  - `GreedyMesher.Vecinos`: las caras del borde de una sección tapadas por
+    la sección de arriba/abajo o por el chunk vecino (mismo nivel) ya no se
+    generan. Los costados hacia terreno vanilla se siguen omitiendo enteros.
+    Reemplaza a `vecinoCubierto`, que omitía el costado completo si el
+    vecino tenía datos aunque ahí fuera aire (agujeros en acantilados de
+    borde de chunk).
+  - **Limitaciones:** el vecino se lee al MISMO nivel que la sección, aunque
+    esa celda vecina se dibuje en otro nivel: puede quedar una rendija o
+    cara de más en el límite entre niveles (antes era peor: costado
+    omitido entero). En teselas (niveles 3-8) solo se usan las bandas de
+    arriba y abajo; los costados de tesela siguen siendo paredes
+    (pendiente, leer solo el borde de la tesela vecina).

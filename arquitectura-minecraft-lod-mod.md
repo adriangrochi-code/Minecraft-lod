@@ -493,11 +493,13 @@ Ideas adoptadas, en orden de implementación sugerido:
    nitidez lejana (sin "barro" promediado), arregla colores en
    multiplayer y permite almacenamiento por paleta (índices de 1-2 bytes
    + Deflate) → nodos en disco/RAM mucho más chicos.
-3. **Agrupación de quads por dirección de cara (Voxy).** Seis rangos por
+3. **Agrupación de quads por dirección de cara (Voxy) — implementado: un
+   `VertexBuffer` por dirección y celda, dibujados como el terreno vanilla.** Seis rangos por
    malla; se omite el dibujo de las caras que miran en sentido contrario
    a la cámara (hasta ~50% menos triángulos procesados) usando rangos de
    `VertexBuffer` por dirección — sin GL crudo.
-4. **Culling de caras entre secciones vecinas (Voxy).** Máscara de
+4. **Culling de caras entre secciones vecinas (Voxy) — implementado con
+   `GreedyMesher.Vecinos`; costados de teselas pendientes.** Máscara de
    opacidad del borde de la sección vecina al mallar: elimina caras
    internas en los límites de sección/tesela (hoy solo se omiten caras
    laterales cubiertas a nivel celda).

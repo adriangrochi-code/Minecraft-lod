@@ -14,6 +14,8 @@ uniform sampler2D Sampler0;
 uniform sampler2D Sampler1;
 uniform mat4 ModelViewMat;
 uniform mat4 ProjMat;
+// Origen de la celda relativo a la cámara: uno por buffer, como el terreno vanilla.
+uniform vec3 ChunkOffset;
 
 out vec3 posLocal;
 out vec4 vertexColor;
@@ -30,7 +32,7 @@ ivec4 texel(int columna, int fila) {
 
 void main() {
     vec3 pos = vec3(PosSprite.xyz);
-    gl_Position = ProjMat * ModelViewMat * vec4(pos, 1.0);
+    gl_Position = ProjMat * ModelViewMat * vec4(pos + ChunkOffset, 1.0);
     posLocal = pos;
     vertexColor = vec4(Color.rgb, 1.0);
     cara = int(Color.a * 255.0 + 0.5);

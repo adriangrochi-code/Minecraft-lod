@@ -248,4 +248,50 @@ class RenderPuroTest {
         assertEquals(0, sinCuevas.agregarSeccion(new SuperVoxel[]{enterrado}, 1, 0, 0, 0, 16));
         assertEquals(6, sinCuevas.agregarSeccion(new SuperVoxel[]{solido(8)}, 1, 0, 0, 0, 16), "Con luz se dibuja");
     }
+
+    @Test
+    void todasLasCarasSonAntihorariasVistasDesdeAfuera() {
+        GeometriaLod g = new GeometriaLod();
+        g.agregarSeccion(new SuperVoxel[]{solido(15)}, 1, 0, 0, 0, 4);
+        assertEquals(24, g.vertices());
+        for (int q = 0; q < g.vertices(); q += 4) {
+            double[] a = {g.x(q), g.y(q), g.z(q)}, b = {g.x(q + 1), g.y(q + 1), g.z(q + 1)},
+                    c = {g.x(q + 2), g.y(q + 2), g.z(q + 2)};
+            double[] e1 = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, e2 = {c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+            double[] n = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]};
+            int cara = g.cara(q);
+            int eje = cara >> 1;
+            double signo = (cara & 1) == 1 ? 1 : -1;
+            assertTrue(n[eje] * signo > 0, "La normal por orden de vértices apunta hacia afuera en la cara " + cara);
+        }
+    }
+
+    @Test
+    void cadaDireccionTieneSuGrupoConSusPlanos() {
+        GeometriaLod g = new GeometriaLod();
+        g.agregarSeccion(new SuperVoxel[]{solido(15)}, 1, 16, 32, 48, 8); // cubo de 16..24, 32..40, 48..56
+        for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
+            assertEquals(4, g.verticesDeCara(cara));
+        }
+        assertEquals(24f, g.planoMin(1), "+X en x = 24");
+        assertEquals(16f, g.planoMax(0), "-X en x = 16");
+        assertEquals(40f, g.planoMin(3), "+Y en y = 40");
+
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(4 * GeometriaLod.BYTES_COMPACTO);
+        g.escribirCompacto(b, 3);
+        assertEquals(b.capacity(), b.position(), "Solo los 4 vértices de arriba");
+        assertEquals(3, b.get(GeometriaLod.BYTES_COMPACTO - 1), "Y todos son de la cara +Y");
+    }
+
+    @Test
+    void losGruposQueMiranParaElOtroLadoSeSaltean() {
+        // Techo en y = 40: se ve desde arriba, no desde abajo.
+        assertTrue(GeometriaLod.caraVisible(3, 100, 40, 40));
+        assertFalse(GeometriaLod.caraVisible(3, 20, 40, 40));
+        // Caras -Y (debajo de salientes) entre y 10 y 60: visibles si la cámara está debajo de alguna.
+        assertTrue(GeometriaLod.caraVisible(2, 30, 10, 60));
+        assertFalse(GeometriaLod.caraVisible(2, 70, 10, 60));
+        // Cámara exactamente en el plano: de canto, no se ve.
+        assertFalse(GeometriaLod.caraVisible(1, 24, 24, 24));
+    }
 }

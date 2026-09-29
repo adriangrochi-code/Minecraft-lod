@@ -24,14 +24,53 @@ public final class GreedyMesher {
     }
 
     /**
+     * Vóxeles de las grillas vecinas, para no emitir caras del borde tapadas
+     * por ellas (idea de las máscaras de vecinos de Voxy — sección 25, sin
+     * su código). Sin esto, cada sección es una caja cerrada: entre dos
+     * secciones apiladas quedan caras internas que nadie ve.
+     */
+    @FunctionalInterface
+    public interface Vecinos {
+        /**
+         * @param x, y, z coordenada en la grilla, con UNA de ellas fuera de
+         *           [0, lado) por un paso (-1 o lado): la celda vecina de la cara
+         * @return el vóxel vecino, o null si se desconoce (la cara se dibuja)
+         */
+        SuperVoxel en(int x, int y, int z);
+
+        /**
+         * Vecinos a partir de las 6 grillas adyacentes del MISMO lado (mismo
+         * nivel); una grilla null = vecino desconocido, esa cara se dibuja.
+         */
+        static Vecinos deGrillas(int lado, SuperVoxel[] xNeg, SuperVoxel[] xPos, SuperVoxel[] yNeg,
+                                 SuperVoxel[] yPos, SuperVoxel[] zNeg, SuperVoxel[] zPos) {
+            return (x, y, z) -> {
+                SuperVoxel[] g;
+                if (x < 0) { g = xNeg; x = lado - 1; }
+                else if (x >= lado) { g = xPos; x = 0; }
+                else if (y < 0) { g = yNeg; y = lado - 1; }
+                else if (y >= lado) { g = yPos; y = 0; }
+                else if (z < 0) { g = zNeg; z = lado - 1; }
+                else { g = zPos; z = 0; }
+                return g == null ? null : g[(x * lado + y) * lado + z];
+            };
+        }
+    }
+
+    /**
      * @param grid grilla plana de supervóxeles, indexada por (x*lado+y)*lado+z
      * @param lado longitud de arista de la grilla cúbica
      */
     public static List<Quad> mallar(SuperVoxel[] grid, int lado) {
+        return mallar(grid, lado, null);
+    }
+
+    /** @param vecinos vóxeles del otro lado del borde; null = todo borde expuesto */
+    public static List<Quad> mallar(SuperVoxel[] grid, int lado, Vecinos vecinos) {
         List<Quad> quads = new ArrayList<>();
         for (Quad.Eje eje : Quad.Eje.values()) {
-            quads.addAll(mallarEje(grid, lado, eje, true));
-            quads.addAll(mallarEje(grid, lado, eje, false));
+            quads.addAll(mallarEje(grid, lado, eje, true, vecinos));
+            quads.addAll(mallarEje(grid, lado, eje, false, vecinos));
         }
         return quads;
     }
@@ -51,7 +90,8 @@ public final class GreedyMesher {
                 && a.r() == b.r() && a.g() == b.g() && a.b() == b.b();
     }
 
-    private static List<Quad> mallarEje(SuperVoxel[] grid, int lado, Quad.Eje eje, boolean positivo) {
+    private static List<Quad> mallarEje(SuperVoxel[] grid, int lado, Quad.Eje eje, boolean positivo,
+                                        Vecinos vecinos) {
         List<Quad> resultado = new ArrayList<>();
 
         // Recorremos capa por capa a lo largo del eje principal.
@@ -67,7 +107,7 @@ public final class GreedyMesher {
                     int capaVecina = positivo ? capa + 1 : capa - 1;
                     SuperVoxel vecino = (capaVecina >= 0 && capaVecina < lado)
                             ? obtener(grid, lado, eje, capaVecina, u, v)
-                            : null; // fuera del nodo: se considera cara expuesta (el nodo vecino se resuelve aparte)
+                            : afuera(vecinos, eje, capaVecina, u, v); // sin vecinos: cara expuesta
 
                     if (esAire(vecino)) {
                         mascara[u][v] = actual;
@@ -136,6 +176,17 @@ public final class GreedyMesher {
             case X -> new Quad(capa, u, v, anchoV, anchoU, eje, positivo, referencia);
             case Y -> new Quad(u, capa, v, anchoU, anchoV, eje, positivo, referencia);
             case Z -> new Quad(u, v, capa, anchoU, anchoV, eje, positivo, referencia);
+        };
+    }
+
+    private static SuperVoxel afuera(Vecinos vecinos, Quad.Eje eje, int capa, int u, int v) {
+        if (vecinos == null) {
+            return null;
+        }
+        return switch (eje) {
+            case X -> vecinos.en(capa, u, v);
+            case Y -> vecinos.en(u, capa, v);
+            case Z -> vecinos.en(u, v, capa);
         };
     }
 

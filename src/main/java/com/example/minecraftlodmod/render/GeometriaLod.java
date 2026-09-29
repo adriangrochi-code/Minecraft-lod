@@ -28,11 +28,21 @@ import java.util.Arrays;
  * relativos a la celda (shorts), y la textura no viaja por vértice: solo
  * el índice del sprite, que el shader resuelve con una tabla (ver
  * {@link #texelesSprite}); la normal sale del índice de cara.
+ *
+ * Por dirección (sección 25, punto 3): los vértices se escriben agrupados
+ * por cara ({@link #escribirCompacto(ByteBuffer, int)}) con el plano
+ * mínimo y máximo de cada grupo, para no dibujar los grupos que miran en
+ * sentido contrario a la cámara ({@link #caraVisible}). Dentro de un grupo
+ * visible, el orden de vértices es antihorario visto desde afuera, así el
+ * culling de caras traseras de Minecraft descarta el resto.
  */
 public final class GeometriaLod {
 
     /** Bits de {@code carasOmitidas}: caras laterales en el borde de la sección que no se dibujan. */
     public static final int OMITIR_X_NEG = 1, OMITIR_X_POS = 2, OMITIR_Z_NEG = 4, OMITIR_Z_POS = 8;
+
+    /** Caras (direcciones) posibles: 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z. */
+    public static final int CARAS = 6;
 
     /** Bytes por vértice del formato compacto: 3 shorts de posición + short de sprite + RGBA. */
     public static final int BYTES_COMPACTO = 12;
@@ -66,6 +76,16 @@ public final class GeometriaLod {
 
     private float[] posiciones = new float[3 * 1024];
     private int[] colores = new int[1024];
+    /** Por cara: cantidad de vértices y planos extremos (coordenada sobre su eje, en bloques de la celda). */
+    private final int[] verticesPorCara = new int[CARAS];
+    private final float[] planoMin = new float[CARAS];
+    private final float[] planoMax = new float[CARAS];
+
+    {
+        Arrays.fill(planoMin, Float.POSITIVE_INFINITY);
+        Arrays.fill(planoMax, Float.NEGATIVE_INFINITY);
+    }
+
     /** Índice de sprite por vértice (0: sin textura). */
     private int[] sprites = new int[1024];
     /** Cara por vértice: 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z. */
@@ -109,8 +129,18 @@ public final class GeometriaLod {
      */
     public int agregarSeccion(SuperVoxel[] grid, int lado, float ox, float oy, float oz, float escala,
                               int carasOmitidas) {
+        return agregarSeccion(grid, lado, ox, oy, oz, escala, carasOmitidas, null);
+    }
+
+    /**
+     * @param vecinos vóxeles de las grillas de al lado del mismo nivel (ver
+     *                {@link GreedyMesher.Vecinos}): las caras del borde que
+     *                tapan no se generan. null = bordes expuestos.
+     */
+    public int agregarSeccion(SuperVoxel[] grid, int lado, float ox, float oy, float oz, float escala,
+                              int carasOmitidas, GreedyMesher.Vecinos vecinos) {
         int agregados = 0;
-        for (Quad q : GreedyMesher.mallar(grid, lado)) {
+        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos)) {
             if (omitida(q, lado, carasOmitidas)) {
                 continue;
             }
@@ -157,12 +187,27 @@ public final class GeometriaLod {
                 ? ((v.r() & 0xFF) << 16) | ((v.g() & 0xFF) << 8) | (v.b() & 0xFF)
                 : cara.promedioRgb();
 
-        // Recorrido del contorno: (u0,v0) (u1,v0) (u1,v1) (u0,v1).
-        vertice(q, plano, u0, v0, luz.minMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
-        vertice(q, plano, u0 + largoU, v0, luz.maxMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
-        vertice(q, plano, u0 + largoU, v0 + largoV, luz.maxMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
-        vertice(q, plano, u0, v0 + largoV, luz.minMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
+        // Contorno (u0,v0) (u1,v0) (u1,v1) (u0,v1): su normal por la regla de la
+        // mano derecha es +X, -Y o +Z según el eje; para las otras tres caras se
+        // recorre al revés, así todas quedan antihorarias vistas desde afuera.
+        int u1 = u0 + largoU, v1 = v0 + largoV;
+        if (antihorarioDirecto(q.eje(), q.positivo())) {
+            vertice(q, plano, u0, v0, luz.minMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
+            vertice(q, plano, u1, v0, luz.maxMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
+            vertice(q, plano, u1, v1, luz.maxMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
+            vertice(q, plano, u0, v1, luz.minMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
+        } else {
+            vertice(q, plano, u0, v1, luz.minMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
+            vertice(q, plano, u1, v1, luz.maxMax(), rgbBase, cara, sombra, ox, oy, oz, escala);
+            vertice(q, plano, u1, v0, luz.maxMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
+            vertice(q, plano, u0, v0, luz.minMin(), rgbBase, cara, sombra, ox, oy, oz, escala);
+        }
         return true;
+    }
+
+    /** true si el contorno (u0,v0) (u1,v0) (u1,v1) (u0,v1) ya es antihorario visto desde afuera. */
+    static boolean antihorarioDirecto(Quad.Eje eje, boolean positivo) {
+        return eje == Quad.Eje.Y ? !positivo : positivo;
     }
 
     private void vertice(Quad q, float plano, int u, int v, int luz, int rgbBase, Cara cara, float sombra,
@@ -181,7 +226,12 @@ public final class GeometriaLod {
         posiciones[i + 2] = oz + z * escala;
         colores[vertices] = color(rgbBase, sombra, luz);
         sprites[vertices] = cara == null ? 0 : cara.sprite();
-        caras[vertices] = (byte) (eje.ordinal() * 2 + (q.positivo() ? 1 : 0));
+        int indiceCara = eje.ordinal() * 2 + (q.positivo() ? 1 : 0);
+        caras[vertices] = (byte) indiceCara;
+        float coordenadaPlano = posiciones[i + eje.ordinal()];
+        verticesPorCara[indiceCara]++;
+        planoMin[indiceCara] = Math.min(planoMin[indiceCara], coordenadaPlano);
+        planoMax[indiceCara] = Math.max(planoMax[indiceCara], coordenadaPlano);
         vertices++;
     }
 
@@ -258,8 +308,19 @@ public final class GeometriaLod {
      * @throws IllegalStateException si una posición no es entera o no entra en un short
      */
     public void escribirCompacto(ByteBuffer destino) {
+        escribirCompacto(destino, -1);
+    }
+
+    /**
+     * Como {@link #escribirCompacto(ByteBuffer)}, solo los vértices de una
+     * cara (0-5); -1 = todos.
+     */
+    public void escribirCompacto(ByteBuffer destino, int soloCara) {
         ByteBuffer b = destino.order(ByteOrder.LITTLE_ENDIAN);
         for (int i = 0; i < vertices; i++) {
+            if (soloCara >= 0 && caras[i] != soloCara) {
+                continue;
+            }
             b.putShort(aShort(posiciones[i * 3]));
             b.putShort(aShort(posiciones[i * 3 + 1]));
             b.putShort(aShort(posiciones[i * 3 + 2]));
@@ -267,6 +328,31 @@ public final class GeometriaLod {
             int c = colores[i];
             b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c).put(caras[i]);
         }
+    }
+
+    public int verticesDeCara(int cara) {
+        return verticesPorCara[cara];
+    }
+
+    /** Plano más bajo de las caras de ese índice, sobre su eje (bloques de la celda). */
+    public float planoMin(int cara) {
+        return planoMin[cara];
+    }
+
+    public float planoMax(int cara) {
+        return planoMax[cara];
+    }
+
+    /**
+     * true si alguna cara del grupo puede mirar hacia la cámara: una cara +X
+     * en el plano p solo se ve con la cámara en x > p (y al revés las -X).
+     * Si ni el plano más favorable cumple, el grupo entero se saltea sin
+     * mandarlo a la GPU.
+     *
+     * @param camara coordenada de la cámara sobre el eje de la cara, relativa a la celda
+     */
+    public static boolean caraVisible(int cara, double camara, float planoMin, float planoMax) {
+        return (cara & 1) == 1 ? camara > planoMin : camara < planoMax;
     }
 
     private static short aShort(float f) {
