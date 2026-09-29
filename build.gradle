@@ -1,0 +1,82 @@
+// ============================================================================
+// build.gradle — Minecraft LOD Mod
+//
+// IMPORTANTE: este archivo está basado en la estructura estándar del MDK
+// (Mod Development Kit) de NeoForge. Antes de compilar por primera vez:
+//   1. Descargá el MDK oficial de NeoForge para 1.21.1 desde
+//      https://neoforged.net (o el repositorio de NeoForge en GitHub).
+//   2. Compará este archivo contra el build.gradle del MDK descargado y
+//      ajustá las versiones exactas de NeoForge/NeoGradle si difieren —
+//      las versiones cambian seguido y conviene usar siempre las más
+//      recientes compatibles con 1.21.1.
+//   3. Este proyecto no fue compilado en este entorno (sin acceso a red
+//      ni al toolchain de Minecraft), así que la primera compilación real
+//      va a requerir resolver dependencias y probablemente ajustar detalles.
+// ============================================================================
+
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'net.neoforged.gradle.userdev' version '7.0.+'
+}
+
+version = '0.1.0'
+group = 'com.example.minecraftlodmod'
+
+base {
+    archivesName = 'minecraftlodmod'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.neoforged.net/releases' }
+}
+
+runs {
+    configureEach {
+        systemProperty 'forge.logging.markers', 'REGISTRIES'
+        systemProperty 'forge.logging.console.level', 'debug'
+        modSource project.sourceSets.main
+    }
+    client {
+        systemProperty 'neoforge.enabledGameTestNamespaces', 'minecraftlodmod'
+    }
+    server {
+        programArgument '--nogui'
+        systemProperty 'neoforge.enabledGameTestNamespaces', 'minecraftlodmod'
+    }
+    gameTestServer {
+        systemProperty 'neoforge.enabledGameTestNamespaces', 'minecraftlodmod'
+    }
+    data {
+        programArguments.addAll '--mod', 'minecraftlodmod', '--all', '--output',
+            file('src/generated/resources/').getAbsolutePath(),
+            '--existing', file('src/main/resources/').getAbsolutePath()
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+dependencies {
+    // Versión de NeoForge a confirmar contra el MDK oficial para 1.21.1
+    implementation "net.neoforged:neoforge:21.1.+"
+
+    // Cloth Config — usado por el módulo config/ para la pantalla in-game.
+    // El artifact exacto depende de si se usa la variante "forge/neoforge"
+    // publicada por el proyecto Cloth Config; verificar en su Maven/CurseForge
+    // la versión compatible con 1.21.1 + NeoForge antes de compilar.
+    // implementation "me.shedaniel.cloth:cloth-config-neoforge:15.+"
+
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
