@@ -2,7 +2,6 @@ package com.example.minecraftlodmod;
 
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.javafmlmod.FMLJavaModLoadingContext;
 
 /**
  * Punto de entrada del mod.

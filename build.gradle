@@ -1,81 +1,95 @@
 // ============================================================================
 // build.gradle — Minecraft LOD Mod
 //
-// IMPORTANTE: este archivo está basado en la estructura estándar del MDK
-// (Mod Development Kit) de NeoForge. Antes de compilar por primera vez:
-//   1. Descargá el MDK oficial de NeoForge para 1.21.1 desde
-//      https://neoforged.net (o el repositorio de NeoForge en GitHub).
-//   2. Compará este archivo contra el build.gradle del MDK descargado y
-//      ajustá las versiones exactas de NeoForge/NeoGradle si difieren —
-//      las versiones cambian seguido y conviene usar siempre las más
-//      recientes compatibles con 1.21.1.
-//   3. Este proyecto no fue compilado en este entorno (sin acceso a red
-//      ni al toolchain de Minecraft), así que la primera compilación real
-//      va a requerir resolver dependencias y probablemente ajustar detalles.
+// Basado en el MDK oficial de NeoForge 1.21.1 con ModDevGradle (el plugin
+// recomendado hoy por NeoForge, reemplaza a NeoGradle userdev).
+// La versión exacta de NeoForge está en gradle.properties (neo_version).
 // ============================================================================
 
 plugins {
     id 'java-library'
     id 'idea'
-    id 'net.neoforged.gradle.userdev' version '7.0.+'
+    id 'net.neoforged.moddev' version '2.0.148'
 }
 
-version = '0.1.0'
-group = 'com.example.minecraftlodmod'
+version = mod_version
+group = mod_group_id
 
 base {
-    archivesName = 'minecraftlodmod'
+    archivesName = mod_id
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
     mavenCentral()
-    maven { url = 'https://maven.neoforged.net/releases' }
 }
 
-runs {
-    configureEach {
-        systemProperty 'forge.logging.markers', 'REGISTRIES'
-        systemProperty 'forge.logging.console.level', 'debug'
-        modSource project.sourceSets.main
+neoForge {
+    version = project.neo_version
+
+    runs {
+        client {
+            client()
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+        server {
+            server()
+            programArgument '--nogui'
+            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        }
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
     }
-    client {
-        systemProperty 'neoforge.enabledGameTestNamespaces', 'minecraftlodmod'
-    }
-    server {
-        programArgument '--nogui'
-        systemProperty 'neoforge.enabledGameTestNamespaces', 'minecraftlodmod'
-    }
-    gameTestServer {
-        systemProperty 'neoforge.enabledGameTestNamespaces', 'minecraftlodmod'
-    }
-    data {
-        programArguments.addAll '--mod', 'minecraftlodmod', '--all', '--output',
-            file('src/generated/resources/').getAbsolutePath(),
-            '--existing', file('src/main/resources/').getAbsolutePath()
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
     }
 }
-
-sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 dependencies {
-    // Versión de NeoForge a confirmar contra el MDK oficial para 1.21.1
-    implementation "net.neoforged:neoforge:21.1.+"
-
     // Cloth Config — usado por el módulo config/ para la pantalla in-game.
-    // El artifact exacto depende de si se usa la variante "forge/neoforge"
-    // publicada por el proyecto Cloth Config; verificar en su Maven/CurseForge
-    // la versión compatible con 1.21.1 + NeoForge antes de compilar.
+    // Verificar en el Maven de shedaniel la versión NeoForge para 1.21.1
+    // antes de descomentar (requiere agregar maven.shedaniel.me a repositories).
     // implementation "me.shedaniel.cloth:cloth-config-neoforge:15.+"
 
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 test {
     useJUnitPlatform()
 }
+
+// Expande los ${...} de src/main/templates (neoforge.mods.toml) con los
+// valores de gradle.properties. Sin esto el mods.toml se empaqueta con los
+// placeholders literales y el mod no carga.
+var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from 'src/main/templates'
+    into 'build/generated/sources/modMetadata'
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
