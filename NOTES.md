@@ -19,6 +19,14 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   primero porque hace falta generación para llenar el radio recuperado.
   Validar con el juego que no oscile.
 
+- `LectorSeccionMinecraft` hornea la luz al cargar el chunk; en chunks recién
+  generados el motor de luz puede no haber corrido todavía y se asume cielo
+  abierto (15). Ver con el juego si aparecen cuevas/voladizos "iluminados"
+  en el LOD; si pasa, capturar en un evento posterior a la iluminación.
+- Colores: `getMapColor` se llama con `EmptyBlockGetter` (no se puede tocar el
+  mundo desde el pool). Bloques cuyo color de mapa depende de la posición
+  caen a su color base — revisar visualmente con mods de worldgen.
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~
@@ -27,6 +35,22 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   maven.neoforged.net a esa fecha).
 
 ## Mejoras notadas, no aplicadas todavía
+
+- **Generación LOCAL (`GeneradorLocal`), limitaciones conocidas:**
+  - Invalidación gruesa: un chunk se regenera al descargarse si
+    `isUnsaved()`. No está verificado que el Unload llegue antes del guardado
+    (si llega después, las ediciones no se reflejan hasta otra carga). La
+    invalidación fina por `BlockEvent` queda para cuando la pida `network/`.
+  - `store.contiene(...)` corre en el hilo del servidor al cargar cada chunk:
+    la primera vez por región lee el header de disco. Barato, pero es I/O en
+    el hilo principal.
+  - `idDimension` usa hash para dimensiones no vanilla: dos dimensiones de
+    mods pueden caer en el mismo id (1/253) y pisarse nodos. Solución real:
+    un mapa id↔dimensión persistido junto al cache.
+  - Chunks descartados por cola llena se reintentan solo al recargarse.
+- Validado con `runServer` headless (seed 12345): el spawn genera
+  `dim0/r.0.0.mlod` y `r.0.-1.mlod` y los nodos decodifican a un heightmap
+  coherente.
 
 - **Contradicción en la sección 5 (a decidir):** pide GZIP "a nivel de
   archivo completo" y a la vez lectura parcial por tabla de offsets. Con el

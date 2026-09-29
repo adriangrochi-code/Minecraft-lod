@@ -98,6 +98,23 @@ public final class GenerationTaskScheduler {
             throw new RuntimeException("Interrumpido esperando espacio en la cola de generación", e);
         }
 
+        return enviarConCupoTomado(tarea);
+    }
+
+    /**
+     * Como {@link #enviar}, pero sin bloquear: si la cola está llena devuelve
+     * null y la tarea no se encola. Para llamadores que no pueden esperar —
+     * el hilo del servidor al cargar chunks — y prefieren descartar trabajo
+     * (se vuelve a pedir en la próxima carga) antes que frenar el juego.
+     */
+    public <T> Future<T> intentarEnviar(Callable<T> tarea) {
+        if (!permisosDeCola.tryAcquire()) {
+            return null;
+        }
+        return enviarConCupoTomado(tarea);
+    }
+
+    private <T> Future<T> enviarConCupoTomado(Callable<T> tarea) {
         return pool.submit(() -> {
             try {
                 permisos.acquire();

@@ -152,4 +152,33 @@ class GenerationTaskSchedulerTest {
             scheduler.apagar();
         }
     }
+
+    @Test
+    @Timeout(10)
+    void intentarEnviarDevuelveNullConLaColaLlenaEnVezDeBloquear() throws Exception {
+        GenerationTaskScheduler scheduler = new GenerationTaskScheduler(1, 1);
+        try {
+            CountDownLatch dejarTerminar = new CountDownLatch(1);
+            Future<Object> ocupada = scheduler.intentarEnviar(() -> {
+                dejarTerminar.await();
+                return null;
+            });
+            assertNotNull(ocupada);
+
+            assertNull(scheduler.intentarEnviar(() -> "no entra"), "Con la cola llena no debería encolar");
+
+            dejarTerminar.countDown();
+            ocupada.get(5, TimeUnit.SECONDS);
+            // El cupo se libera en el finally de la tarea, justo después de que get() retorna.
+            Future<String> siguiente = null;
+            for (int i = 0; i < 100 && siguiente == null; i++) {
+                siguiente = scheduler.intentarEnviar(() -> "entra");
+                if (siguiente == null) Thread.sleep(10);
+            }
+            assertNotNull(siguiente, "Al liberarse la cola debería volver a aceptar");
+            assertEquals("entra", siguiente.get(5, TimeUnit.SECONDS));
+        } finally {
+            scheduler.apagar();
+        }
+    }
 }

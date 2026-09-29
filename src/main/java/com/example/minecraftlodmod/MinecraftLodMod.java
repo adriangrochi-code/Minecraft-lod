@@ -1,7 +1,12 @@
 package com.example.minecraftlodmod;
 
+import com.example.minecraftlodmod.config.QualityPreset;
+import com.example.minecraftlodmod.generation.GeneradorLocal;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.common.NeoForge;
+
+import java.lang.management.ManagementFactory;
 
 /**
  * Punto de entrada del mod.
@@ -11,11 +16,12 @@ import net.neoforged.fml.common.Mod;
  *  - Registrar el listener de {@code ViewportEvent.ComputeFov} (módulo core/,
  *    para alimentar al selector de LOD con el FOV efectivo).
  *  - Registrar los payloads de red (módulo network/).
+ *  - Tomar el preset de la config (Cloth Config) en vez de la heurística.
  *  - Registrar la dimensión custom de benchmark (módulo benchmark/).
  *  - Inicializar Cloth Config (módulo config/).
  *
- * Por ahora esta clase solo deja el esqueleto mínimo para que el proyecto
- * compile y cargue como mod vacío.
+ * Ya registrado: la generación en modo LOCAL ({@link GeneradorLocal}), que
+ * corre en todo servidor con el mod — dedicado o integrado de singleplayer.
  */
 @Mod(MinecraftLodMod.MOD_ID)
 public class MinecraftLodMod {
@@ -23,8 +29,15 @@ public class MinecraftLodMod {
     public static final String MOD_ID = "minecraftlodmod";
 
     public MinecraftLodMod(IEventBus modEventBus) {
-        // Los listeners de ciclo de vida del mod (setup, registro de
-        // dimensiones, etc.) se agregan acá a medida que se implementan
-        // los módulos correspondientes.
+        NeoForge.EVENT_BUS.register(new GeneradorLocal(presetInicial()));
+    }
+
+    /** Hasta que exista config/ persistida: la recomendación por hardware (sección 14). */
+    private static QualityPreset presetInicial() {
+        long ramTotalMb = Runtime.getRuntime().maxMemory() / (1024 * 1024);
+        if (ManagementFactory.getOperatingSystemMXBean() instanceof com.sun.management.OperatingSystemMXBean so) {
+            ramTotalMb = so.getTotalMemorySize() / (1024 * 1024);
+        }
+        return QualityPreset.recomendarPorHardware(Runtime.getRuntime().availableProcessors(), ramTotalMb);
     }
 }
