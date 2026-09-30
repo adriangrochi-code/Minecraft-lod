@@ -566,3 +566,21 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   tarda en llenarse el horizonte de 8192 chunks en la PC real.
 - Transición gradual entre niveles (fundido con tramado al cambiar de nivel, sección 6): no
   implementada todavía; es el siguiente paso para que el cambio de nivel no se note.
+
+## Horizonte que no aparecía, bosques nevados y hielo (0.20.1)
+
+- Diagnóstico con jstack en Xvfb: los 2 hilos del pool (preset Medio) estaban en
+  `GeneradorAproximado.generarGrande` → `altura` → `finalDensity` más de 100 s por nodo (la
+  densidad final evalúa cuevas); y después, con eso resuelto, ocupados por el modo chunk por chunk
+  cercano: los nodos por región y `lanzarLoteGrande` esperaban en la cola del ForkJoinPool.
+- Arreglos: `altura(..., rapida)` con `initialDensityWithoutJaggedness > 0.390625` (lo que usa
+  vanilla para la superficie preliminar) en el horizonte por región y en el tramo de una columna
+  por chunk; el modo chunk por chunk usa como mucho `hilos - 1` tareas; nodos por región de a uno;
+  `GenerationTaskScheduler.intentarEnviarReservado` (3 lugares extra) para los nodos por región y
+  los lotes de niveles grandes; con MSPT alto sigue de a una tarea en vez de pararse.
+- Calidad en vivo: `RenderLod` compara `ConfigLod.calidadCliente()` cada cuadro (fuera de la
+  calibración) y `GeneradorLocal.aproximar` lee el radio de la config del cliente.
+- Reductor: visible también con ≥ 2 de 4 columnas cubiertas (copas ralas).
+- Aproximado: bosques (taiga, grove, etc.) antes que nieve, con `nevado`; cumbres nevadas con
+  bloque de nieve; agua que se congela = vóxel de agua con estado de hielo.
+- `VERSION_ALGORITMO` 12.

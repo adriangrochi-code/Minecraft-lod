@@ -11,9 +11,12 @@ import com.example.minecraftlodmod.core.SuperVoxel;
  * Fusiona bloques de 2x2x2 supervóxeles del nivel de entrada en 1
  * supervóxel del nivel de salida:
  *  - queda visible con 4 o más vóxeles visibles (así las superficies de un
- *    bloque de espesor no se "hunden" al subir de nivel), o si lo sólido
+ *    bloque de espesor no se "hunden" al subir de nivel), si lo sólido
  *    llega en promedio a un cuarto de su alto (una costa, el borde de una
- *    meseta: 3 hijos de abajo llenos ya no se pierden);
+ *    meseta), o si cubre al menos 2 de sus 4 columnas vistas desde arriba:
+ *    el terreno lejano se ve desde arriba, y con la regla de volumen sola
+ *    las copas de los árboles (ralas) se perdían nivel a nivel y quedaba el
+ *    suelo pelado a pocos chunks;
  *  - el RELLENO ({@link SuperVoxel#relleno()}) es la altura media de lo
  *    sólido en sus 4 columnas: en cada una, el hijo de arriba cuenta su
  *    relleno más el alto entero del de abajo; el de abajo solo, su relleno.
@@ -63,6 +66,8 @@ public final class HierarchicalReducer {
 
     /** Relleno medio mínimo (en altos de hijo, de 0 a 2) para que el vóxel sea visible sin mayoría. */
     static final double RELLENO_VISIBLE = 0.5;
+    /** Columnas (de 4) con algo visible que alcanzan para que el vóxel se vea desde arriba. */
+    static final int COLUMNAS_VISIBLE = 2;
 
     private static SuperVoxel fusionarBloque(SuperVoxel[] entrada, int lado, int ox, int oy, int oz) {
         double sumaRelleno = 0; // por columna, en altos de hijo (0 a 2)
@@ -93,7 +98,7 @@ public final class HierarchicalReducer {
         }
 
         double rellenoMedio = sumaRelleno / 4;
-        if (visibles * 2 < 8 && rellenoMedio < RELLENO_VISIBLE) {
+        if (visibles * 2 < 8 && rellenoMedio < RELLENO_VISIBLE && enSuperficie < COLUMNAS_VISIBLE) {
             return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
         }
         short estado = estadoMasFrecuente(superficie, enSuperficie);

@@ -6,6 +6,30 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.20.1 — El horizonte lejano aparece, bosques nevados y mar helado
+- **El LOD lejano no aparecía** (se cortaba a una distancia fija aunque el
+  radio fuera de miles de chunks). Varias causas, todas arregladas:
+  - las zonas lejanas buscaban la altura del terreno con la función más cara
+    del generador (la que incluye cuevas) y cada una ocupaba un hilo minutos;
+    ahora usan la estimación de superficie de vanilla, cientos de veces más
+    rápida;
+  - lo cercano llenaba todos los hilos y lo lejano (y el armado de los
+    niveles grandes que lo dibujan) esperaba en la cola: ahora siempre queda
+    un hilo para eso;
+  - con el servidor cargado (por ejemplo pregenerando) la generación
+    aproximada se frenaba del todo: ahora sigue de a una tarea;
+  - cambiar el radio o el preset con el mundo abierto no llegaba ni al
+    render ni a la generación hasta volver a entrar: ahora se toma en vivo;
+  - un error en la generación aproximada la apagaba hasta reiniciar el
+    mundo: ahora se reintenta al minuto.
+- El HUD cuenta en "approx" también las zonas lejanas (en chunks cubiertos).
+- **Bosques nevados:** a lo lejos siguen siendo bosque (copas con nieve
+  arriba), no una planicie blanca pelada. También los árboles reales se
+  conservan más al pasar a vóxeles grandes (un vóxel se ve si cubre al menos
+  media superficie vista desde arriba).
+- **Mar y ríos helados:** el LOD aproximado les pone hielo encima.
+- Se regenera el LOD guardado.
+
 ## 0.20.0 — Relieve lejano a la altura real y horizonte de más de 2048 chunks
 - **Los vóxeles grandes siguen la forma del terreno:** cada vóxel guarda hasta
   qué altura llega lo sólido adentro, y su superficie se dibuja ahí, no en el

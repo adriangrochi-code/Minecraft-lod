@@ -441,6 +441,14 @@ public final class RenderLod {
             nivelActual = mc.level;
             calidad = ConfigLod.calidadCliente();
             LOG.info("LOD: render activo ({} chunks, umbral {} px)", calidad.radioLodChunks(), calidad.umbralPx());
+        } else if (!com.example.minecraftlodmod.benchmark.SesionCalibracion.enCurso()) {
+            // La config se puede cambiar con el mundo abierto (preset, radio): se toma sin volver a entrar.
+            ParametrosCalidad desdeConfig = ConfigLod.calidadCliente();
+            if (!desdeConfig.equals(calidad)) {
+                calidad = desdeConfig;
+                chunkPlanX = Integer.MIN_VALUE;
+                LOG.info("LOD: calidad nueva ({} chunks, umbral {} px)", calidad.radioLodChunks(), calidad.umbralPx());
+            }
         }
 
         // Cambiaron las texturas o se prendió/apagó la opción: rearmar todas las

@@ -83,11 +83,23 @@ class HierarchicalReducerTest {
         SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
         SuperVoxel[] entrada = new SuperVoxel[8];
         java.util.Arrays.fill(entrada, aire);
+        // Una sola columna (índices (x*2+y)*2+z: 0 abajo y 2 arriba), poco llena: un poste suelto se pierde.
         entrada[0] = voxel(10, SuperVoxel.Material.SOLIDO);
-        entrada[1] = voxel(10, SuperVoxel.Material.SOLIDO);
         entrada[2] = voxel(10, SuperVoxel.Material.SOLIDO);
 
         assertEquals(SuperVoxel.Material.AIRE, HierarchicalReducer.reducir(entrada, 2)[0].material());
+    }
+
+    @Test
+    void unaCopaRalaQueCubreMediaSuperficieNoSePierde() {
+        SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        java.util.Arrays.fill(entrada, aire);
+        // Dos hojas arriba, en columnas distintas (índices 2 y 6), sin nada abajo: la copa de un árbol.
+        entrada[2] = voxel(10, SuperVoxel.Material.VEGETACION).conRelleno(SuperVoxel.LLENO);
+        entrada[6] = voxel(10, SuperVoxel.Material.VEGETACION).conRelleno(SuperVoxel.LLENO);
+        SuperVoxel r = HierarchicalReducer.reducir(entrada, 2)[0];
+        assertEquals(SuperVoxel.Material.VEGETACION, r.material(), "Visto desde arriba, cubre la mitad");
     }
 
     private static SuperVoxel lleno() {

@@ -78,9 +78,21 @@ public final class GeneradorAproximado {
     private static final byte[] MARCA = new byte[0];
 
     /** Lo que se necesita del mundo, capturado en el hilo del servidor; todo es inmutable y seguro entre hilos. */
-    private record Contexto(ServerLevel nivel, byte dimension, DensityFunction densidad, BiomeSource biomas,
-                            Climate.Sampler clima, int nivelMar, int minY, int maxY, int minSeccion, int maxSeccion) {
+    /**
+     * @param densidadInicial estimación de superficie de vanilla ({@code
+     *                        initialDensityWithoutJaggedness}: sin cuevas ni
+     *                        picos dentados), mucho más barata que {@code densidad}
+     */
+    private record Contexto(ServerLevel nivel, byte dimension, DensityFunction densidad,
+                            DensityFunction densidadInicial, BiomeSource biomas, Climate.Sampler clima, int nivelMar,
+                            int minY, int maxY, int minSeccion, int maxSeccion) {
     }
+
+    /**
+     * Umbral con el que vanilla estima la superficie desde la densidad inicial
+     * ({@code NoiseChunk#preliminarySurfaceLevel}).
+     */
+    static final double UMBRAL_SUPERFICIE_INICIAL = 0.390625;
 
     private final GeneradorLocal generador;
     private final int enVueloMaximo = Math.max(2, Runtime.getRuntime().availableProcessors());
@@ -100,7 +112,12 @@ public final class GeneradorAproximado {
     private long ultimoLogNanos = System.nanoTime();
 
     // Horizonte por región (más allá de TerrenoAproximado.CHUNKS_POR_REGION_DESDE): espiral de nodos de nivel 5.
-    static final int REGIONES_EN_VUELO = 2;
+    /**
+     * Una a la vez: cada nodo muestrea 256 columnas, y con más de una los hilos
+     * del pool quedaban ocupados y no avanzaba nada más (ni lo cercano ni los
+     * niveles grandes que lo dibujan).
+     */
+    static final int REGIONES_EN_VUELO = 1;
     static final int REVISIONES_REGION_POR_TICK = 2048;
     private EspiralChunks espiralRegion;
     private boolean espiralRegionAgotada;
@@ -155,11 +172,14 @@ public final class GeneradorAproximado {
         registrarAvance();
         tareasEnVuelo = Math.max(0, tareasEnVuelo - terminadas.getAndSet(0));
         tareasRegionEnVuelo = Math.max(0, tareasRegionEnVuelo - regionesTerminadas.getAndSet(0));
-        if (servidor.getAverageTickTimeNanos() > MSPT_MAXIMO_NANOS) {
-            return;
-        }
+        // Con el servidor cargado (pregeneración, mucha exploración) se sigue de a una tarea, sin
+        // frenarse: antes se detenía del todo y el horizonte lejano no llegaba nunca.
+        boolean cargado = servidor.getAverageTickTimeNanos() > MSPT_MAXIMO_NANOS;
+        // Lo cercano (chunk por chunk) nunca ocupa todos los hilos: con el pool lleno de chunks, el horizonte
+        // por región y el armado de los niveles grandes (lo que se dibuja lejos) esperaban horas en la cola.
+        int maximoChunks = cargado ? 1 : Math.max(1, Math.min(enVueloMaximo, scheduler.limiteConcurrenciaActual() - 1));
         Contexto ctx = contexto;
-        lanzarRegiones(ctx, store, scheduler);
+        lanzarRegiones(ctx, store, scheduler, cargado ? 1 : REGIONES_EN_VUELO);
         int revisados = 0;
         while (candidatos.size() < VENTANA && revisados < REVISIONES_POR_TICK && !espiralAgotada) {
             if (!espiral.siguiente()) {
@@ -184,7 +204,7 @@ public final class GeneradorAproximado {
         candidatos.sort(Comparator.comparingDouble(c -> PrioridadVista.costo(
                 ChunkPos.getX(c) * 16 + 8 - px, ChunkPos.getZ(c) * 16 + 8 - pz, mirada.x, mirada.z)));
         Iterator<Long> it = candidatos.iterator();
-        while (tareasEnVuelo < enVueloMaximo && it.hasNext()) {
+        while (tareasEnVuelo < maximoChunks && it.hasNext()) {
             List<long[]> lote = new ArrayList<>(LOTE);
             while (lote.size() < LOTE && it.hasNext()) {
                 long clave = it.next();
@@ -239,14 +259,15 @@ public final class GeneradorAproximado {
      * {@link TerrenoAproximado#nivelDeRegion}) que todavía no se hizo. Pocas
      * tareas a la vez: cada una muestrea 256 columnas.
      */
-    private void lanzarRegiones(Contexto ctx, RegionFileStore store, GenerationTaskScheduler scheduler) {
+    private void lanzarRegiones(Contexto ctx, RegionFileStore store, GenerationTaskScheduler scheduler,
+                                int maximoEnVuelo) {
         if (espiralRegion == null || espiralRegionAgotada) {
             return;
         }
         int porNodo5 = NivelesGrandes.ladoEnSecciones(NivelesGrandes.NIVEL_MIN);
         int centroNodoX = Math.floorDiv(centroX, porNodo5), centroNodoZ = Math.floorDiv(centroZ, porNodo5);
         int revisados = 0;
-        while (tareasRegionEnVuelo < REGIONES_EN_VUELO && revisados < REVISIONES_REGION_POR_TICK) {
+        while (tareasRegionEnVuelo < maximoEnVuelo && revisados < REVISIONES_REGION_POR_TICK) {
             int[] r = reintentoRegion;
             reintentoRegion = null;
             if (r == null) {
@@ -278,12 +299,15 @@ public final class GeneradorAproximado {
             }
             regionesEnVuelo.add(clave);
             tareasRegionEnVuelo++;
-            var tarea = scheduler.intentarEnviar(() -> {
+            // Con lugar reservado: la pregeneración y la extracción llenan la cola y dejaban sin turno al
+            // horizonte lejano, que cubre miles de chunks por tarea.
+            var tarea = scheduler.intentarEnviarReservado(() -> {
                 try {
                     long inicio = System.nanoTime();
                     generarGrande(ctx, store, region, nivel, nx, nz);
                     nanosCalculo.addAndGet(System.nanoTime() - inicio);
                     regionesHechas.incrementAndGet();
+                    hechosTotal.addAndGet((long) lado * lado); // el HUD cuenta la zona en chunks cubiertos
                     // Los nodos de nivel 5 que cubre se rearman (y con ellos los niveles de arriba).
                     int n5 = 1 << (nivel - NivelesGrandes.NIVEL_MIN);
                     for (int i = 0; i < n5; i++) {
@@ -324,7 +348,7 @@ public final class GeneradorAproximado {
             for (int zi = 0; zi < n; zi++) {
                 int z = (x & 1) == 0 ? zi : n - 1 - zi; // en zigzag: la pista es siempre la columna vecina
                 int bx = nodoX * lado + x * tamano + tamano / 2, bz = nodoZ * lado + z * tamano + tamano / 2;
-                int altura = altura(ctx, bx, bz, pista);
+                int altura = altura(ctx, bx, bz, pista, true);
                 pista = altura;
                 Holder<Biome> bioma = ctx.biomas().getNoiseBiome(QuartPos.fromBlock(bx),
                         QuartPos.fromBlock(Math.max(altura, ctx.nivelMar())), QuartPos.fromBlock(bz), ctx.clima());
@@ -333,12 +357,11 @@ public final class GeneradorAproximado {
                 }
                 Superficie s = superficie(bioma, altura, ctx.nivelMar(), new BlockPos(bx, altura, bz));
                 columnas[x * n + z] = new TerrenoAproximado.Columna(altura + s.elevacion(),
-                        voxel(s.estado(), bioma.value(), bx, bz, 15),
+                        voxel(s.estado(), bioma.value(), bx, bz, 15).conNevado(s.nevado()),
                         voxel(s.subsuelo(), bioma.value(), bx, bz, 0));
             }
         }
-        SuperVoxel agua = voxel(Blocks.WATER.defaultBlockState(), biomaAgua.value(),
-                nodoX * lado + lado / 2, nodoZ * lado + lado / 2, 15);
+        SuperVoxel agua = agua(biomaAgua, nodoX * lado + lado / 2, nodoZ * lado + lado / 2, ctx.nivelMar());
         int porNodo = NivelesGrandes.ladoEnSecciones(nivel);
         for (int ny = Math.floorDiv(ctx.minSeccion(), porNodo); ny <= Math.floorDiv(ctx.maxSeccion() - 1, porNodo); ny++) {
             SuperVoxel[] grilla = TerrenoAproximado.grillaGrande(nivel, ny, columnas, agua, ctx.nivelMar());
@@ -370,6 +393,7 @@ public final class GeneradorAproximado {
         }
         var estado = nivel.getChunkSource().randomState();
         return new Contexto(nivel, GeneradorLocal.idDimension(nivel.dimension()), estado.router().finalDensity(),
+                estado.router().initialDensityWithoutJaggedness(),
                 gen.getBiomeSource(), estado.sampler(), gen.getSeaLevel(), nivel.getMinBuildHeight(),
                 nivel.getMaxBuildHeight(), nivel.getMinSection(), nivel.getMaxSection());
     }
@@ -387,7 +411,8 @@ public final class GeneradorAproximado {
                     continue;
                 }
                 int x = unaColumna ? bx + 8 : bx + cx * 8 + 4, z = unaColumna ? bz + 8 : bz + cz * 8 + 4;
-                int altura = altura(ctx, x, z, pista);
+                // Lejos (una columna por chunk) alcanza la estimación rápida; cerca, la densidad final.
+                int altura = altura(ctx, x, z, pista, unaColumna);
                 pista = altura;
                 Holder<Biome> bioma = ctx.biomas().getNoiseBiome(QuartPos.fromBlock(x),
                         QuartPos.fromBlock(Math.max(altura, ctx.nivelMar())), QuartPos.fromBlock(z), ctx.clima());
@@ -396,11 +421,11 @@ public final class GeneradorAproximado {
                 }
                 Superficie s = superficie(bioma, altura, ctx.nivelMar(), new BlockPos(x, altura, z));
                 columnas[cx * 2 + cz] = new TerrenoAproximado.Columna(altura + s.elevacion(),
-                        voxel(s.estado(), bioma.value(), x, z, 15),
+                        voxel(s.estado(), bioma.value(), x, z, 15).conNevado(s.nevado()),
                         voxel(s.subsuelo(), bioma.value(), x, z, 0));
             }
         }
-        SuperVoxel agua = voxel(Blocks.WATER.defaultBlockState(), biomaAgua.value(), bx + 8, bz + 8, 15);
+        SuperVoxel agua = agua(biomaAgua, bx + 8, bz + 8, ctx.nivelMar());
         RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(ctx.dimension(), chunkX, chunkZ);
         for (int sy = ctx.minSeccion(); sy < ctx.maxSeccion(); sy++) {
             SuperVoxel[] n3 = TerrenoAproximado.grillaNivel3(sy, columnas, agua, ctx.nivelMar());
@@ -430,20 +455,31 @@ public final class GeneradorAproximado {
      *              ya es sólido, sube de a 8; evita evaluar todo el cielo vacío
      */
     static int altura(Contexto ctx, int x, int z, int pista) {
+        return altura(ctx, x, z, pista, false);
+    }
+
+    /**
+     * @param rapida usar la estimación de superficie de vanilla (sin cuevas ni
+     *               picos dentados) en vez de la densidad final: para el
+     *               horizonte por región, donde un vóxel mide 32 bloques o más y
+     *               la densidad final (que evalúa también las cuevas) hacía que
+     *               un nodo tardara minutos
+     */
+    static int altura(Contexto ctx, int x, int z, int pista, boolean rapida) {
         int inicio = ctx.maxY() - 1;
         if (pista != Integer.MIN_VALUE && pista >= ctx.minY()) {
             inicio = Math.min(ctx.maxY() - 1, pista + MARGEN_PISTA);
-            if (solido(ctx, x, inicio, z)) {
+            if (solido(ctx, x, inicio, z, rapida)) {
                 int y = inicio;
-                while (y + 8 <= ctx.maxY() - 1 && solido(ctx, x, y + 8, z)) {
+                while (y + 8 <= ctx.maxY() - 1 && solido(ctx, x, y + 8, z, rapida)) {
                     y += 8;
                 }
-                return afinar(ctx, x, z, y);
+                return afinar(ctx, x, z, y, rapida);
             }
         }
         for (int y = inicio; y >= ctx.minY(); y -= 8) {
-            if (solido(ctx, x, y, z)) {
-                return afinar(ctx, x, z, y);
+            if (solido(ctx, x, y, z, rapida)) {
+                return afinar(ctx, x, z, y, rapida);
             }
         }
         return ctx.minY() - 1;
@@ -456,11 +492,11 @@ public final class GeneradorAproximado {
      * bloques puede quedar en otro borde; a la resolución del LOD aproximado
      * (vóxeles de 8) no cambia nada visible.
      */
-    private static int afinar(Contexto ctx, int x, int z, int y) {
+    private static int afinar(Contexto ctx, int x, int z, int y, boolean rapida) {
         int bajo = y, alto = Math.min(ctx.maxY() - 1, y + 7);
         while (bajo < alto) {
             int medio = (bajo + alto + 1) >>> 1;
-            if (solido(ctx, x, medio, z)) {
+            if (solido(ctx, x, medio, z, rapida)) {
                 bajo = medio;
             } else {
                 alto = medio - 1;
@@ -469,20 +505,30 @@ public final class GeneradorAproximado {
         return bajo;
     }
 
-    private static boolean solido(Contexto ctx, int x, int y, int z) {
-        return ctx.densidad().compute(new DensityFunction.SinglePointContext(x, y, z)) > 0;
+    private static boolean solido(Contexto ctx, int x, int y, int z, boolean rapida) {
+        DensityFunction.SinglePointContext punto = new DensityFunction.SinglePointContext(x, y, z);
+        return rapida ? ctx.densidadInicial().compute(punto) > UMBRAL_SUPERFICIE_INICIAL
+                : ctx.densidad().compute(punto) > 0;
     }
 
-    /** Bloque de superficie, bloque de debajo, y cuánto sube la superficie (copa de los bosques). */
-    private record Superficie(BlockState estado, BlockState subsuelo, int elevacion) {
+    /**
+     * Bloque de superficie, bloque de debajo, cuánto sube la superficie (copa
+     * de los bosques) y si la cara de arriba va nevada.
+     */
+    private record Superficie(BlockState estado, BlockState subsuelo, int elevacion, boolean nevado) {
+
+        Superficie(BlockState estado, BlockState subsuelo, int elevacion) {
+            this(estado, subsuelo, elevacion, false);
+        }
     }
 
     /**
      * Superficie aproximada por bioma. No reproduce las reglas de superficie
      * de vanilla (son muchas y dependen de ruido), solo lo que define el color
-     * a distancia: arena en playas y desiertos, terracota en badlands, nieve
-     * donde nieva, piedra en picos, copas de árboles en bosques, pasto en el
-     * resto (con el tinte del bioma).
+     * a distancia: arena en playas y desiertos, terracota en badlands, copas
+     * de árboles en bosques (nevadas donde nieva: un bosque nevado sigue
+     * siendo bosque, no una planicie blanca), nieve en las cumbres, piedra en
+     * los picos, pasto en el resto (nevado donde nieva).
      */
     private static Superficie superficie(Holder<Biome> bioma, int altura, int nivelMar, BlockPos pos) {
         BlockState tierra = Blocks.DIRT.defaultBlockState();
@@ -498,28 +544,45 @@ public final class GeneradorAproximado {
         if (bioma.is(BiomeTags.IS_BADLANDS)) {
             return new Superficie(Blocks.TERRACOTTA.defaultBlockState(), Blocks.TERRACOTTA.defaultBlockState(), 0);
         }
-        if (bioma.value().coldEnoughToSnow(pos)) {
+        boolean nieva = bioma.value().coldEnoughToSnow(pos);
+        if (bioma.is(BiomeTags.IS_TAIGA) || bioma.is(Biomes.GROVE)) {
+            return new Superficie(Blocks.SPRUCE_LEAVES.defaultBlockState(), tierra, 6, nieva);
+        }
+        if (bioma.is(BiomeTags.IS_JUNGLE)) {
+            return new Superficie(Blocks.JUNGLE_LEAVES.defaultBlockState(), tierra, 8, nieva);
+        }
+        if (bioma.is(Biomes.DARK_FOREST)) {
+            return new Superficie(Blocks.DARK_OAK_LEAVES.defaultBlockState(), tierra, 6, nieva);
+        }
+        if (bioma.is(BiomeTags.IS_FOREST)) {
+            return new Superficie(Blocks.OAK_LEAVES.defaultBlockState(), tierra, 5, nieva);
+        }
+        if (bioma.is(Biomes.SNOWY_SLOPES) || bioma.is(Biomes.FROZEN_PEAKS) || bioma.is(Biomes.JAGGED_PEAKS)) {
             return new Superficie(Blocks.SNOW_BLOCK.defaultBlockState(), piedra, 0);
         }
-        if (bioma.is(Biomes.STONY_PEAKS) || bioma.is(Biomes.JAGGED_PEAKS) || bioma.is(Biomes.STONY_SHORE)) {
-            return new Superficie(piedra, piedra, 0);
+        if (bioma.is(Biomes.STONY_PEAKS) || bioma.is(Biomes.STONY_SHORE)) {
+            return new Superficie(piedra, piedra, 0, nieva);
         }
         if (bioma.is(Biomes.MUSHROOM_FIELDS)) {
             return new Superficie(Blocks.MYCELIUM.defaultBlockState(), tierra, 0);
         }
-        if (bioma.is(BiomeTags.IS_TAIGA)) {
-            return new Superficie(Blocks.SPRUCE_LEAVES.defaultBlockState(), tierra, 6);
+        return new Superficie(Blocks.GRASS_BLOCK.defaultBlockState(), tierra, 0, nieva);
+    }
+
+    /**
+     * Vóxel de agua de una columna: con el color del bioma, o hielo (con
+     * material de agua: se dibuja plano como el mar) donde el agua se congela,
+     * como en los océanos y ríos helados de vanilla.
+     */
+    private static SuperVoxel agua(Holder<Biome> bioma, int x, int z, int nivelMar) {
+        if (bioma.value().coldEnoughToSnow(new BlockPos(x, nivelMar, z))) {
+            int rgb = ColoresBloque.rgb(Blocks.ICE.defaultBlockState(), bioma.value(), x, z);
+            return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) 0,
+                    SuperVoxel.Material.AGUA, (byte) 0)
+                    .conLuzHorneada(15)
+                    .conEstado(Block.getId(Blocks.ICE.defaultBlockState()));
         }
-        if (bioma.is(BiomeTags.IS_JUNGLE)) {
-            return new Superficie(Blocks.JUNGLE_LEAVES.defaultBlockState(), tierra, 8);
-        }
-        if (bioma.is(Biomes.DARK_FOREST)) {
-            return new Superficie(Blocks.DARK_OAK_LEAVES.defaultBlockState(), tierra, 6);
-        }
-        if (bioma.is(BiomeTags.IS_FOREST)) {
-            return new Superficie(Blocks.OAK_LEAVES.defaultBlockState(), tierra, 5);
-        }
-        return new Superficie(Blocks.GRASS_BLOCK.defaultBlockState(), tierra, 0);
+        return voxel(Blocks.WATER.defaultBlockState(), bioma.value(), x, z, 15);
     }
 
     private static SuperVoxel voxel(BlockState estado, Biome bioma, int x, int z, int luz) {

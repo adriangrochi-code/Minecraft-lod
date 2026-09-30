@@ -70,7 +70,7 @@ public final class GeneradorLocal {
      * Versión del algoritmo de extracción/reducción, mezclada en el
      * {@code hashFuente} del cache: subirla invalida todo lo generado antes.
      */
-    public static final long VERSION_ALGORITMO = 11;
+    public static final long VERSION_ALGORITMO = 12;
 
     /** Nivel reservado en {@link SectionExtractor#claveNodo} para marcar "este chunk ya se generó". */
     private static final int NIVEL_MARCA_CHUNK = 15;
@@ -285,17 +285,31 @@ public final class GeneradorLocal {
 
     /** Horizonte aproximado (solo singleplayer por la misma razón que la pregeneración). */
     private void aproximar(MinecraftServer servidor) {
-        if (aproximadoRoto || !servidor.isSingleplayer() || calidad == null) {
+        if (!servidor.isSingleplayer() || calidad == null) {
             return;
         }
+        if (aproximadoRoto) {
+            // Un error no la apaga para siempre: se reintenta desde cero un rato después.
+            if (servidor.getTickCount() < reintentoAproximado) {
+                return;
+            }
+            aproximadoRoto = false;
+            aproximado.reiniciar();
+        }
         try {
-            int radio = radioHorizonteCliente > 0 ? radioHorizonteCliente : calidad.radioLodChunks();
+            // En singleplayer el radio es el de la config del cliente, leído en vivo: cambiarlo
+            // con el mundo abierto (o el horizonte real) llega sin volver a entrar.
+            int radio = radioHorizonteCliente > 0 ? radioHorizonteCliente
+                    : ConfigLod.calidadCliente().radioLodChunks();
             aproximado.tick(servidor, ConfigLod.CLIENTE.generacionAproximada.get(), radio);
         } catch (RuntimeException e) {
             aproximadoRoto = true;
-            LOG.error("LOD: la generación aproximada falló y se apaga hasta reiniciar el mundo", e);
+            reintentoAproximado = servidor.getTickCount() + 20 * 60;
+            LOG.error("LOD: la generación aproximada falló; se reintenta en un minuto", e);
         }
     }
+
+    private int reintentoAproximado;
 
     /** Un chunk aproximado quedó guardado: sus niveles grandes se rearman en el próximo lote. */
     void chunkAproximadoListo(byte dimension, int minSeccion, int maxSeccion, int chunkX, int chunkZ) {
@@ -364,7 +378,8 @@ public final class GeneradorLocal {
                 lote.put(d, sucios);
             }
         }
-        var tarea = scheduler.intentarEnviar(() -> {
+        // Lugar reservado: sin los niveles grandes, lo aproximado lejos no se dibuja aunque ya esté calculado.
+        var tarea = scheduler.intentarEnviarReservado(() -> {
             try {
                 long inicio = System.nanoTime();
                 int nodos = 0;

@@ -230,10 +230,16 @@ public final class ConfigLod {
         return Runtime.getRuntime().availableProcessors();
     }
 
+    /** RAM total del equipo; se lee una vez (no cambia, y el render consulta la calidad cada cuadro). */
+    private static volatile long ramTotalMb = -1;
+
     static long ramTotalMb() {
-        if (ManagementFactory.getOperatingSystemMXBean() instanceof com.sun.management.OperatingSystemMXBean so) {
-            return so.getTotalMemorySize() / (1024 * 1024);
+        long ram = ramTotalMb;
+        if (ram < 0) {
+            ram = ManagementFactory.getOperatingSystemMXBean() instanceof com.sun.management.OperatingSystemMXBean so
+                    ? so.getTotalMemorySize() / (1024 * 1024) : Runtime.getRuntime().maxMemory() / (1024 * 1024);
+            ramTotalMb = ram;
         }
-        return Runtime.getRuntime().maxMemory() / (1024 * 1024);
+        return ram;
     }
 }

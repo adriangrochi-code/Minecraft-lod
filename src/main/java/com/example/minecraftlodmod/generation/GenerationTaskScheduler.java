@@ -114,6 +114,37 @@ public final class GenerationTaskScheduler {
         return enviarConCupoTomado(tarea);
     }
 
+    /** Lugares extra de la cola para {@link #intentarEnviarReservado}. */
+    static final int RESERVADOS = 3;
+    private final Semaphore reservados = new Semaphore(RESERVADOS);
+
+    /**
+     * Como {@link #intentarEnviar}, pero con la cola llena todavía entra en
+     * uno de los {@link #RESERVADOS} lugares extra. Para trabajo poco
+     * frecuente que no puede quedar sin turno detrás de una ráfaga (el
+     * horizonte aproximado por región detrás de la pregeneración).
+     */
+    public <T> Future<T> intentarEnviarReservado(Callable<T> tarea) {
+        if (permisosDeCola.tryAcquire()) {
+            return enviarConCupoTomado(tarea);
+        }
+        if (!reservados.tryAcquire()) {
+            return null;
+        }
+        return pool.submit(() -> {
+            try {
+                permisos.acquire();
+                try {
+                    return tarea.call();
+                } finally {
+                    permisos.release();
+                }
+            } finally {
+                reservados.release();
+            }
+        });
+    }
+
     private <T> Future<T> enviarConCupoTomado(Callable<T> tarea) {
         return pool.submit(() -> {
             try {
