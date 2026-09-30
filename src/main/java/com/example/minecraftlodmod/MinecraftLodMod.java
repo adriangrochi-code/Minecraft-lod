@@ -1,5 +1,7 @@
 package com.example.minecraftlodmod;
 
+import com.example.minecraftlodmod.config.ConmutadorVulkan;
+import com.example.minecraftlodmod.vulkanmod.Initializer;
 import com.example.minecraftlodmod.config.ConfigLod;
 import com.example.minecraftlodmod.config.PantallaConfig;
 import com.example.minecraftlodmod.generation.GeneradorLocal;
@@ -37,6 +39,10 @@ public class MinecraftLodMod {
         ConfigLod.registrar(contenedor);
         if (FMLEnvironment.dist == Dist.CLIENT) {
             PantallaConfig.registrar(contenedor);
+            if (ConmutadorVulkan.activoEnEstaSesion()) {
+                // VulkanMod integrado (sus opciones quedan en Opciones > Video, como en el suelto).
+                new Initializer().onInitializeClient();
+            }
         }
 
         GeneradorLocal generador = new GeneradorLocal(ConfigLod::calidadServidor);

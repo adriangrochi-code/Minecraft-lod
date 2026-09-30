@@ -25,6 +25,7 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 repositories {
     mavenCentral()
     maven { url = 'https://maven.shedaniel.me/' } // Cloth Config
+    maven { url = 'https://maven.su5ed.dev/releases' } // Forgified Fabric API (VulkanMod integrado)
 }
 
 neoForge {
@@ -88,6 +89,69 @@ dependencies {
 processResources {
     dependsOn reubicarVulkan
     from(zipTree(reubicarVulkan.flatMap { it.archiveFile }))
+}
+
+// ---------------------------------------------------------------------------
+// VulkanMod integrado (paquete vulkanmod/, LGPL-3.0; fork NeoForge de yiyuyan,
+// 0.5.5-dev+3.1). Lo que necesita en tiempo de ejecución viaja dentro del mod:
+//  - lwjgl-vulkan/vma/shaderc (clases + nativos de Windows y Linux) como recursos,
+//    igual que el lwjgl-vulkan reubicado de arriba (varios jars con el mismo
+//    nombre y distinto clasificador no se pueden meter con jarJar). Con esto, el
+//    VulkanMod suelto no puede estar instalado a la vez (paquete org.lwjgl.vulkan
+//    repetido): el integrado lo reemplaza.
+//  - los módulos de Forgified Fabric API que usa su armado de bloques (FRAPI),
+//    como jar-in-jar (Apache-2.0).
+// ---------------------------------------------------------------------------
+configurations {
+    librasVulkan { transitive = false }
+}
+
+dependencies {
+    librasVulkan "org.lwjgl:lwjgl-vulkan:3.3.3"
+    librasVulkan "org.lwjgl:lwjgl-vma:3.3.3"
+    librasVulkan "org.lwjgl:lwjgl-vma:3.3.3:natives-windows"
+    librasVulkan "org.lwjgl:lwjgl-vma:3.3.3:natives-linux"
+    librasVulkan "org.lwjgl:lwjgl-shaderc:3.3.3"
+    librasVulkan "org.lwjgl:lwjgl-shaderc:3.3.3:natives-windows"
+    librasVulkan "org.lwjgl:lwjgl-shaderc:3.3.3:natives-linux"
+    compileOnly "org.lwjgl:lwjgl-vulkan:3.3.3"
+    compileOnly "org.lwjgl:lwjgl-vma:3.3.3"
+    compileOnly "org.lwjgl:lwjgl-shaderc:3.3.3"
+
+    for (String modulo : ['fabric-api-base:0.4.42+d1308ded19',
+                          'fabric-renderer-api-v1:3.4.1+9125b6dc19',
+                          'fabric-rendering-fluids-v1:3.1.6+ddc51b4719',
+                          'fabric-rendering-data-attachment-v1:0.3.49+73761d2e19',
+                          'fabric-block-view-api-v2:1.0.11+e9036fd419']) {
+        String coordenada = "org.sinytra.forgified-fabric-api:${modulo}"
+        String versionModulo = modulo.split(':')[1]
+        implementation coordenada
+        jarJar(coordenada) {
+            version {
+                strictly "[${versionModulo},)"
+                prefer versionModulo
+            }
+        }
+    }
+}
+
+// Loader de Fabric forjado: lo piden los puntos de entrada de esos módulos (ClientModInitializer).
+dependencies {
+    String ffl = 'org.sinytra:forgified-fabric-loader:2.5.68+0.18.4+1.21.1'
+    compileOnly ffl
+    runtimeOnly "${ffl}:full"
+    jarJar("${ffl}:full") {
+        version {
+            strictly '[2.5.68+0.18.4+1.21.1,)'
+            prefer '2.5.68+0.18.4+1.21.1'
+        }
+    }
+}
+
+processResources {
+    from(configurations.librasVulkan.collect { zipTree(it) }) {
+        exclude 'module-info.class', 'META-INF/**'
+    }
 }
 
 dependencies {

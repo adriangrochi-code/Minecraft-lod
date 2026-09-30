@@ -554,7 +554,8 @@ que la ganancia de FPS y la calidad visual.
 Pedido: poder usar Vulkan (con interruptor), compatibilidad con shaders, y
 como objetivos XeSS (segunda prioridad) y DLSS (si se puede).
 
-**1. Vulkan = VulkanModNeoForge, no un renderer propio.**
+**1. Vulkan = VulkanModNeoForge, no un renderer propio.** (Actualizado en
+0.15.0: el código de VulkanMod pasó a estar integrado, ver al final de este punto.)
 El que usa el jugador es VulkanModNeoForge 0.5.5-dev+3.1 (yiyuyan, fork de
 VulkanMod de xCollateral, LGPL-3.0). Reemplaza el renderer entero al
 arrancar: no se puede prender/apagar en caliente, y meterlo como jar-in-jar
@@ -590,6 +591,18 @@ Buffer de índices de VulkanMod (0.14.0): su `AutoIndexBuffer` de quads es
 compartido (65536 vértices al arrancar) y al crecer libera el anterior aunque
 otros VBO lo sigan usando → índices basura ("espigas"). Con VulkanMod el LOD
 parte las mallas en piezas de hasta 65536 vértices, así nunca lo hace crecer.
+
+**VulkanMod integrado (0.15.0, pedido del usuario: no depender de otro mod).**
+El código del fork (LGPL-3.0) vive en el paquete `vulkanmod/`, con los
+paquetes renombrados. Reemplaza la decisión anterior de "no se incluye":
+- Interruptor al arrancar: `config/ConmutadorVulkan` guarda el pedido en
+  `config/minecraftlodmod-vulkan.properties`; el `MixinPlugin` de VulkanMod
+  no aplica ningún mixin si Vulkan está apagado (el juego queda en OpenGL
+  sin cambios). Prenderlo apaga `earlyWindowControl` en `fml.toml`.
+- Librerías: lwjgl-vulkan/vma/shaderc (Windows y Linux) dentro del jar; los
+  módulos de Fabric que usa su armado de bloques (FRAPI), como jar-in-jar.
+- El VulkanMod suelto ya no puede instalarse junto (paquetes de LWJGL
+  repetidos); el LOD lo sigue reconociendo si está (`RenderLod.conVulkanMod`).
 
 Escalado según la GPU (0.14.0): `config/CompatibilidadEscalado` decide qué
 modos se ofrecen (DLSS solo RTX, XeSS con DP4a o Intel Xe, ambos solo en

@@ -1,0 +1,23 @@
+VulkanMod integrado en Minecraft LOD
+====================================
+
+El paquete com.example.minecraftlodmod.vulkanmod (y sus recursos en
+assets/vulkanmod y minecraftlodmod-vulkan.mixins.json) es código de VulkanMod,
+bajo la licencia GNU LGPL 3.0 (LICENSE-LGPL-3.0, que se apoya en la GPL 3.0:
+COPYING-GPL-3.0). El resto del mod es MIT.
+
+Origen: fork NeoForge de VulkanMod de yiyuyan (commonplace / KSmc_brigade),
+https://github.com/yiyuyan/VulkanModNeoForge, rama 1.21neo-0.5.5_new,
+versión 0.5.5-dev+3.1 (commit 3f85319), a su vez fork de
+https://github.com/xCollateral/VulkanMod (xCollateral y colaboradores). Ver NOTICE.
+
+Cambios hechos en Minecraft LOD: paquetes renombrados (net.vulkanmod ->
+com.example.minecraftlodmod.vulkanmod); sin el localizador de arranque
+(cn.ksmcbrigade.vulkan_core) ni MixinRuntime; mixins aplicados solo con Vulkan
+activado en el menú del LOD; arreglo del buffer de índices compartido
+(render/VBO, AutoIndexBuffer); nombre de la lambda de OptionsScreenM en mapeos
+de Mojang. Los cambios están marcados con "Minecraft LOD" en el código. El
+código fuente completo está en el repositorio del mod.
+
+Librerías incluidas: LWJGL (vulkan, vma, shaderc; licencia BSD de LWJGL y las
+de VMA/shaderc) y módulos de Forgified Fabric API y su loader (Apache 2.0).

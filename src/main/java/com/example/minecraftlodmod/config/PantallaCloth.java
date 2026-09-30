@@ -254,7 +254,7 @@ final class PantallaCloth {
         }
     }
 
-    /** Prende/apaga VulkanMod para el próximo arranque (ver {@link ConmutadorVulkan}). */
+    /** Prende/apaga el VulkanMod integrado para el próximo arranque (ver {@link ConmutadorVulkan}). */
     private static final class BotonVulkan extends TextListEntry {
         private static final int ANCHO = 150;
         private final Button boton;
@@ -269,7 +269,7 @@ final class PantallaCloth {
                            int mouseX, int mouseY, boolean resaltado, float delta) {
             ConmutadorVulkan.Estado estado = ConmutadorVulkan.estado();
             String clave = "vulkan." + estado.name().toLowerCase(Locale.ROOT);
-            boton.active = estado != ConmutadorVulkan.Estado.NO_INSTALADO;
+            boton.active = estado != ConmutadorVulkan.Estado.NO_DISPONIBLE;
             boton.setMessage(texto(clave));
             boton.setTooltip(Tooltip.create(texto(clave + ".tooltip")));
             graficos.drawString(Minecraft.getInstance().font, getFieldName(), x, y + 6, 0xFFFFFF);

@@ -1,153 +1,192 @@
 package com.example.minecraftlodmod.config;
 
 import com.mojang.logging.LogUtils;
-import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLConfig;
 import net.neoforged.fml.loading.FMLPaths;
-import net.neoforged.neoforgespi.language.IModFileInfo;
 import org.slf4j.Logger;
 
 import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
-import java.util.stream.Stream;
+import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Prender y apagar VulkanMod desde el menú del LOD.
+ * Prender y apagar el VulkanMod integrado (paquete {@code vulkanmod}) desde el
+ * menú del LOD.
  *
  * VulkanMod reemplaza el renderer entero al arrancar el juego: no se puede
- * cambiar en caliente. Esto hace lo mismo que el botón de desactivar de
- * Modrinth (renombrar el jar a {@code .jar.disabled} y viceversa) y el cambio
- * vale desde el próximo arranque. Un jar cargado no se puede renombrar en
- * Windows mientras el juego corre, así que para apagarlo se deja un proceso
- * aparte que espera a que el juego cierre y recién ahí lo renombra.
+ * cambiar en caliente. El pedido se guarda en
+ * {@code config/minecraftlodmod-vulkan.properties} y se lee al arrancar, antes
+ * de aplicar los mixins ({@code vulkanmod.mixin.MixinPlugin}): apagado, sus
+ * mixins no se aplican y el juego es el OpenGL de siempre.
+ *
+ * VulkanMod además necesita la ventana temprana de NeoForge apagada
+ * ({@code earlyWindowControl} en {@code config/fml.toml}; esa ventana ya abre
+ * un contexto OpenGL). Prenderlo la apaga y apagarlo la deja como estaba.
+ *
+ * Sin clases de Minecraft: el plugin de mixins la usa antes de que carguen.
  */
 public final class ConmutadorVulkan {
 
     private static final Logger LOG = LogUtils.getLogger();
-    static final String MOD_ID = "vulkanmod";
-    static final String DESACTIVADO = ".disabled";
+    static final String ARCHIVO = "minecraftlodmod-vulkan.properties";
+    static final String CLAVE_ACTIVO = "activo";
+    /** Cómo estaba earlyWindowControl antes de que lo apagáramos, para devolverlo. */
+    static final String CLAVE_VENTANA_PREVIA = "ventanaTempranaPrevia";
+    private static final Pattern VENTANA_TEMPRANA =
+            Pattern.compile("(?m)^(\\s*earlyWindowControl\\s*=\\s*)(true|false)");
 
     public enum Estado {
-        /** Cargado y sigue la próxima vez. */
+        /** Vulkan en uso y sigue la próxima vez. */
         ACTIVO,
-        /** Cargado, pero se apaga al cerrar el juego. */
+        /** Vulkan en uso, pero el próximo arranque es con OpenGL. */
         SE_APAGA,
-        /** No cargado (jar .disabled en mods). */
+        /** OpenGL, y sigue así. */
         APAGADO,
-        /** No cargado, ya renombrado: se carga en el próximo arranque. */
+        /** OpenGL ahora; el próximo arranque es con Vulkan. */
         SE_PRENDE,
-        /** No hay VulkanMod en la carpeta de mods. */
-        NO_INSTALADO
+        /** Sistema sin los nativos incluidos (solo Windows y Linux). */
+        NO_DISPONIBLE
     }
 
-    private static Process renombradorPendiente;
-    /** Jar ya reactivado en esta sesión (no cargado todavía). */
-    private static Path reactivado;
+    private static Boolean activoEnEstaSesion;
 
     private ConmutadorVulkan() {
     }
 
+    /**
+     * Si esta sesión arranca con Vulkan. Se decide una sola vez (lo pregunta
+     * el plugin de mixins antes de aplicar el primero) y no cambia hasta
+     * reiniciar el juego.
+     */
+    public static synchronized boolean activoEnEstaSesion() {
+        if (activoEnEstaSesion == null) {
+            boolean pedido = pedido();
+            boolean ventana = FMLConfig.getBoolConfigValue(FMLConfig.ConfigValue.EARLY_WINDOW_CONTROL);
+            activoEnEstaSesion = decidir(pedido, ventana, sistemaSoportado());
+            if (pedido && !activoEnEstaSesion && sistemaSoportado()) {
+                // Alguien volvió a prender la ventana temprana: se apaga para el próximo arranque.
+                LOG.warn("LOD: Vulkan pedido pero la ventana temprana de NeoForge está prendida; "
+                        + "se apaga y Vulkan arranca la próxima vez");
+                cambiarVentanaTemprana(false);
+            }
+            LOG.info("LOD: {} (VulkanMod integrado)", activoEnEstaSesion ? "Vulkan activo" : "OpenGL");
+        }
+        return activoEnEstaSesion;
+    }
+
+    /** Arranca con Vulkan si se pidió, el sistema tiene los nativos y la ventana temprana está apagada. */
+    static boolean decidir(boolean pedido, boolean ventanaTemprana, boolean sistemaSoportado) {
+        return pedido && !ventanaTemprana && sistemaSoportado;
+    }
+
     public static synchronized Estado estado() {
-        if (cargado()) {
-            return renombradorPendiente != null && renombradorPendiente.isAlive() ? Estado.SE_APAGA : Estado.ACTIVO;
+        if (!sistemaSoportado()) {
+            return Estado.NO_DISPONIBLE;
         }
-        if (reactivado != null && Files.exists(reactivado)) {
-            return Estado.SE_PRENDE;
+        boolean ahora = activoEnEstaSesion();
+        boolean proximo = pedido();
+        if (ahora) {
+            return proximo ? Estado.ACTIVO : Estado.SE_APAGA;
         }
-        return buscarDesactivado(FMLPaths.MODSDIR.get()).isPresent() ? Estado.APAGADO : Estado.NO_INSTALADO;
+        return proximo ? Estado.SE_PRENDE : Estado.APAGADO;
     }
 
     /** Pasa al estado contrario; el efecto real es en el próximo arranque. */
     public static synchronized void alternar() {
+        if (!sistemaSoportado()) {
+            return;
+        }
         try {
-            switch (estado()) {
-                case ACTIVO -> programarApagado();
-                case SE_APAGA -> {
-                    renombradorPendiente.destroy();
-                    renombradorPendiente = null;
-                    LOG.info("LOD: apagado de VulkanMod cancelado");
+            Properties p = leer(archivo());
+            boolean prender = !Boolean.parseBoolean(p.getProperty(CLAVE_ACTIVO, "false"));
+            if (prender) {
+                if (!p.containsKey(CLAVE_VENTANA_PREVIA)) {
+                    p.setProperty(CLAVE_VENTANA_PREVIA, Boolean.toString(
+                            FMLConfig.getBoolConfigValue(FMLConfig.ConfigValue.EARLY_WINDOW_CONTROL)));
                 }
-                case APAGADO -> {
-                    Path jar = buscarDesactivado(FMLPaths.MODSDIR.get()).orElseThrow();
-                    reactivado = Files.move(jar, conEstado(jar, true));
-                    LOG.info("LOD: VulkanMod reactivado ({}); se carga al reiniciar", reactivado.getFileName());
-                }
-                case SE_PRENDE -> {
-                    Files.move(reactivado, conEstado(reactivado, false));
-                    LOG.info("LOD: reactivación de VulkanMod cancelada");
-                    reactivado = null;
-                }
-                case NO_INSTALADO -> {
+                cambiarVentanaTemprana(false);
+            } else {
+                cambiarVentanaTemprana(Boolean.parseBoolean(p.getProperty(CLAVE_VENTANA_PREVIA, "true")));
+                p.remove(CLAVE_VENTANA_PREVIA);
+            }
+            p.setProperty(CLAVE_ACTIVO, Boolean.toString(prender));
+            escribir(archivo(), p);
+            LOG.info("LOD: Vulkan {} desde el próximo arranque", prender ? "activado" : "desactivado");
+        } catch (IOException | RuntimeException e) {
+            LOG.error("LOD: no se pudo cambiar el estado de Vulkan", e);
+        }
+    }
+
+    private static boolean pedido() {
+        try {
+            return Boolean.parseBoolean(leer(archivo()).getProperty(CLAVE_ACTIVO, "false"));
+        } catch (IOException e) {
+            LOG.warn("LOD: no se pudo leer {}: {}", ARCHIVO, e.getMessage());
+            return false;
+        }
+    }
+
+    /** Los nativos de VMA y shaderc que trae el mod son de Windows y Linux (x64). */
+    static boolean sistemaSoportado() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        return os.contains("win") || os.contains("linux");
+    }
+
+    private static Path archivo() {
+        return FMLPaths.CONFIGDIR.get().resolve(ARCHIVO);
+    }
+
+    static Properties leer(Path archivo) throws IOException {
+        Properties p = new Properties();
+        if (Files.isRegularFile(archivo)) {
+            try (Reader r = Files.newBufferedReader(archivo, StandardCharsets.UTF_8)) {
+                p.load(r);
+            }
+        }
+        return p;
+    }
+
+    static void escribir(Path archivo, Properties p) throws IOException {
+        Files.createDirectories(archivo.getParent());
+        try (Writer w = Files.newBufferedWriter(archivo, StandardCharsets.UTF_8)) {
+            p.store(w, "Minecraft LOD: VulkanMod integrado (se lee al arrancar el juego)");
+        }
+    }
+
+    private static void cambiarVentanaTemprana(boolean valor) {
+        try {
+            FMLConfig.updateConfig(FMLConfig.ConfigValue.EARLY_WINDOW_CONTROL, valor);
+        } catch (RuntimeException e) {
+            LOG.debug("LOD: FMLConfig.updateConfig falló; se edita fml.toml a mano", e);
+        }
+        Path fml = FMLPaths.CONFIGDIR.get().resolve("fml.toml");
+        try {
+            if (Files.isRegularFile(fml)) {
+                String antes = Files.readString(fml, StandardCharsets.UTF_8);
+                String despues = conVentanaTemprana(antes, valor);
+                if (!despues.equals(antes)) {
+                    Files.writeString(fml, despues, StandardCharsets.UTF_8);
                 }
             }
-        } catch (IOException | RuntimeException e) {
-            LOG.error("LOD: no se pudo cambiar el estado de VulkanMod", e);
-        }
-    }
-
-    private static void programarApagado() throws IOException {
-        Path jar = jarCargado().orElseThrow(() -> new IOException("no se encontró el jar de VulkanMod"));
-        List<String> comando = comandoRenombrar(ProcessHandle.current().pid(), jar, conEstado(jar, false), esWindows());
-        renombradorPendiente = new ProcessBuilder(comando).redirectErrorStream(true)
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
-        LOG.info("LOD: VulkanMod se desactiva al cerrar el juego ({})", jar.getFileName());
-    }
-
-    private static boolean cargado() {
-        return ModList.get().isLoaded(MOD_ID);
-    }
-
-    private static Optional<Path> jarCargado() {
-        IModFileInfo info = ModList.get().getModFileById(MOD_ID);
-        return info == null ? Optional.empty() : Optional.of(info.getFile().getFilePath());
-    }
-
-    private static boolean esWindows() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
-    }
-
-    /** {@code x.jar} ↔ {@code x.jar.disabled} (la convención de Modrinth y otros launchers). */
-    static Path conEstado(Path jar, boolean activo) {
-        String nombre = jar.getFileName().toString();
-        boolean desactivado = nombre.endsWith(DESACTIVADO);
-        if (activo == !desactivado) {
-            return jar;
-        }
-        String nuevo = activo ? nombre.substring(0, nombre.length() - DESACTIVADO.length()) : nombre + DESACTIVADO;
-        return jar.resolveSibling(nuevo);
-    }
-
-    /** Un jar de VulkanMod desactivado en la carpeta de mods (por nombre de archivo). */
-    static Optional<Path> buscarDesactivado(Path mods) {
-        if (!Files.isDirectory(mods)) {
-            return Optional.empty();
-        }
-        try (Stream<Path> archivos = Files.list(mods)) {
-            return archivos.filter(p -> {
-                String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
-                return n.contains(MOD_ID) && n.endsWith(".jar" + DESACTIVADO);
-            }).findFirst();
         } catch (IOException e) {
-            return Optional.empty();
+            LOG.error("LOD: no se pudo editar {}", fml, e);
         }
     }
 
-    /** Proceso que espera a que termine {@code pid} y después mueve {@code desde} a {@code hasta}. */
-    static List<String> comandoRenombrar(long pid, Path desde, Path hasta, boolean windows) {
-        if (windows) {
-            String script = "Wait-Process -Id " + pid + " -ErrorAction SilentlyContinue; "
-                    + "Move-Item -LiteralPath " + comillasPowerShell(desde) + " -Destination "
-                    + comillasPowerShell(hasta) + " -Force";
-            return List.of("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script);
+    /** El fml.toml con earlyWindowControl en {@code valor} (lo agrega si falta). */
+    static String conVentanaTemprana(String toml, boolean valor) {
+        Matcher m = VENTANA_TEMPRANA.matcher(toml);
+        if (m.find()) {
+            return m.replaceFirst(Matcher.quoteReplacement(m.group(1) + valor));
         }
-        return List.of("sh", "-c", "while kill -0 " + pid + " 2>/dev/null; do sleep 1; done; mv -f \"$0\" \"$1\"",
-                desde.toString(), hasta.toString());
-    }
-
-    private static String comillasPowerShell(Path p) {
-        return "'" + p.toString().replace("'", "''") + "'";
+        String separador = toml.isEmpty() || toml.endsWith("\n") ? "" : "\n";
+        return toml + separador + "earlyWindowControl = " + valor + "\n";
     }
 }

@@ -421,3 +421,23 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   render escribe el evento (antes rompía con "Rendersystem called from wrong
   thread"). El HUD se achica solo si las líneas no entran. Versiones: ver
   `CHANGELOG.md` y la regla en CLAUDE.md.
+
+## VulkanMod integrado (0.15.0)
+
+- Código: `vulkanmod/` = yiyuyan/VulkanModNeoForge rama `1.21neo-0.5.5_new` (3f85319), LGPL-3.0,
+  paquetes renombrados con sed. Cambios propios marcados "Minecraft LOD" (MixinPlugin, Initializer,
+  VBO/AutoIndexBuffer, OptionsScreenM `method_19828` -> `lambda$init$2`, sin MixinRuntime).
+  Paquete nuevo creado por pedido explícito del usuario (integrar el repo completo).
+- Sin el localizador `cn.ksmcbrigade.vulkan_core` (apagaba la ventana temprana en caliente con
+  Unsafe y agregaba las libs al classpath): las libs lwjgl-vulkan/vma/shaderc (win+linux) van como
+  recursos del jar; `config/ConmutadorVulkan` guarda el pedido y edita `earlyWindowControl`.
+- Conflicto conocido: VulkanMod suelto + integrado = paquete org.lwjgl.vulkan/vma/shaderc en dos
+  módulos -> el juego no arranca (antes de que corra código nuestro). No se puede reubicar VMA
+  (JNI atado al nombre del paquete). Documentado en el CHANGELOG.
+- Jar-in-jar: fabric-api-base, renderer-api-v1, rendering-fluids-v1, rendering-data-attachment-v1,
+  block-view-api-v2 y forgified-fabric-loader (full; lo pide el entrypoint de fluids).
+- Verificado en Xvfb con lavapipe: arranca con Vulkan (dispositivo llvmpipe), LOD texturizado,
+  día/noche; y apagado arranca en OpenGL sin aplicar sus mixins.
+- Pendiente de Pista B: la GTX 1060 con Vulkan integrado; el menú de opciones de VulkanMod
+  (Opciones > Video); macOS no tiene nativos incluidos (NO_DISPONIBLE).
+

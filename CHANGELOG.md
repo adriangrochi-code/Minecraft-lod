@@ -6,6 +6,18 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.15.0 — VulkanMod integrado
+- **Vulkan viene incluido en el mod**: ya no hace falta instalar VulkanMod ni
+  Forgified Fabric API. El interruptor "Vulkan" de Depuración / Experimental lo
+  prende o apaga para el próximo arranque (también apaga la ventana de carga
+  temprana de NeoForge, que Vulkan no admite, y la devuelve al apagarlo).
+- **Importante:** sacá el VulkanMod suelto (y su "vulkan-libs") de la carpeta de
+  mods; los dos juntos no arrancan. La Forgified Fabric API suelta puede quedar.
+- Es el código de VulkanModNeoForge 0.5.5-dev+3.1 (LGPL-3.0) con el arreglo de
+  los triángulos estirados hecho en su origen. Sus opciones siguen en
+  Opciones > Video.
+- Solo Windows y Linux. El jar pesa ~15 MB más (22 MB) por las librerías de Vulkan y Fabric.
+
 ## 0.14.0 — Noche, nieve y arreglos con VulkanMod
 - **De noche el LOD se oscurece** como el resto del mundo: sigue la hora
   del día, la lluvia, las tormentas, la visión nocturna y el brillo de la

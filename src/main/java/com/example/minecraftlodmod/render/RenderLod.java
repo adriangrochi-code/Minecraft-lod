@@ -1,6 +1,7 @@
 package com.example.minecraftlodmod.render;
 
 import com.example.minecraftlodmod.config.ConfigLod;
+import com.example.minecraftlodmod.config.ConmutadorVulkan;
 import com.example.minecraftlodmod.config.ParametrosCalidad;
 import com.example.minecraftlodmod.generation.GeneradorLocal;
 import com.example.minecraftlodmod.generation.NivelesGrandes;
@@ -248,7 +249,7 @@ public final class RenderLod {
      */
     public static boolean conVulkanMod() {
         ModList mods = ModList.get();
-        return mods != null && mods.isLoaded("vulkanmod");
+        return mods != null && (mods.isLoaded("vulkanmod") || ConmutadorVulkan.activoEnEstaSesion());
     }
 
     private static boolean dibujoPermitido() {
