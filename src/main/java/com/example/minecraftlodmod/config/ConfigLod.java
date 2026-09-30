@@ -77,6 +77,17 @@ public final class ConfigLod {
                     .defineInRange("radioPregeneracion", 256, 16, ParametrosCalidad.RADIO_MAX);
             ocultarTapado = b.comment("No armar ni dibujar el LOD escondido detrás de montañas (oclusión por relieve).")
                     .define("ocultarTapado", true);
+            texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
+                            "con la distancia). Apagado: colores planos, un poco más barato en GPU.")
+                    .define("texturasLod", true);
+            descartarCuevas = b.comment("No dibujar en el LOD caras sin ninguna luz (interiores de cuevas, caras enterradas).",
+                            "Reduce mucho la geometría; puede dejar huecos al mirar dentro de una cueva lejana.")
+                    .define("descartarCuevas", true);
+            oclusionAmbiental = b.comment("Oscurecer rincones y bases de paredes del LOD (oclusión ambiental por vértice).",
+                            "Sin costo en la GPU, pero fusiona menos caras: algo más de geometría.")
+                    .define("oclusionAmbiental", true);
+
+            b.comment("Depuración y funciones experimentales.").push("experimental");
             fsrActivo = b.comment("EXPERIMENTAL: dibujar el mundo a menor resolución y escalarlo con AMD FSR 1.",
                             "Ayuda cuando la GPU es el límite. Se desactiva solo con gráficos Fabulous o con Iris.")
                     .define("fsrActivo", false);
@@ -90,15 +101,7 @@ public final class ConfigLod {
             logDepuracion = b.comment("Escribir logs/minecraftlodmod-depuracion.log: una línea por segundo con el",
                             "rendimiento, la posición y lo que hace el mod, más eventos (tirones, cambios de config).")
                     .define("logDepuracion", false);
-            texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
-                            "con la distancia). Apagado: colores planos, un poco más barato en GPU.")
-                    .define("texturasLod", true);
-            descartarCuevas = b.comment("No dibujar en el LOD caras sin ninguna luz (interiores de cuevas, caras enterradas).",
-                            "Reduce mucho la geometría; puede dejar huecos al mirar dentro de una cueva lejana.")
-                    .define("descartarCuevas", true);
-            oclusionAmbiental = b.comment("Oscurecer rincones y bases de paredes del LOD (oclusión ambiental por vértice).",
-                            "Sin costo en la GPU, pero fusiona menos caras: algo más de geometría.")
-                    .define("oclusionAmbiental", true);
+            b.pop();
 
             b.comment("Valores usados solo con preset = PERSONALIZADO (o guardados por la calibración).")
                     .push("personalizado");

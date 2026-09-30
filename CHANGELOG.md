@@ -6,6 +6,19 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.10.0 — Menú de depuración, arreglos de FSR y VulkanMod
+- Nueva sección del menú "Depuración / Experimental": HUD de rendimiento, log
+  de depuración y FSR (activo, escala y nitidez).
+- FSR: entidades, agua, hielo, vidrio, la mano y el contorno del bloque
+  apuntado se dibujaban al doble y corridos (el viewport quedaba del tamaño de
+  la ventana). Arreglado; las líneas también toman el tamaño real.
+- El LOD se dibuja de cerca a lejos (lo mirado primero): la GPU descarta
+  antes lo que queda tapado.
+- Con VulkanMod instalado, el dibujo del LOD y FSR se desactivan solos en vez
+  de colgar el juego (la generación sigue). Soporte real pendiente.
+- La config de HUD, log y FSR pasa a la sección `[experimental]` del archivo:
+  esos valores vuelven a su default una vez.
+
 ## 0.9.0 — HUD de rendimiento y log de depuración
 - HUD arriba de la pantalla: FPS, tiempo de cuadro (promedio, peor, 1% bajo),
   CPU del juego y del sistema, RAM, tick del servidor, costo del LOD y ritmo

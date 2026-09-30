@@ -37,6 +37,7 @@ import net.minecraft.world.level.material.FogType;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
@@ -193,12 +194,41 @@ public final class RenderLod {
             }
         }
         int enCola = hiloMallas instanceof ThreadPoolExecutor t ? t.getQueue().size() : 0;
-        return new Resumen(ConfigLod.CLIENTE.lodActivo.get() && calidad != null, piezas, vertices, verticesUltimoFrame,
+        return new Resumen(dibujoPermitido() && calidad != null, piezas, vertices, verticesUltimoFrame,
                 llamadasUltimoFrame, nanosDibujoUltimoFrame / 1e6, bytes >> 20, piezasOcultas, enCola);
+    }
+
+    /**
+     * VulkanMod reemplaza ShaderInstance/VertexBuffer por su propio pipeline de Vulkan y
+     * el dibujo del LOD (formato de vértice propio, tabla de sprites con texelFetch) lo
+     * cuelga. Hasta tener un backend para Vulkan, con VulkanMod no se dibuja el LOD ni se
+     * escala con FSR: el juego sigue normal y la generación continúa.
+     */
+    public static boolean rendererIncompatible() {
+        return ModList.get().isLoaded("vulkanmod");
+    }
+
+    private static boolean avisoIncompatible;
+
+    private static boolean dibujoPermitido() {
+        if (!ConfigLod.CLIENTE.lodActivo.get()) {
+            return false;
+        }
+        if (rendererIncompatible()) {
+            if (!avisoIncompatible) {
+                avisoIncompatible = true;
+                LOG.warn("LOD: VulkanMod instalado; el dibujo del LOD queda desactivado (la generación sigue)");
+            }
+            return false;
+        }
+        return true;
     }
 
     /** Bus del mod, solo cliente. */
     public static void registrarShaders(RegisterShadersEvent evento) {
+        if (rendererIncompatible()) {
+            return;
+        }
         try {
             evento.registerShader(new ShaderInstance(evento.getResourceProvider(),
                     ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, "lod_textura"), FORMATO_TEXTURA),
@@ -247,6 +277,11 @@ public final class RenderLod {
 
     // Todo lo que sigue, salvo las colas y los volatile, es del hilo de render.
     private final Map<Long, EstadoCelda> celdas = new HashMap<>();
+    /**
+     * Las celdas en el orden del plan (lo mirado primero, de cerca a lejos): dibujar
+     * así deja que el test de profundidad descarte temprano lo lejano ya tapado.
+     */
+    private final List<EstadoCelda> ordenDibujo = new ArrayList<>();
     private final ConcurrentLinkedQueue<MallaLista> listas = new ConcurrentLinkedQueue<>();
     private volatile double fovGrados = 70;
     private volatile ParametrosCalidad calidad;
@@ -328,7 +363,7 @@ public final class RenderLod {
      */
     @SubscribeEvent
     public void alCalcularNiebla(ViewportEvent.RenderFog evento) {
-        if (!ConfigLod.CLIENTE.lodActivo.get() || calidad == null || evento.getMode() != FogRenderer.FogMode.FOG_TERRAIN
+        if (!dibujoPermitido() || calidad == null || evento.getMode() != FogRenderer.FogMode.FOG_TERRAIN
                 || evento.getType() != FogType.NONE) {
             return; // bajo el agua, en lava o con ceguera se respeta la niebla de vanilla
         }
@@ -350,7 +385,7 @@ public final class RenderLod {
     @SubscribeEvent
     public void alRenderizar(RenderLevelStageEvent evento) {
         // Apagado desde la config: ni dibujo ni niebla (las mallas se conservan para volver rápido).
-        if (evento.getStage() != RenderLevelStageEvent.Stage.AFTER_SKY || !ConfigLod.CLIENTE.lodActivo.get()) {
+        if (evento.getStage() != RenderLevelStageEvent.Stage.AFTER_SKY || !dibujoPermitido()) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -488,6 +523,7 @@ public final class RenderLod {
                 mc.level.getMaxSection(), c.radioLodChunks());
 
         Set<Long> vigentes = new HashSet<>();
+        ordenDibujo.clear();
         int encoladas = 0;
         GeometriaLod.Texturas texturas = texturasEnUso ? PaletaTexturas.tabla() : null;
         boolean oclusion = oclusionEnUso;
@@ -498,6 +534,7 @@ public final class RenderLod {
             long clave = clave(celda);
             vigentes.add(clave);
             EstadoCelda estado = celdas.computeIfAbsent(clave, k -> new EstadoCelda());
+            ordenDibujo.add(estado);
             estado.plan = celda;
             estado.oculta = ocultas[i];
             if (estado.oculta) {
@@ -781,7 +818,7 @@ public final class RenderLod {
                     Minecraft.getInstance().getWindow());
             shader.apply();
         }
-        for (EstadoCelda estado : celdas.values()) {
+        for (EstadoCelda estado : ordenDibujo) {
             if (!estado.tieneMalla || estado.construidaCon == null || estado.texturizada != texturizadas
                     || estado.oculta) {
                 continue;
@@ -1129,6 +1166,7 @@ public final class RenderLod {
     private void liberarTodo() {
         celdas.values().forEach(RenderLod::cerrarBuffer);
         celdas.clear();
+        ordenDibujo.clear();
         alcanceLodBloques = 0;
         MallaLista lista;
         while ((lista = listas.poll()) != null) {

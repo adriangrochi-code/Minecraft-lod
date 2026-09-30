@@ -116,6 +116,16 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 - Almacenamiento ya es por sección cúbica 16×16×16 (vacías no se guardan,
   uniformes = un vóxel). Con niveles grandes: ~27 KB por chunk.
 
+- **VulkanMod (0.10.0):** con NeoVulkanMod 0.5.5 la 0.9.0 crasheó en el mundo (i5 + GTX 1060).
+  El log recibido no traía la causa (solo los `jdk.attach` propios de VulkanMod). Medida
+  provisoria: con `vulkanmod` cargado no se registran los shaders ni se dibuja el LOD, y
+  FSR queda apagado (`RenderLod.rendererIncompatible`); la generación sigue. Pendiente:
+  el stack trace del crash-report para ver qué pieza falla (sospecha: formato de vértice
+  propio con UV entera + texelFetch en `lod_textura`, o `VertexBuffer` por dirección) y
+  un camino de dibujo compatible con Vulkan.
+- **FSR con transparentes, mobs y contorno de bloque (0.10.0):** `ScreenSize` ahora toma el
+  tamaño del framebuffer chico (`MixinShaderInstance`). Confirmar en hardware real.
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~

@@ -50,16 +50,6 @@ final class PantallaCloth {
                 .setTooltip(texto("preset.tooltip"))
                 .setSaveConsumer(c.seleccion::set)
                 .build();
-        general.addEntry(e.startBooleanToggle(texto("hudRendimiento"), c.hudRendimiento.get())
-                .setDefaultValue(c.hudRendimiento.getDefault())
-                .setTooltip(texto("hudRendimiento.tooltip"))
-                .setSaveConsumer(c.hudRendimiento::set)
-                .build());
-        general.addEntry(e.startBooleanToggle(texto("logDepuracion"), c.logDepuracion.get())
-                .setDefaultValue(c.logDepuracion.getDefault())
-                .setTooltip(texto("logDepuracion.tooltip"))
-                .setSaveConsumer(c.logDepuracion::set)
-                .build());
         general.addEntry(e.startBooleanToggle(texto("lodActivo"), c.lodActivo.get())
                 .setDefaultValue(c.lodActivo.getDefault())
                 .setTooltip(texto("lodActivo.tooltip"))
@@ -98,16 +88,6 @@ final class PantallaCloth {
                 .setTooltip(texto("descartarCuevas.tooltip"))
                 .setSaveConsumer(c.descartarCuevas::set)
                 .build());
-        general.addEntry(e.startBooleanToggle(texto("fsrActivo"), c.fsrActivo.get())
-                .setDefaultValue(c.fsrActivo.getDefault())
-                .setTooltip(texto("fsrActivo.tooltip"))
-                .setSaveConsumer(c.fsrActivo::set)
-                .build());
-        general.addEntry(e.startIntSlider(texto("fsrEscalaPorcentaje"), c.fsrEscalaPorcentaje.get(), 50, 99)
-                .setDefaultValue(c.fsrEscalaPorcentaje.getDefault())
-                .setTooltip(texto("fsrEscalaPorcentaje.tooltip"))
-                .setSaveConsumer(c.fsrEscalaPorcentaje::set)
-                .build());
         general.addEntry(e.startBooleanToggle(texto("ocultarTapado"), c.ocultarTapado.get())
                 .setDefaultValue(c.ocultarTapado.getDefault())
                 .setTooltip(texto("ocultarTapado.tooltip"))
@@ -124,6 +104,35 @@ final class PantallaCloth {
                 .setSaveConsumer(c.autoAjuste::set)
                 .build());
         general.addEntry(new BotonCalibrar(preset::getValue));
+
+        ConfigCategory experimental = builder.getOrCreateCategory(Component.translatable(CLAVE + "experimental"));
+        experimental.addEntry(e.startBooleanToggle(texto("hudRendimiento"), c.hudRendimiento.get())
+                .setDefaultValue(c.hudRendimiento.getDefault())
+                .setTooltip(texto("hudRendimiento.tooltip"))
+                .setSaveConsumer(c.hudRendimiento::set)
+                .build());
+        experimental.addEntry(e.startBooleanToggle(texto("logDepuracion"), c.logDepuracion.get())
+                .setDefaultValue(c.logDepuracion.getDefault())
+                .setTooltip(texto("logDepuracion.tooltip"))
+                .setSaveConsumer(c.logDepuracion::set)
+                .build());
+        experimental.addEntry(e.startBooleanToggle(texto("fsrActivo"), c.fsrActivo.get())
+                .setDefaultValue(c.fsrActivo.getDefault())
+                .setTooltip(texto("fsrActivo.tooltip"))
+                .setSaveConsumer(c.fsrActivo::set)
+                .build());
+        experimental.addEntry(e.startIntSlider(texto("fsrEscalaPorcentaje"), c.fsrEscalaPorcentaje.get(), 50, 99)
+                .setDefaultValue(c.fsrEscalaPorcentaje.getDefault())
+                .setTooltip(texto("fsrEscalaPorcentaje.tooltip"))
+                .setSaveConsumer(c.fsrEscalaPorcentaje::set)
+                .build());
+        experimental.addEntry(e.startDoubleField(texto("fsrNitidez"), c.fsrNitidez.get())
+                .setMin(0.0)
+                .setMax(2.0)
+                .setDefaultValue(c.fsrNitidez.getDefault())
+                .setTooltip(texto("fsrNitidez.tooltip"))
+                .setSaveConsumer(c.fsrNitidez::set)
+                .build());
 
         ConfigCategory personalizado = builder.getOrCreateCategory(Component.translatable(CLAVE + "personalizado"));
         personalizado.addEntry(e.startTextDescription(texto("personalizado.descripcion")).build());

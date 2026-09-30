@@ -15,6 +15,7 @@
   "minecraftlodmod.configuration.fpsObjetivo.tooltip": "Used by auto-tuning in Custom mode; each preset has its own.",
   "minecraftlodmod.configuration.autoAjuste": "Dynamic auto-tuning",
   "minecraftlodmod.configuration.autoAjuste.tooltip": "Lowers generation, detail and radius (in that order) when the game runs below the target FPS, and restores them when there is headroom.",
+  "minecraftlodmod.configuration.experimental": "Debug / Experimental",
   "minecraftlodmod.configuration.personalizado": "Custom",
   "minecraftlodmod.configuration.personalizado.descripcion": "These values are only used with the Custom preset.",
   "minecraftlodmod.configuration.radioLodChunks": "LOD radius (chunks)",

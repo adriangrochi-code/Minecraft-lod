@@ -54,6 +54,9 @@ public final class EscaladoFsr {
 
     /** Bus del mod, solo cliente. */
     public static void registrarShaders(RegisterShadersEvent evento) {
+        if (RenderLod.rendererIncompatible()) {
+            return; // VulkanMod: ver RenderLod.rendererIncompatible
+        }
         try {
             evento.registerShader(new ShaderInstance(evento.getResourceProvider(),
                     ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, "fsr_easu"),

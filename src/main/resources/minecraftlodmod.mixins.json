@@ -5,7 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "MixinGameRenderer",
-    "MixinMinecraft"
+    "MixinMinecraft",
+    "MixinRenderTarget",
+    "MixinShaderInstance"
   ],
   "injectors": {
     "defaultRequire": 1

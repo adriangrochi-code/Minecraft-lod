@@ -15,6 +15,7 @@
   "minecraftlodmod.configuration.fpsObjetivo.tooltip": "Usado por el auto-ajuste en modo Personalizado; cada preset trae el suyo.",
   "minecraftlodmod.configuration.autoAjuste": "Auto-ajuste dinámico",
   "minecraftlodmod.configuration.autoAjuste.tooltip": "Baja generación, detalle y radio (en ese orden) si el juego va por debajo del FPS objetivo, y los recupera cuando sobra margen.",
+  "minecraftlodmod.configuration.experimental": "Depuración / Experimental",
   "minecraftlodmod.configuration.personalizado": "Personalizado",
   "minecraftlodmod.configuration.personalizado.descripcion": "Estos valores solo se usan con el preset Personalizado.",
   "minecraftlodmod.configuration.radioLodChunks": "Radio de LOD (chunks)",
