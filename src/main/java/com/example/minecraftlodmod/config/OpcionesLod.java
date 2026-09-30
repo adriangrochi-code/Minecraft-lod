@@ -14,7 +14,8 @@ import java.util.function.Supplier;
 
 /**
  * Opciones de {@link PantallaLod} (estilo Sodium): cada una guarda un valor
- * PENDIENTE que recién se escribe en {@link ConfigLod} con "Aplicar" o
+ * PENDIENTE que recién se escribe en {@link ConfigLod} (o en las opciones
+ * de Minecraft, ver {@link OpcionesVideo}) con "Aplicar" o
  * "Hecho", y sabe dibujar su control a la derecha de la fila.
  * Solo cliente.
  */
@@ -83,13 +84,20 @@ final class OpcionesLod {
 
     /** Sí / No, con una casilla como Sodium. */
     static final class Interruptor extends Opcion {
-        private final ModConfigSpec.BooleanValue valor;
+        private final Supplier<Boolean> leer;
+        private final Consumer<Boolean> escribir;
         private boolean pendiente;
 
         Interruptor(Component nombre, Component descripcion, Impacto impacto, ModConfigSpec.BooleanValue valor) {
+            this(nombre, descripcion, impacto, valor::get, valor::set);
+        }
+
+        Interruptor(Component nombre, Component descripcion, Impacto impacto, Supplier<Boolean> leer,
+                    Consumer<Boolean> escribir) {
             super(nombre, descripcion, impacto);
-            this.valor = valor;
-            this.pendiente = valor.get();
+            this.leer = leer;
+            this.escribir = escribir;
+            this.pendiente = leer.get();
         }
 
         boolean pendiente() {
@@ -98,17 +106,17 @@ final class OpcionesLod {
 
         @Override
         boolean modificada() {
-            return pendiente != valor.get();
+            return pendiente != leer.get();
         }
 
         @Override
         void aplicar() {
-            valor.set(pendiente);
+            escribir.accept(pendiente);
         }
 
         @Override
         void deshacer() {
-            pendiente = valor.get();
+            pendiente = leer.get();
         }
 
         @Override
@@ -207,6 +215,7 @@ final class OpcionesLod {
         private final Supplier<Integer> leer;
         private final Consumer<Integer> escribir;
         private final Function<Integer, Component> texto;
+        private java.util.function.IntUnaryOperator redondeo = v -> v;
         private int pendiente;
 
         Deslizador(Component nombre, Component descripcion, Impacto impacto, int minimo, int maximo, int paso,
@@ -221,9 +230,15 @@ final class OpcionesLod {
             this.pendiente = leer.get(); // tal cual: redondearlo al paso lo marcaría como cambiado sin tocarlo
         }
 
+        /** Ajuste extra de la posición al soltar valores que el dueño no admite (ej. FPS de a 10). */
+        Deslizador conRedondeo(java.util.function.IntUnaryOperator redondeo) {
+            this.redondeo = redondeo;
+            return this;
+        }
+
         private int limitar(int v) {
             int conPaso = minimo + Math.round((v - minimo) / (float) paso) * paso;
-            return Math.max(minimo, Math.min(maximo, conPaso));
+            return Math.max(minimo, Math.min(maximo, redondeo.applyAsInt(conPaso)));
         }
 
         @Override
@@ -234,6 +249,7 @@ final class OpcionesLod {
         @Override
         void aplicar() {
             escribir.accept(pendiente);
+            pendiente = leer.get(); // lo que quedó guardado de verdad
         }
 
         @Override

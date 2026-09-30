@@ -141,9 +141,13 @@ Desde la 0.17.0 la pantalla es propia (`config/PantallaLod` + `config/OpcionesLo
 con el estilo de las opciones de Sodium: pestañas General / Calidad /
 Generación / Depuración-Experimental, filas con nombre y control (casilla,
 ciclo, deslizador o botón), panel con la descripción e impacto en el
-rendimiento, y Deshacer / Aplicar / Hecho. Se abre desde la lista de mods y
-desde un botón "LOD" en Opciones > Video. Cloth Config dejó de usarse (una
-dependencia menos). El árbol original:
+rendimiento, y Deshacer / Aplicar / Hecho. Cloth Config dejó de usarse (una
+dependencia menos). Desde la 0.18.0 reemplaza a Opciones > Video, como Sodium:
+las primeras pestañas (Video, Gráficos) son las opciones de video vanilla,
+armadas desde sus `OptionInstance` (`config/OpcionesVideo`), y después vienen
+las del LOD. Si otro mod ya reemplaza esa pantalla (Sodium, Embeddium,
+VulkanMod o el Vulkan integrado) no se la pisa y queda un botón "LOD" en ella.
+El árbol original:
 
 ```
 Config general

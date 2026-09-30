@@ -497,3 +497,25 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   deshabilitadas sin preset Personalizado y botón "LOD" en Opciones > Video. Con Sodium/Embeddium
   o VulkanMod la pantalla de video es otra y el botón no aparece (queda la lista de mods).
 
+
+## Opciones de video dentro de la pantalla del LOD (0.18.0)
+
+- `PantallaConfig` reemplaza `VideoSettingsScreen` en `ScreenEvent.Opening` por `PantallaLod`
+  (pestañas Video, Gráficos, LOD, Calidad LOD, Generación, Experimental). No lo hace con
+  sodium/embeddium/rubidium/vulkanmod cargados ni con el Vulkan integrado activo (tienen su
+  propia pantalla); ahí queda el botón "LOD" de antes.
+- `config/OpcionesVideo` arma cada fila desde el `OptionInstance` de vanilla (AT para
+  `SliderableValueSet`, `CycleableValueSet`, `IntRangeBase`): casilla si es Boolean, deslizador
+  entero si es `IntRangeBase`, deslizador 0..100 con redondeo al valor admitido si es otro
+  deslizable (FPS, brillo, distancia de entidades), ciclo con el `valueSetter` de vanilla si no.
+  El texto del valor es el de vanilla sin el "Nombre: ".
+- Al aplicar: `OptionInstance.set` (callbacks de vanilla), `options.save()`, recarga de texturas
+  si cambian los mipmaps, `changeFullscreenVideoMode` si cambia la resolución y `resizeDisplay`
+  si cambia la escala de GUI (igual que `VideoSettingsScreen.removed`).
+- "Opciones de video originales" abre la vanilla una vez (flag) y vuelve a la nuestra.
+- Pendiente: el aviso de Fabuloso en GPUs de la lista negra de Mojang (vanilla muestra un
+  diálogo; acá la opción no cambia y queda en amarillo). Botón de shaders de Iris sin probar
+  (Iris no está en el entorno de prueba).
+- Verificado en Xvfb: Opciones > Video abre la pantalla nueva; distancia de render, actualización
+  de chunks, mipmaps y escala de GUI se aplican y quedan en options.txt; ida y vuelta a la
+  pantalla vanilla.

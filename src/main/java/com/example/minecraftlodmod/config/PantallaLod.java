@@ -24,7 +24,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Pantalla de opciones del LOD con el estilo de las de Sodium: pestañas
+ * Opciones de video de Minecraft y del LOD con el estilo de las de Sodium
+ * (reemplaza a Opciones > Video, ver {@link PantallaConfig}): pestañas
  * arriba, filas oscuras con el nombre a la izquierda y el control a la
  * derecha, panel con la descripción de la opción bajo el mouse y su impacto
  * en el rendimiento, y Deshacer / Aplicar / Hecho abajo a la derecha. No
@@ -45,20 +46,34 @@ public final class PantallaLod extends Screen {
 
     private final Screen anterior;
     private final List<Pagina> paginas = new ArrayList<>();
+    private OpcionesVideo video;
     private int paginaActual;
     private double desplazamiento;
     private Opcion arrastrando;
     private Opcion bajoMouse;
 
     public PantallaLod(Screen anterior) {
-        super(Component.translatable(CLAVE + "title"));
+        this(anterior, 0);
+    }
+
+    /** @param pagina pestaña con la que abre (0 = Video, {@link #PAGINA_LOD} = la primera del LOD) */
+    public PantallaLod(Screen anterior, int pagina) {
+        super(Component.translatable("options.videoTitle"));
         this.anterior = anterior;
         armarPaginas();
+        this.paginaActual = Math.max(0, Math.min(paginas.size() - 1, pagina));
     }
+
+    /** Índice de la primera pestaña del LOD (después de Video y Gráficos). */
+    public static final int PAGINA_LOD = 2;
 
     // ------------------------------------------------------------------ opciones
 
     private void armarPaginas() {
+        video = new OpcionesVideo(this::abrirOriginal);
+        paginas.add(new Pagina(pestana("video"), video.pantalla));
+        paginas.add(new Pagina(pestana("graficos"), video.graficos));
+
         ConfigLod.Cliente c = ConfigLod.CLIENTE;
         Ciclo<ParametrosCalidad.Seleccion> preset = new Ciclo<>(texto("preset"), texto("preset.tooltip"), Impacto.ALTO,
                 () -> Arrays.asList(ParametrosCalidad.Seleccion.values()), c.seleccion::get, c.seleccion::set,
@@ -66,7 +81,7 @@ public final class PantallaLod extends Screen {
         java.util.function.BooleanSupplier personalizado =
                 () -> preset.pendiente() == ParametrosCalidad.Seleccion.PERSONALIZADO;
 
-        paginas.add(new Pagina(texto("general"), List.of(
+        paginas.add(new Pagina(pestana("lod"), List.of(
                 List.of(interruptor("lodActivo", Impacto.VARIABLE, c.lodActivo)),
                 List.of(preset,
                         entero("fpsObjetivo", Impacto.NINGUNO, ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX, 1,
@@ -85,7 +100,7 @@ public final class PantallaLod extends Screen {
                                 : Minecraft.getInstance().level == null ? "calibrar.tooltip" : "calibrar.enMundo"))
                         .siempreQue(() -> SesionCalibracion.enCurso() || Minecraft.getInstance().level == null)))));
 
-        paginas.add(new Pagina(texto("calidad"), List.of(
+        paginas.add(new Pagina(pestana("calidad"), List.of(
                 List.of(interruptor("texturasLod", Impacto.BAJO, c.texturasLod),
                         interruptor("oclusionAmbiental", Impacto.NINGUNO, c.oclusionAmbiental)),
                 List.of(interruptor("descartarCuevas", Impacto.BAJO, c.descartarCuevas),
@@ -103,14 +118,14 @@ public final class PantallaLod extends Screen {
                                 ParametrosCalidad.COLAPSO_MAX, 1, c.colapsoDesdeNivel,
                                 v -> Component.literal(String.valueOf(v))).siempreQue(personalizado)))));
 
-        paginas.add(new Pagina(texto("generacion"), List.of(
+        paginas.add(new Pagina(pestana("generacion"), List.of(
                 List.of(interruptor("generacionAproximada", Impacto.MEDIO, c.generacionAproximada)),
                 List.of(interruptor("pregenerar", Impacto.ALTO, c.pregenerar),
                         entero("radioPregeneracion", Impacto.NINGUNO, 16, ParametrosCalidad.RADIO_MAX, 16,
                                 c.radioPregeneracion, v -> Component.literal(v + " chunks"))))));
 
         List<ModoEscalado> modos = Escalado.modosDisponibles();
-        paginas.add(new Pagina(texto("experimental"), List.of(
+        paginas.add(new Pagina(pestana("experimental"), List.of(
                 List.of(interruptor("hudRendimiento", Impacto.BAJO, c.hudRendimiento),
                         interruptor("logDepuracion", Impacto.BAJO, c.logDepuracion)),
                 List.of(new Ciclo<>(texto("escalado"), texto("escalado.tooltip"), Impacto.VARIABLE, () -> modos,
@@ -126,6 +141,19 @@ public final class PantallaLod extends Screen {
                         .conDescripcion(() -> texto("vulkan." + ConmutadorVulkan.estado().name()
                                 .toLowerCase(Locale.ROOT) + ".tooltip"))
                         .siempreQue(() -> ConmutadorVulkan.estado() != ConmutadorVulkan.Estado.NO_DISPONIBLE)))));
+    }
+
+    private static Component pestana(String clave) {
+        return Component.translatable(CLAVE_PANTALLA + "pestana." + clave);
+    }
+
+    /** Pantalla de video vanilla, por si hace falta algo que esta no tiene; al volver, esta de nuevo. */
+    private void abrirOriginal() {
+        aplicar();
+        PantallaConfig.abrirOriginalUnaVez();
+        Minecraft mc = Minecraft.getInstance();
+        mc.setScreen(new net.minecraft.client.gui.screens.options.VideoSettingsScreen(
+                new PantallaLod(anterior, paginaActual), mc, mc.options));
     }
 
     private static Component texto(String clave) {
@@ -180,7 +208,8 @@ public final class PantallaLod extends Screen {
     }
 
     private void aplicar() {
-        todas().forEach(Opcion::aplicar);
+        video.aplicar();
+        todas().stream().filter(Opcion::modificada).forEach(Opcion::aplicar);
         ConfigLod.SPEC_CLIENTE.save();
     }
 
@@ -244,8 +273,11 @@ public final class PantallaLod extends Screen {
             int color = b.activo() ? OpcionesLod.BLANCO : OpcionesLod.GRIS;
             g.drawCenteredString(font, b.texto(), b.x() + b.ancho() / 2, b.y() + 6, color);
         }
-        Component titulo = Component.literal("Minecraft LOD").withStyle(ChatFormatting.GRAY);
-        g.drawString(font, titulo, width - MARGEN - font.width(titulo), MARGEN + 5, OpcionesLod.GRIS);
+        Component titulo = paginaActual >= PAGINA_LOD ? Component.literal("Minecraft LOD") : this.title;
+        int xTitulo = width - MARGEN - font.width(titulo);
+        if (xTitulo > xPestana(paginas.size()) + 8) {
+            g.drawString(font, titulo, xTitulo, MARGEN + 5, OpcionesLod.GRIS);
+        }
     }
 
     private void dibujarPestanas(GuiGraphics g, int mouseX, int mouseY) {

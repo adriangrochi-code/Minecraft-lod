@@ -6,6 +6,19 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.18.0 — Todo en Opciones > Video
+- **Opciones > Video ahora es la pantalla estilo Sodium**, con las opciones de
+  video de Minecraft y las del LOD juntas: pestañas Video, Gráficos, LOD,
+  Calidad LOD, Generación y Experimental.
+- Están todas las opciones de video de Minecraft (distancia de render y de
+  simulación, gráficos, nubes, partículas, escala de interfaz, FPS máximos,
+  VSync, pantalla completa y su resolución, mipmaps, etc.), cada una con su
+  explicación y cuánto pesa en el rendimiento.
+- Botón "Opciones de video originales" por si otro mod agrega algo en la
+  pantalla de siempre. Con Iris, botón para los paquetes de shaders.
+- Con Sodium, Embeddium o Vulkan activo, la pantalla de video es la de ellos
+  y el LOD sigue con su botón "LOD".
+
 ## 0.17.0 — Opciones con el estilo de Sodium
 - **Pantalla de opciones nueva**, con el estilo de las de Sodium: pestañas
   (General, Calidad, Generación, Depuración / Experimental), filas prolijas
