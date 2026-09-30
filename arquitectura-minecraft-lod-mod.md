@@ -578,8 +578,13 @@ Qué rompía con VulkanMod (reproducido con lavapipe en Xvfb):
   -1..1. `PlanCeldas.conPlanosDeProfundidad` detecta la convención de la
   matriz que llega y la respeta.
 
-Pendiente: texturas con VulkanMod (formato de vértice vanilla con UV de
-atlas en vez del compacto) y FSR con VulkanMod.
+Texturas con VulkanMod (0.13.0): mismo formato compacto de 12 B, descripto
+para VulkanMod como dos elementos UV SHORT×2 (arma el atributo de Vulkan por
+uso y tipo, sin mirar la cantidad) y una variante del shader
+(`lod_textura_vk`) que su conversor línea por línea acepta: sin `flat`, sin
+`%`, samplers declarados solo en el vértice, sin `ChunkOffset` (dibujo con
+`drawWithShader`). Se crea con el constructor de `ShaderInstance` que recibe
+String, el único que VulkanMod intercepta. Pendiente: FSR con VulkanMod.
 
 **2. Shaders (Iris) — implementado el paso (a).** Con un shaderpack activo
 (`render/ShadersIris`, API de Iris por reflexión, Iris opcional):

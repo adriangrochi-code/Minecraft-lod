@@ -112,20 +112,40 @@ public final class RenderLod {
      * Uso UV con tipo entero: Minecraft lo sube con glVertexAttribIPointer
      * sin normalizar, igual que sus propios UV1/UV2.
      */
-    static final VertexFormatElement POSICION_SPRITE = VertexFormatElement.register(
+    static final VertexFormatElement POSICION_SPRITE = conVulkanMod() ? null : VertexFormatElement.register(
             VertexFormatElement.findNextId(), 7, VertexFormatElement.Type.SHORT, VertexFormatElement.Usage.UV, 4);
+
+    /**
+     * Con VulkanMod, los mismos 8 bytes partidos en dos: VulkanMod arma el
+     * atributo de Vulkan por uso y tipo sin mirar la cantidad (UV + SHORT es
+     * siempre R16G16_SINT), así que x, y y z, sprite van en dos {@code ivec2}
+     * (ver lod_textura_vk.vsh). Minecraft no deja un segundo POSITION.
+     */
+    static final VertexFormatElement POSICION_XY_VK = conVulkanMod() ? VertexFormatElement.register(
+            VertexFormatElement.findNextId(), 7, VertexFormatElement.Type.SHORT, VertexFormatElement.Usage.UV, 2)
+            : null;
+    static final VertexFormatElement POSICION_Z_SPRITE_VK = conVulkanMod() ? VertexFormatElement.register(
+            VertexFormatElement.findNextId(), 8, VertexFormatElement.Type.SHORT, VertexFormatElement.Usage.UV, 2)
+            : null;
 
     /**
      * Formato compacto texturizado, 12 bytes por vértice (ver
      * {@link GeometriaLod#escribirCompacto} y shaders/core/lod_textura.vsh):
      * posición + índice de sprite, y color ya sombreado con la cara en el alfa.
      * Se arma con {@link VertexFormat.Builder} y se sube con {@link VertexBuffer}
-     * como cualquier formato del juego: sin llamadas GL propias.
+     * como cualquier formato del juego: sin llamadas GL propias. Mismos bytes
+     * con o sin VulkanMod; solo cambia cómo se describen los atributos.
      */
-    public static final VertexFormat FORMATO_TEXTURA = VertexFormat.builder()
-            .add("PosSprite", POSICION_SPRITE)
-            .add("Color", VertexFormatElement.COLOR)
-            .build();
+    public static final VertexFormat FORMATO_TEXTURA = conVulkanMod()
+            ? VertexFormat.builder()
+                    .add("PosXY", POSICION_XY_VK)
+                    .add("PosZSprite", POSICION_Z_SPRITE_VK)
+                    .add("Color", VertexFormatElement.COLOR)
+                    .build()
+            : VertexFormat.builder()
+                    .add("PosSprite", POSICION_SPRITE)
+                    .add("Color", VertexFormatElement.COLOR)
+                    .build();
 
     /**
      * Cómo está armada una malla: colores planos ({@code POSITION_COLOR}),
@@ -220,13 +240,14 @@ public final class RenderLod {
     }
 
     /**
-     * VulkanMod reemplaza ShaderInstance/VertexBuffer por su pipeline de Vulkan y no
-     * logra convertir los shaders propios (lod_textura, FSR): quedan sin pipeline y el
-     * primer dibujo tira NullPointerException. Con VulkanMod no se registran, así el LOD
-     * usa el camino de shaders vanilla (colores planos) que VulkanMod sí trae portado.
+     * VulkanMod reemplaza ShaderInstance/VertexBuffer por su pipeline de Vulkan y
+     * convierte los shaders legacy con un conversor limitado: el LOD texturizado usa
+     * la variante lod_textura_vk y su formato de atributos; los de FSR/escalado no
+     * se registran (sin pipeline, el primer dibujo tiraría NullPointerException).
      */
     public static boolean conVulkanMod() {
-        return ModList.get().isLoaded("vulkanmod");
+        ModList mods = ModList.get();
+        return mods != null && mods.isLoaded("vulkanmod");
     }
 
     private static boolean dibujoPermitido() {
@@ -235,14 +256,16 @@ public final class RenderLod {
 
     /** Bus del mod, solo cliente. */
     public static void registrarShaders(RegisterShadersEvent evento) {
-        if (conVulkanMod()) {
-            LOG.info("LOD: VulkanMod instalado; el LOD se dibuja con colores planos (shaders vanilla)");
-            return;
-        }
         try {
-            evento.registerShader(new ShaderInstance(evento.getResourceProvider(),
-                    ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, "lod_textura"), FORMATO_TEXTURA),
-                    cargado -> shaderTextura = cargado);
+            // Con VulkanMod, variante que su conversor GLSL acepta (ver lod_textura_vk.vsh), y el
+            // constructor con String: es el único que VulkanMod intercepta para armar el pipeline.
+            // El de ResourceLocation deja el shader sin pipeline y el primer dibujo tira NPE.
+            ShaderInstance shader = conVulkanMod()
+                    ? new ShaderInstance(evento.getResourceProvider(), MinecraftLodMod.MOD_ID + ":lod_textura_vk",
+                            FORMATO_TEXTURA)
+                    : new ShaderInstance(evento.getResourceProvider(),
+                            ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, "lod_textura"), FORMATO_TEXTURA);
+            evento.registerShader(shader, cargado -> shaderTextura = cargado);
         } catch (IOException e) {
             LOG.error("LOD: no se pudo cargar el shader de texturas; se dibuja con colores planos", e);
             shaderTextura = null;

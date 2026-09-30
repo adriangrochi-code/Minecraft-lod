@@ -120,7 +120,16 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   el conversor de VulkanMod (NPE "has no initialized pipeline"). Con VulkanMod el LOD usa
   colores planos con shaders vanilla y FSR queda apagado. Falta ver en la PC real (i5 +
   GTX 1060) que dibuje bien y cuánto cuesta; en lavapipe VulkanMod no dibuja el terreno
-  vanilla ni sin el LOD (problema del entorno). Pendiente: texturas con VulkanMod.
+  vanilla ni sin el LOD (problema del entorno).
+- **Texturas con VulkanMod (0.13.0):** variante `lod_textura_vk` + formato con posición en
+  dos elementos UV SHORT×2. Causas encontradas (decompilando VulkanMod 0.5.5-dev+3.1):
+  solo intercepta `new ShaderInstance(provider, String, formato)` (con ResourceLocation el
+  shader queda sin pipeline, sin error en el log); arma los atributos por uso+tipo sin mirar
+  la cantidad (UV+SHORT = R16G16_SINT); su conversor no acepta `flat`, cambia `%` por
+  `mod()` de floats y numera los samplers en orden de aparición entre las dos etapas.
+  Verificado en Xvfb con lavapipe (se ven las texturas). Pista B: verlo en la GTX 1060.
+  FSR/escalado con VulkanMod: se podrían portar igual (constructor con String + reglas del
+  conversor), pero leen y escriben framebuffers de GL: pendiente.
 - **Shaders (0.11.0):** con Iris el LOD pasa por el gbuffers_terrain del pack. Probado solo
   con un pack mínimo propio (Complementary en software es pura niebla). Falta ver en
   hardware real con Complementary/BSL: niebla de borde (tapa el LOD pasada la distancia

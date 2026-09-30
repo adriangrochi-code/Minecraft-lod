@@ -6,6 +6,12 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.13.0 — Texturas del LOD con VulkanMod
+- Con VulkanMod, el terreno LOD ahora se ve con texturas (igual que sin
+  VulkanMod) en vez de colores planos. Usa una variante del shader que el
+  conversor de VulkanMod acepta; si no cargara, sigue con colores planos.
+- FSR y el escalado siguen apagados con VulkanMod.
+
 ## 0.12.0 — Escalado temporal, XeSS y DLSS (experimentales)
 - La opción "Escalado" (Depuración / Experimental) elige: Apagado, AMD FSR 1,
   Temporal (propio), Intel XeSS o NVIDIA DLSS.
