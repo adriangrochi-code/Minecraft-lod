@@ -49,6 +49,27 @@ public final class ColoresBloque {
         return paleta != null;
     }
 
+    /** Colores de pasto, follaje y agua en un lugar (0xRRGGBB), ya mezclados entre biomas vecinos. */
+    public record Tintes(int pasto, int follaje, int agua) {
+    }
+
+    /** Como {@link #rgb(BlockState, Biome, int, int)}, con los tintes ya resueltos (mezcla de biomas). */
+    public static int rgb(BlockState estado, Tintes tintes) {
+        Paleta p = paleta;
+        int id = Block.getId(estado);
+        if (p == null || !p.contiene(id)) {
+            return estado.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).col;
+        }
+        int base = p.rgbBase()[id];
+        return switch (TINTES[p.tinte()[id]]) {
+            case NINGUNO -> base;
+            case FIJO -> ColorTextura.tenir(base, p.tinteFijo()[id]);
+            case PASTO -> ColorTextura.tenir(base, tintes.pasto());
+            case FOLLAJE -> ColorTextura.tenir(base, tintes.follaje());
+            case AGUA -> ColorTextura.tenir(base, tintes.agua());
+        };
+    }
+
     /**
      * @param bioma  bioma en esa posición (para el tinte); puede ser null
      * @param x      coordenadas de mundo, para la variación del pasto (pantanos)

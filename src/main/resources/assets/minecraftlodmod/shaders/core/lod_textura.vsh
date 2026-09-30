@@ -2,7 +2,8 @@
 
 // Terreno LOD texturizado, formato compacto de 12 bytes (render/RenderLod,
 // GeometriaLod#escribirCompacto). Por vértice:
-//   PosSprite = x, y, z en bloques relativos a la celda + índice de sprite (0 = sin textura)
+//   PosSprite = x, y, z en bloques relativos a la celda + índice de sprite (bits 0-13,
+//               0 = sin textura) y luz de bloque cuantizada 0-3 (bits 14-15)
 //   Color     = color plano de la cara (tinte, sombra de cara y luz horneada ya aplicados);
 //               el alfa trae la cara (bits 0-2: 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z) y el
 //               tamaño del vóxel (bits 3-7: log2 de los bloques por lado)
@@ -29,6 +30,7 @@ out vec3 promedio;
 out vec2 uvOrigenAbajo;
 out vec2 uvTamanoAbajo;
 out float tamanoVoxel;
+out float luzBloque;
 flat out int cara;
 
 const int SPRITES_POR_FILA = 256;
@@ -48,7 +50,8 @@ void main() {
     int alfa = int(Color.a * 255.0 + 0.5);
     cara = alfa & 7;
     tamanoVoxel = float(1 << (alfa >> 3));
-    int sprite = PosSprite.w & 0xFFFF;
+    int sprite = PosSprite.w & 0x3FFF;
+    luzBloque = float((PosSprite.w >> 14) & 3);
     uvOrigen = vec2(0.0);
     uvTamano = vec2(0.0);
     uvOrigenAbajo = vec2(0.0);

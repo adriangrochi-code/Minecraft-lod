@@ -201,9 +201,9 @@ class RenderPuroTest {
     @Test
     void elFormatoCompactoOcupaDoceBytesPorVerticeYConservaTodo() {
         SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) SuperVoxel.LLENO,
-                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(15);
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(15).conLuzBloque(2);
         GeometriaLod g = new GeometriaLod();
-        g.usarTexturas((estado, eje, positivo) -> new GeometriaLod.Cara(40000, 0x646E78, true));
+        g.usarTexturas((estado, eje, positivo) -> new GeometriaLod.Cara(GeometriaLod.MAX_SPRITE, 0x646E78, true));
         g.agregarSeccion(new SuperVoxel[]{piedra}, 1, 3000, -64, 48, 16);
         java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(g.vertices() * GeometriaLod.BYTES_COMPACTO);
         g.escribirCompacto(b);
@@ -213,7 +213,9 @@ class RenderPuroTest {
             assertEquals((int) g.x(i), b.getShort());
             assertEquals((int) g.y(i), b.getShort());
             assertEquals((int) g.z(i), b.getShort());
-            assertEquals(40000, b.getShort() & 0xFFFF, "El sprite se lee sin signo");
+            int spriteYLuz = b.getShort() & 0xFFFF;
+            assertEquals(GeometriaLod.MAX_SPRITE, spriteYLuz & GeometriaLod.MAX_SPRITE, "El sprite en los 14 bits bajos");
+            assertEquals(2, spriteYLuz >> 14, "La luz de bloque en los 2 bits altos");
             assertEquals((g.color(i) >> 16) & 0xFF, b.get() & 0xFF);
             assertEquals((g.color(i) >> 8) & 0xFF, b.get() & 0xFF);
             assertEquals(g.color(i) & 0xFF, b.get() & 0xFF);

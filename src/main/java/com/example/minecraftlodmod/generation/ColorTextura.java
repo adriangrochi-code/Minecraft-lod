@@ -44,6 +44,30 @@ public final class ColorTextura {
         return (r << 16) | (g << 8) | b;
     }
 
+    /** Promedio por canal de colores 0xRRGGBB. */
+    public static int promedioRgb(int[] colores, int cantidad) {
+        long r = 0, g = 0, b = 0;
+        for (int i = 0; i < cantidad; i++) {
+            r += (colores[i] >> 16) & 0xFF;
+            g += (colores[i] >> 8) & 0xFF;
+            b += colores[i] & 0xFF;
+        }
+        int n = Math.max(1, cantidad);
+        return (int) Math.round(r / (double) n) << 16 | (int) Math.round(g / (double) n) << 8
+                | (int) Math.round(b / (double) n);
+    }
+
+    /** Interpolación bilineal por canal entre 4 colores 0xRRGGBB (fx, fz entre 0 y 1). */
+    public static int bilineal(int c00, int c10, int c01, int c11, float fx, float fz) {
+        int resultado = 0;
+        for (int corrimiento = 16; corrimiento >= 0; corrimiento -= 8) {
+            float a = ((c00 >> corrimiento) & 0xFF) * (1 - fx) + ((c10 >> corrimiento) & 0xFF) * fx;
+            float b = ((c01 >> corrimiento) & 0xFF) * (1 - fx) + ((c11 >> corrimiento) & 0xFF) * fx;
+            resultado |= Math.round(a * (1 - fz) + b * fz) << corrimiento;
+        }
+        return resultado;
+    }
+
     /** Tinte como lo aplica vanilla: multiplicación por canal (0xRRGGBB × 0xRRGGBB). */
     public static int tenir(int rgb, int tinte) {
         int r = ((rgb >> 16) & 0xFF) * ((tinte >> 16) & 0xFF) / 255;

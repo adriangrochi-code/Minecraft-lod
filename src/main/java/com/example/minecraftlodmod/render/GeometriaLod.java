@@ -60,6 +60,8 @@ public final class GeometriaLod {
     public static final int BYTES_BLOQUE_IRIS = 52;
     /** Texeles RGBA8 por sprite en la tabla que lee el shader. */
     public static final int TEXELES_POR_SPRITE = 4;
+    /** Índice de sprite más alto que entra en el vértice compacto (14 bits; los 2 de arriba son luz de bloque). */
+    public static final int MAX_SPRITE = 0x3FFF;
     /** Sprites por fila de la tabla (textura de 1024 texeles de ancho). */
     public static final int SPRITES_POR_FILA = 256;
 
@@ -116,6 +118,8 @@ public final class GeometriaLod {
         Arrays.fill(planoMax, Float.NEGATIVE_INFINITY);
     }
 
+    /** Luz de bloque cuantizada 0-3 por vértice ({@link SuperVoxel#luzBloque()}). */
+    private byte[] lucesBloque = new byte[1024];
     /** Índice de sprite por vértice (0: sin textura). */
     private int[] sprites = new int[1024];
     /** Cara por vértice: 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z. */
@@ -330,6 +334,7 @@ public final class GeometriaLod {
         colores[vertices] = color(rgbBase, sombra * brilloOclusion, luz);
         coloresBase[vertices] = color(rgbBase, brilloOclusion, 15);
         luces[vertices] = (byte) luz;
+        lucesBloque[vertices] = (byte) q.voxelRepresentativo().luzBloque();
         sprites[vertices] = cara == null ? 0 : cara.sprite();
         int indiceCara = eje.ordinal() * 2 + (q.positivo() ? 1 : 0);
         caras[vertices] = (byte) indiceCara;
@@ -377,6 +382,7 @@ public final class GeometriaLod {
             colores = Arrays.copyOf(colores, colores.length * 2);
             coloresBase = Arrays.copyOf(coloresBase, coloresBase.length * 2);
             luces = Arrays.copyOf(luces, luces.length * 2);
+            lucesBloque = Arrays.copyOf(lucesBloque, lucesBloque.length * 2);
             posiciones = Arrays.copyOf(posiciones, posiciones.length * 2);
             sprites = Arrays.copyOf(sprites, sprites.length * 2);
             caras = Arrays.copyOf(caras, caras.length * 2);
@@ -422,7 +428,9 @@ public final class GeometriaLod {
     /**
      * Escribe todos los vértices en el formato compacto
      * ({@link #BYTES_COMPACTO} bytes c/u, little-endian como espera la GPU):
-     * x, y, z (short, bloques relativos a la celda), sprite (short sin signo),
+     * x, y, z (short, bloques relativos a la celda), sprite (bits 0-13) y luz
+     * de bloque 0-3 (bits 14-15: el shader deja iluminado de noche lo que
+     * tiene antorchas o lava),
      * R, G, B (ya sombreados) y en el byte de alfa la cara (bits 0-2) y el
      * log2 del tamaño del vóxel (bits 3-7: el shader repite la franja de
      * pasto una vez por vóxel, no una por bloque).
@@ -446,7 +454,7 @@ public final class GeometriaLod {
             b.putShort(aShort(posiciones[i * 3]));
             b.putShort(aShort(posiciones[i * 3 + 1]));
             b.putShort(aShort(posiciones[i * 3 + 2]));
-            b.putShort((short) sprites[i]);
+            b.putShort((short) ((sprites[i] & MAX_SPRITE) | lucesBloque[i] << 14));
             int c = colores[i];
             b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c).put((byte) (caras[i] | niveles[i] << 3));
         }
@@ -474,8 +482,9 @@ public final class GeometriaLod {
             int c = coloresBase[i];
             b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c).put((byte) 0xFF);
             b.putFloat(0.5f).putFloat(0.5f);
-            // Lightmap como vanilla: (luz de bloque × 16, luz de cielo × 16); la horneada va como cielo.
-            b.putShort((short) 0).putShort((short) (luces[i] * 16));
+            // Lightmap como vanilla: (luz de bloque × 16, luz de cielo × 16); la horneada va como cielo
+            // y la de bloque cuantizada vuelve a 0-15.
+            b.putShort((short) (lucesBloque[i] * 5 * 16)).putShort((short) (luces[i] * 16));
             int cara = caras[i];
             int signo = (cara & 1) == 1 ? 127 : -127;
             int eje = cara >> 1;

@@ -13,6 +13,7 @@ in vec2 uvOrigenAbajo;
 in vec2 uvTamanoAbajo;
 in float tamanoVoxel;
 in float cara;
+in float luzBloque;
 
 out vec4 fragColor;
 
@@ -44,5 +45,6 @@ void main() {
         vec3 detalle = tex.rgb / max(promedio, vec3(1.0 / 255.0));
         color *= mix(vec3(1.0), detalle, tex.a);
     }
-    fragColor = vec4(color, 1.0) * ColorModulator;
+    vec3 luz = max(ColorModulator.rgb, vec3(1.0, 0.86, 0.66) * pow(luzBloque / 3.0, 1.5));
+    fragColor = vec4(color * luz, ColorModulator.a);
 }

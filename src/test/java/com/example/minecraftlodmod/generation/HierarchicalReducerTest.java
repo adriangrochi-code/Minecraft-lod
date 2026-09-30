@@ -30,6 +30,15 @@ class HierarchicalReducerTest {
     }
 
     @Test
+    void laLuzDeBloqueSubePorMaximo() {
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        java.util.Arrays.fill(entrada, voxel(50, SuperVoxel.Material.SOLIDO).conLuzHorneada(15));
+        entrada[7] = entrada[7].conLuzBloque(3); // una antorcha en un rincón
+        SuperVoxel[] reducido = HierarchicalReducer.reducir(entrada, 2);
+        assertEquals(3, reducido[0].luzBloque(), "Una aldea con antorchas se sigue viendo de lejos");
+    }
+
+    @Test
     void elMaterialDominanteGanaLaVotacion() {
         // Bloque 2x2x2 con 5 SOLIDO y 3 AGUA: debería ganar SOLIDO.
         SuperVoxel[] entrada = {

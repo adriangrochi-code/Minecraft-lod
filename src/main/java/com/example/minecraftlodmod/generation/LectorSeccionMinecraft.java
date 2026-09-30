@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.DataLayer;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.material.MapColor;
@@ -91,14 +92,24 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
     private final DataLayer cielo, bloque, cieloArriba, bloqueArriba;
     /** Biomas de la sección (grilla 4×4×4, índice (x*4+y)*4+z), para el tinte de {@link ColoresBloque}. */
     private final Biome[] biomas;
+    /**
+     * Biomas de la sección más dos celdas de 4 bloques alrededor en X y Z,
+     * tomadas de los chunks vecinos si están cargados (si no, se repite el
+     * borde propio): grilla 8×4×8, índice (x*4+y)*8+z con x, z = celda + 2.
+     * Null (tests): tinte por celda, sin mezcla.
+     */
+    private final Biome[] biomasAmplias;
+    /** Tintes mezclados por celda (6×4×6, celdas -1..4), calculados la primera vez que se piden. */
+    private ColoresBloque.Tintes[] tintesMezclados;
     private final int origenX, origenZ;
 
     private LectorSeccionMinecraft(PalettedContainer<BlockState> estados, PalettedContainer<BlockState> estadosArriba,
                                    boolean soloAire,
                                    DataLayer cielo, DataLayer bloque,
                                    DataLayer cieloArriba, DataLayer bloqueArriba,
-                                   Biome[] biomas, int origenX, int origenZ) {
+                                   Biome[] biomas, Biome[] biomasAmplias, int origenX, int origenZ) {
         this.biomas = biomas;
+        this.biomasAmplias = biomasAmplias;
         this.origenX = origenX;
         this.origenZ = origenZ;
         this.estados = estados;
@@ -112,7 +123,7 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
 
     /** Lector sobre estados ya armados, sin luz ni biomas (cielo abierto): para tests. */
     static LectorSeccionMinecraft deEstados(PalettedContainer<BlockState> estados) {
-        return new LectorSeccionMinecraft(estados, null, false, null, null, null, null, new Biome[64], 0, 0);
+        return new LectorSeccionMinecraft(estados, null, false, null, null, null, null, new Biome[64], null, 0, 0);
     }
 
     /** Una sección capturada, con su posición en coordenadas de sección. */
@@ -134,6 +145,15 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         int chunkZ = chunk.getPos().z;
         var luzCielo = level.getLightEngine().getLayerListener(LightLayer.SKY);
         var luzBloque = level.getLightEngine().getLayerListener(LightLayer.BLOCK);
+        // Vecinos cargados para mezclar el tinte de bioma en el borde (null fuera del hilo principal).
+        LevelChunk[] vecinos = new LevelChunk[9];
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx != 0 || dz != 0) {
+                    vecinos[(dx + 1) * 3 + dz + 1] = level.getChunkSource().getChunkNow(chunkX + dx, chunkZ + dz);
+                }
+            }
+        }
 
         for (int i = 0; i < secciones.length; i++) {
             LevelChunkSection seccion = secciones[i];
@@ -151,7 +171,7 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
                     copiar(luzBloque.getDataLayerData(pos)),
                     copiar(luzCielo.getDataLayerData(arriba)),
                     copiar(luzBloque.getDataLayerData(arriba)),
-                    copiarBiomas(seccion), chunkX * 16, chunkZ * 16)));
+                    copiarBiomas(seccion), biomasAmplias(seccion, vecinos, i), chunkX * 16, chunkZ * 16)));
         }
         return capturas;
     }
@@ -167,6 +187,85 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
             }
         }
         return biomas;
+    }
+
+    /** Ver {@link #biomasAmplias}: celdas -2..5 en X y Z. */
+    private static Biome[] biomasAmplias(LevelChunkSection propia, LevelChunk[] vecinos, int indiceSeccion) {
+        Biome[] amplias = new Biome[8 * 4 * 8];
+        for (int cx = -2; cx < 6; cx++) {
+            for (int cz = -2; cz < 6; cz++) {
+                int dx = Math.floorDiv(cx, 4), dz = Math.floorDiv(cz, 4);
+                LevelChunkSection fuente = propia;
+                int lx = cx, lz = cz;
+                LevelChunk vecino = dx == 0 && dz == 0 ? null : vecinos[(dx + 1) * 3 + dz + 1];
+                if (vecino != null && indiceSeccion < vecino.getSections().length) {
+                    fuente = vecino.getSection(indiceSeccion);
+                    lx = Math.floorMod(cx, 4);
+                    lz = Math.floorMod(cz, 4);
+                } else {
+                    lx = Math.max(0, Math.min(3, cx));
+                    lz = Math.max(0, Math.min(3, cz));
+                }
+                for (int y = 0; y < 4; y++) {
+                    amplias[((cx + 2) * 4 + y) * 8 + cz + 2] = fuente.getNoiseBiome(lx, y, lz).value();
+                }
+            }
+        }
+        return amplias;
+    }
+
+    /**
+     * Pasto, follaje y agua en el bloque (x, y, z) de la sección, mezclados
+     * como el "biome blend" de vanilla: cada celda de 4 bloques promedia las
+     * 3×3 de alrededor y el bloque interpola entre los centros de las 4
+     * celdas más cercanas. Sin eso el tinte cambia en escalones de 4 bloques
+     * en el borde de dos biomas, muy visible en el LOD lejano.
+     */
+    private ColoresBloque.Tintes tintes(int x, int y, int z) {
+        if (tintesMezclados == null) {
+            tintesMezclados = mezclarTintes();
+        }
+        float px = (x + 0.5f) / 4 - 0.5f, pz = (z + 0.5f) / 4 - 0.5f;
+        int cx = (int) Math.floor(px), cz = (int) Math.floor(pz);
+        float fx = px - cx, fz = pz - cz;
+        int cy = y >> 2;
+        ColoresBloque.Tintes a = tintesMezclados[celdaMezcla(cx, cy, cz)];
+        ColoresBloque.Tintes b = tintesMezclados[celdaMezcla(cx + 1, cy, cz)];
+        ColoresBloque.Tintes c = tintesMezclados[celdaMezcla(cx, cy, cz + 1)];
+        ColoresBloque.Tintes d = tintesMezclados[celdaMezcla(cx + 1, cy, cz + 1)];
+        return new ColoresBloque.Tintes(
+                ColorTextura.bilineal(a.pasto(), b.pasto(), c.pasto(), d.pasto(), fx, fz),
+                ColorTextura.bilineal(a.follaje(), b.follaje(), c.follaje(), d.follaje(), fx, fz),
+                ColorTextura.bilineal(a.agua(), b.agua(), c.agua(), d.agua(), fx, fz));
+    }
+
+    private static int celdaMezcla(int cx, int cy, int cz) {
+        return ((cx + 1) * 4 + cy) * 6 + cz + 1;
+    }
+
+    private ColoresBloque.Tintes[] mezclarTintes() {
+        ColoresBloque.Tintes[] mezclados = new ColoresBloque.Tintes[6 * 4 * 6];
+        int[] pasto = new int[9], follaje = new int[9], agua = new int[9];
+        for (int cx = -1; cx < 5; cx++) {
+            for (int cz = -1; cz < 5; cz++) {
+                for (int cy = 0; cy < 4; cy++) {
+                    int n = 0;
+                    for (int dx = -1; dx <= 1; dx++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            Biome bioma = biomasAmplias[((cx + dx + 2) * 4 + cy) * 8 + cz + dz + 2];
+                            int bx = origenX + (cx + dx) * 4 + 2, bz = origenZ + (cz + dz) * 4 + 2;
+                            pasto[n] = bioma.getGrassColor(bx, bz);
+                            follaje[n] = bioma.getFoliageColor();
+                            agua[n] = bioma.getWaterColor();
+                            n++;
+                        }
+                    }
+                    mezclados[celdaMezcla(cx, cy, cz)] = new ColoresBloque.Tintes(ColorTextura.promedioRgb(pasto, n),
+                            ColorTextura.promedioRgb(follaje, n), ColorTextura.promedioRgb(agua, n));
+                }
+            }
+        }
+        return mezclados;
     }
 
     private static DataLayer copiar(DataLayer capa) {
@@ -224,11 +323,17 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
                 estado = encima;
             }
         }
-        Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
-        int rgb = ColoresBloque.rgb(estado, bioma, origenX + x, origenZ + z);
+        int rgb;
+        if (biomasAmplias != null) {
+            rgb = ColoresBloque.rgb(estado, tintes(x, y, z));
+        } else {
+            Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
+            rgb = ColoresBloque.rgb(estado, bioma, origenX + x, origenZ + z);
+        }
         return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) SuperVoxel.LLENO, material,
                 (byte) 0)
                 .conLuzHorneada(luz(x, y, z))
+                .conLuzBloque(SuperVoxel.cuantizarLuzBloque(Math.max(luzBloque(x, y, z), emision(estado))))
                 .conEstado(Block.getId(estado)) // para dibujar su textura; ids > 65535 quedan sin estado
                 .conNevado(nevado);
     }
@@ -255,6 +360,33 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         max = Math.max(max, luzEn(x, y, z - 1));
         max = Math.max(max, luzEn(x, y, z + 1));
         return Math.max(max, luzEn(x, y - 1, z));
+    }
+
+    /** Como {@link #luz}, solo la luz de bloque (sin la del cielo). */
+    private int luzBloque(int x, int y, int z) {
+        int max = luzBloqueEn(x, y + 1, z);
+        max = Math.max(max, luzBloqueEn(x - 1, y, z));
+        max = Math.max(max, luzBloqueEn(x + 1, y, z));
+        max = Math.max(max, luzBloqueEn(x, y, z - 1));
+        max = Math.max(max, luzBloqueEn(x, y, z + 1));
+        return Math.max(max, luzBloqueEn(x, y - 1, z));
+    }
+
+    private int luzBloqueEn(int x, int y, int z) {
+        if (x < 0 || x > 15 || z < 0 || z > 15 || y < 0) {
+            return 0;
+        }
+        DataLayer capaBloque = y < SectionExtractor.LADO ? bloque : bloqueArriba;
+        return capaBloque == null ? 0 : capaBloque.get(x, y & 15, z);
+    }
+
+    /** Luz que emite el bloque mismo (lava, piedra luminosa): la de sus vecinos puede faltar si está enterrado a medias. */
+    private static int emision(BlockState estado) {
+        try {
+            return estado.getLightEmission();
+        } catch (RuntimeException e) {
+            return 0;
+        }
     }
 
     private int luzEn(int x, int y, int z) {

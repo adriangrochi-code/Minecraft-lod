@@ -17,8 +17,8 @@ package com.example.minecraftlodmod.core;
  *
  * Uso de {@code flags}: bit 0 = colapsado por homogeneidad, bit 1 = nevado
  * (ver {@link #nevado()}), bits 4-7 = luz horneada (0-15, ver
- * {@link #luzHorneada()}). Los bits 2-3 quedan libres para futuros flags
- * sin romper compatibilidad de formato.
+ * {@link #luzHorneada()}), bits 2-3 = luz de bloque cuantizada (0-3, ver
+ * {@link #luzBloque()}; datos anteriores a 0.24.0 la tienen en 0).
  */
 public record SuperVoxel(
         byte r, byte g, byte b,
@@ -128,6 +128,29 @@ public record SuperVoxel(
      */
     public int luzHorneada() {
         return (flags >> 4) & 0x0F;
+    }
+
+    /**
+     * Luz de BLOQUE (antorchas, lava, faroles) que recibe, cuantizada a 0-3
+     * en los bits 2-3 de {@code flags}: {@link #luzHorneada()} es el máximo
+     * entre cielo y bloque, y de noche el render oscurece todo menos lo que
+     * tiene luz de bloque (idea de Voxy: luz de cielo y de bloque por
+     * separado). 2 bits alcanzan para que se vea de lejos.
+     */
+    public int luzBloque() {
+        return (flags >> 2) & 0b11;
+    }
+
+    /** Luz de bloque 0-15 llevada a los 4 escalones de {@link #luzBloque()} (13-15 → 3, 8-12 → 2, 3-7 → 1). */
+    public static int cuantizarLuzBloque(int nivel) {
+        return Math.max(0, Math.min(3, (nivel + 2) / 5));
+    }
+
+    /** Copia con la luz de bloque ya cuantizada (0-3). */
+    public SuperVoxel conLuzBloque(int cuantizada) {
+        int q = Math.max(0, Math.min(3, cuantizada));
+        byte nuevosFlags = (byte) ((flags & ~0b0000_1100) | (q << 2));
+        return new SuperVoxel(r, g, b, alturaLocal, material, nuevosFlags, estado);
     }
 
     /** Devuelve una copia de este supervóxel con la luz horneada indicada (0-15). */

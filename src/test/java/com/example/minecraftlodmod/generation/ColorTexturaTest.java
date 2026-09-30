@@ -60,4 +60,14 @@ class ColorTexturaTest {
         assertEquals(false, ColorTextura.tieneFranja(costado(2, 0xFFFFFF, corteza), 4, 8, 0x303030),
                 "El resto no se parece a la cara de abajo");
     }
+
+    @Test
+    void promedioYBilinealPorCanal() {
+        assertEquals(0x806040, ColorTextura.promedioRgb(new int[] {0xFF8040, 0x004040, 0}, 2));
+        int a = 0x000000, b = 0xFF0000, c = 0x00FF00, d = 0x0000FF;
+        assertEquals(a, ColorTextura.bilineal(a, b, c, d, 0, 0));
+        assertEquals(d, ColorTextura.bilineal(a, b, c, d, 1, 1));
+        assertEquals(0x404040, ColorTextura.bilineal(a, b, c, d, 0.5f, 0.5f));
+        assertEquals(0x800000, ColorTextura.bilineal(a, b, c, d, 0.5f, 0f));
+    }
 }

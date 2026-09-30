@@ -29,6 +29,7 @@ out vec2 uvOrigenAbajo;
 out vec2 uvTamanoAbajo;
 out float tamanoVoxel;
 out float cara;
+out float luzBloque;
 
 const int SPRITES_POR_FILA = 256;
 
@@ -45,7 +46,8 @@ void main() {
     float nivel = floor(alfa / 8.0);
     cara = alfa - nivel * 8.0;
     tamanoVoxel = exp2(nivel);
-    int sprite = PosZSprite.y & 0xFFFF;
+    int sprite = PosZSprite.y & 0x3FFF;
+    luzBloque = float((PosZSprite.y >> 14) & 3);
     uvOrigen = vec2(0.0);
     uvTamano = vec2(0.0);
     uvOrigenAbajo = vec2(0.0);

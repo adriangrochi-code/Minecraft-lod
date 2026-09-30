@@ -524,6 +524,13 @@ Ideas adoptadas, en orden de implementación sugerido:
    radio crece con la distancia. En la misma pasada va la niebla del LOD
    (borde igual al de vanilla corrido + neblina atmosférica exp2), que
    hasta ahí no existía. Sin GL crudo; no corre con VulkanMod ni shaderpacks.
+   **Luz de bloque aparte (idea de Voxy) — implementado en 0.24.0:** bits
+   2-3 de `flags` (`SuperVoxel.luzBloque`, 0-3, máximo al reducir), bits
+   14-15 del short de sprite en el vértice compacto (sprites hasta 16383);
+   el shader toma `max(luz del cielo a esta hora, luz cálida de bloque)`.
+   Datos viejos quedan en 0 (sin romper formato). Mismo hito: tinte de
+   bioma mezclado como el biome blend de vanilla (`LectorSeccionMinecraft`,
+   biomas de los chunks vecinos cargados).
 6. **Exclusión exacta del área vanilla (FP2, "vanilla renderability").**
    Máscara por chunk de qué renderiza vanilla realmente, en vez de un radio
    fijo → sin geometría LOD duplicada bajo el terreno cercano ni huecos.

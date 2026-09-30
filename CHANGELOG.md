@@ -6,6 +6,20 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.24.0 — Luz de antorchas de noche y biomas que se funden
+Tercer paso de "que el LOD se vea como Voxy" (solo la idea, sin su código).
+- **De noche, lo iluminado sigue iluminado:** el LOD guardaba un solo valor
+  de luz y de noche se oscurecía todo junto. Ahora guarda aparte la luz de
+  bloque (antorchas, lava, faroles, piedra luminosa): de noche las aldeas,
+  los ríos de lava y las construcciones iluminadas se ven a lo lejos con luz
+  cálida, como en vanilla. Con shaderpacks esa luz va también al lightmap.
+- **Biomas que se funden:** el color del pasto, las hojas y el agua se mezcla
+  entre biomas vecinos como el "biome blend" de vanilla, en vez de cambiar en
+  escalones de 4 bloques. Se nota en el borde de dos biomas visto de lejos.
+- Las zonas ya guardadas no se pierden: toman la luz de antorchas y la mezcla
+  de biomas a medida que se vuelven a generar (al cambiar bloques o al
+  regenerar el caché).
+
 ## 0.23.0 — Acabado como Voxy: sombras suaves y neblina
 Segundo paso de "que el LOD se vea como Voxy" (solo la idea, sin su código).
 - **El LOD termina en la niebla:** antes el terreno lejano no tenía niebla

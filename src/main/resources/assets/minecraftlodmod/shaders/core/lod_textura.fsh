@@ -19,6 +19,7 @@ in vec3 promedio;
 in vec2 uvOrigenAbajo;
 in vec2 uvTamanoAbajo;
 in float tamanoVoxel;
+in float luzBloque;
 flat in int cara;
 
 out vec4 fragColor;
@@ -52,5 +53,8 @@ void main() {
         // El atlas del LOD es opaco (AtlasLod: huecos rellenos, oscuros en el follaje); el alfa queda por las dudas.
         color *= mix(vec3(1.0), detalle, tex.a);
     }
-    fragColor = vec4(color, 1.0) * ColorModulator;
+    // ColorModulator es la luz del cielo a esta hora (de noche oscurece todo); lo que tiene
+    // luz de bloque (antorchas, lava) queda con ella, cálida como en el lightmap de vanilla.
+    vec3 luz = max(ColorModulator.rgb, vec3(1.0, 0.86, 0.66) * pow(luzBloque / 3.0, 1.5));
+    fragColor = vec4(color * luz, ColorModulator.a);
 }

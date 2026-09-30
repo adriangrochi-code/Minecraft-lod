@@ -221,7 +221,7 @@ public final class PaletaTexturas {
                 }
                 TextureAtlasSprite abajo = abajoDe.get(sprites.get(c.sprite()));
                 Integer indiceAbajo = abajo == null ? null : indices.get(abajo);
-                if (indiceAbajo != null && indiceAbajo <= 0xFFFF) {
+                if (indiceAbajo != null && indiceAbajo <= GeometriaLod.MAX_SPRITE) {
                     carasCostado[id] = new GeometriaLod.Cara(c.sprite(), c.promedioRgb(), c.usaColorDelVoxel(),
                             indiceAbajo, promedios.getOrDefault(abajo, c.promedioRgb()));
                 }
@@ -232,8 +232,8 @@ public final class PaletaTexturas {
     }
 
     private static GeometriaLod.Cara cara(int indice, int promedio, boolean usaColorDelVoxel) {
-        // Más de 65535 sprites distintos no entran en el vértice compacto: esos van con color plano.
-        return new GeometriaLod.Cara(indice > 0xFFFF ? 0 : indice, promedio, usaColorDelVoxel);
+        // Más sprites de los que entran en el vértice compacto: esos van con color plano.
+        return new GeometriaLod.Cara(indice > GeometriaLod.MAX_SPRITE ? 0 : indice, promedio, usaColorDelVoxel);
     }
 
     private static int indice(TextureAtlasSprite sprite, Map<TextureAtlasSprite, Integer> indices,
@@ -381,7 +381,7 @@ public final class PaletaTexturas {
                                    Map<TextureAtlasSprite, TextureAtlasSprite> abajoDe,
                                    Map<TextureAtlasSprite, Integer> indices,
                                    List<int[]> horneadas, List<Integer> promediosHorneadas) {
-        int cantidad = Math.min(sprites.size() + horneadas.size(), 0x10000);
+        int cantidad = Math.min(sprites.size() + horneadas.size(), GeometriaLod.MAX_SPRITE + 1);
         int porFila = AtlasLod.teselasPorFila(cantidad);
         int filasAtlas = Math.max(1, (cantidad + porFila - 1) / porFila);
         NativeImage atlas = new NativeImage(porFila * tesela, filasAtlas * tesela, true);
