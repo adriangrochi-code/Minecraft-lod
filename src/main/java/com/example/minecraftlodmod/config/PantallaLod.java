@@ -115,10 +115,11 @@ public final class PantallaLod extends Screen {
                                 PantallaLod::textoRadio).siempreQue(curvatura::pendiente),
                         interruptor("horizonteReal", Impacto.VARIABLE, c.horizonteReal)
                                 .siempreQue(curvatura::pendiente)),
-                List.of(interruptor("descartarCuevas", Impacto.BAJO, c.descartarCuevas),
+                List.of(decimal("pixelesMaximos", Impacto.ALTO, 1, 16, 0.5, c.pixelesMaximos, " px"),
+                        interruptor("descartarCuevas", Impacto.BAJO, c.descartarCuevas),
                         interruptor("ocultarTapado", Impacto.BAJO, c.ocultarTapado)),
                 List.of(entero("radioLodChunks", Impacto.ALTO, ParametrosCalidad.RADIO_MIN, ParametrosCalidad.RADIO_MAX,
-                                8, c.radioLodChunks, v -> Component.literal(v + " chunks")).siempreQue(personalizado),
+                                32, c.radioLodChunks, v -> Component.literal(v + " chunks")).siempreQue(personalizado),
                         decimal("umbralPx", Impacto.ALTO, ParametrosCalidad.UMBRAL_MIN, ParametrosCalidad.UMBRAL_MAX,
                                 0.25, c.umbralPx, " px").siempreQue(personalizado),
                         entero("hilosGeneracion", Impacto.MEDIO, ParametrosCalidad.HILOS_MIN,

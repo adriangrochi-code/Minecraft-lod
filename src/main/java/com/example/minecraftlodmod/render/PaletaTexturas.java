@@ -194,6 +194,20 @@ public final class PaletaTexturas {
         subirTablaSprites(mc, sprites, promedios, abajoDe, indices);
         if (comoTerreno) {
             LOG.info("LOD: {} texturas de costado con franja (pasto, nieve...)", abajoDe.size());
+            // La cara del costado también lleva la de abajo: con la superficie a la altura real,
+            // GeometriaLod parte ahí el costado (franja arriba, tierra abajo).
+            for (int id = 0; id < total; id++) {
+                GeometriaLod.Cara c = carasCostado[id];
+                if (c == null || c.sprite() <= 0 || c.sprite() >= sprites.size()) {
+                    continue;
+                }
+                TextureAtlasSprite abajo = abajoDe.get(sprites.get(c.sprite()));
+                Integer indiceAbajo = abajo == null ? null : indices.get(abajo);
+                if (indiceAbajo != null && indiceAbajo <= 0xFFFF) {
+                    carasCostado[id] = new GeometriaLod.Cara(c.sprite(), c.promedioRgb(), c.usaColorDelVoxel(),
+                            indiceAbajo, promedios.getOrDefault(abajo, c.promedioRgb()));
+                }
+            }
         }
         tabla = new TablaTexturas(carasArriba, carasCostado);
         return new ColoresBloque.Paleta(base, tinte, fijo);

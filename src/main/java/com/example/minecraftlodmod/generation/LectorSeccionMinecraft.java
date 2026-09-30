@@ -210,7 +210,7 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         }
         SuperVoxel.Material material = material(estado);
         if (material == SuperVoxel.Material.AIRE) {
-            return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) y, material, (byte) 0);
+            return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, material, (byte) 0);
         }
         // Alfombra encima: el bloque toma la cubierta. Nieve fina: el bloque queda como es
         // (hojas, pasto) y solo su cara de arriba se dibuja nevada (SuperVoxel.nevado).
@@ -226,7 +226,8 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         }
         Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
         int rgb = ColoresBloque.rgb(estado, bioma, origenX + x, origenZ + z);
-        return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) y, material, (byte) 0)
+        return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) SuperVoxel.LLENO, material,
+                (byte) 0)
                 .conLuzHorneada(luz(x, y, z))
                 .conEstado(Block.getId(estado)) // para dibujar su textura; ids > 65535 quedan sin estado
                 .conNevado(nevado);

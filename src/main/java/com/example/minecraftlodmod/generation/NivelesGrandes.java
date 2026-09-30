@@ -14,7 +14,9 @@ import java.util.Set;
  * {@link #NIVEL_MIN} cada nodo es SIEMPRE una grilla de {@link #LADO}³
  * vóxeles de 2^nivel bloques, que cubre un cubo de 16·2^nivel bloques
  * (como Voxy): nivel 5 = una región entera (512 bloques, vóxeles de 32),
- * nivel 8 = 4096 bloques (vóxeles de 256).
+ * nivel 10 = 16 384 bloques (vóxeles de 1024, para el horizonte de decenas
+ * de km). Los vóxeles más altos que el mundo no son un problema: su relleno
+ * ({@link SuperVoxel#relleno()}) pone la superficie a la altura real.
  *
  * Derivación jerárquica (sección 2): el nivel 5 sale del nivel 4 de las
  * 32³ secciones que cubre (1 vóxel por sección), y cada nivel siguiente de
@@ -29,7 +31,8 @@ import java.util.Set;
 public final class NivelesGrandes {
 
     public static final int NIVEL_MIN = SectionExtractor.NIVELES; // 5
-    public static final int NIVEL_MAX = 8;
+    /** Hasta 10: el lado de la tesela (16 384 bloques) todavía entra en los shorts del vértice compacto. */
+    public static final int NIVEL_MAX = 10;
     public static final int LADO = 16;
 
     private NivelesGrandes() {
@@ -44,6 +47,22 @@ public final class NivelesGrandes {
         SuperVoxel[] grande(int nivel, int nodoX, int nodoY, int nodoZ);
 
         void guardarGrande(int nivel, int nodoX, int nodoY, int nodoZ, SuperVoxel[] grilla);
+
+        /**
+         * true si el chunk tiene LOD por sección (real o aproximado chunk por
+         * chunk): ahí una sección que falta es aire de verdad.
+         */
+        default boolean chunkConDatos(int chunkX, int chunkZ) {
+            return true;
+        }
+
+        /**
+         * Vóxel de sección (nivel 4) del horizonte aproximado por región
+         * ({@link TerrenoAproximado#seccionDe}), o null si esa zona no se aproximó.
+         */
+        default SuperVoxel seccionAproximada(int seccionX, int seccionY, int seccionZ) {
+            return null;
+        }
     }
 
     /** Lado del nodo de ese nivel, en bloques. */
@@ -108,7 +127,11 @@ public final class NivelesGrandes {
         return guardados;
     }
 
-    /** Nivel 5: 32³ secciones, un vóxel de nivel 4 por sección (sección ausente = aire). */
+    /**
+     * Nivel 5: 32³ secciones, un vóxel de nivel 4 por sección. Sección
+     * ausente = aire, salvo en chunks sin LOD por sección: ahí se usa el
+     * horizonte aproximado por región, si lo hay.
+     */
     private static SuperVoxel[] desdeSecciones(int nodoX, int nodoY, int nodoZ, int minSeccion, int maxSeccion,
                                                Acceso acceso) {
         int lado = LADO * 2;
@@ -116,16 +139,23 @@ public final class NivelesGrandes {
         Arrays.fill(entrada, AIRE);
         boolean alguno = false;
         int baseX = nodoX * lado, baseY = nodoY * lado, baseZ = nodoZ * lado;
-        for (int dy = 0; dy < lado; dy++) {
-            int seccionY = baseY + dy;
-            if (seccionY < minSeccion || seccionY >= maxSeccion) {
-                continue;
-            }
-            for (int dx = 0; dx < lado; dx++) {
-                for (int dz = 0; dz < lado; dz++) {
-                    SuperVoxel[] nodo = acceso.seccion(NIVEL_MIN - 1, baseX + dx, seccionY, baseZ + dz);
-                    if (nodo != null && nodo[0].material() != SuperVoxel.Material.AIRE) {
-                        entrada[(dx * lado + dy) * lado + dz] = nodo[0];
+        for (int dx = 0; dx < lado; dx++) {
+            for (int dz = 0; dz < lado; dz++) {
+                boolean conDatos = acceso.chunkConDatos(baseX + dx, baseZ + dz);
+                for (int dy = 0; dy < lado; dy++) {
+                    int seccionY = baseY + dy;
+                    if (seccionY < minSeccion || seccionY >= maxSeccion) {
+                        continue;
+                    }
+                    SuperVoxel v;
+                    if (conDatos) {
+                        SuperVoxel[] nodo = acceso.seccion(NIVEL_MIN - 1, baseX + dx, seccionY, baseZ + dz);
+                        v = nodo == null ? null : nodo[0];
+                    } else {
+                        v = acceso.seccionAproximada(baseX + dx, seccionY, baseZ + dz);
+                    }
+                    if (v != null && v.material() != SuperVoxel.Material.AIRE) {
+                        entrada[(dx * lado + dy) * lado + dz] = v;
                         alguno = true;
                     }
                 }

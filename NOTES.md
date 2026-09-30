@@ -534,3 +534,35 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   conservador (lo que baja sigue tapado).
 - Horizonte real: verificado en el log (radio=66 = 264 del horizonte × el piso del auto-ajuste).
 - Pendiente: nubes con VulkanMod (necesitaría variante del shader).
+
+## Superficie a la altura real, niveles hasta 10 y horizonte por región (0.20.0)
+
+- `SuperVoxel.alturaLocal` pasa a ser el RELLENO (0-255 del alto del vóxel lleno desde abajo,
+  promedio de sus columnas). Nivel 0 visible = 255. `HierarchicalReducer` lo calcula por columna
+  (hijo de arriba = 1 + su relleno) y deja visible un vóxel con mayoría O con relleno medio ≥ 1/4.
+  `VERSION_ALGORITMO` 11: todo el LOD guardado se regenera.
+- `GreedyMesher.mallar(..., bloquesPorVoxel)`: cara +Y de un vóxel con aire/agua encima a la altura
+  del relleno; costados hasta ahí; contra un vecino de superficie más bajo, el tramo de en medio.
+  Recortes en bloques enteros (el vértice compacto usa shorts). Solo se fusionan caras con el mismo
+  recorte y un costado recortado no se estira a lo alto (más quads en terreno irregular: medir en
+  Pista B cuánto sube el conteo de vértices).
+- `GeometriaLod`: el costado recortado con franja (pasto) se parte en CPU: fila de arriba con la
+  textura del costado y el resto con la de abajo (`Cara.spriteAbajo`), nivel 0 en el vértice para
+  que el shader no busque el borde del vóxel.
+- Niveles grandes hasta 10 (vóxeles de 1024, teselas de 16 384 bloques: el límite de los shorts).
+  `RADIO_MAX` 8192 chunks.
+- `pixelesMaximos` (4 por defecto): tope del error de pantalla en `PlanCeldas.nivelPara`, que el
+  auto-ajuste no puede pasar (si falta rendimiento, recorta radio).
+- Horizonte por región (`TerrenoAproximado.nivelDeRegion`): chunk por chunk hasta 512 chunks; más
+  lejos un nodo entero por tarea, una columna por vóxel: nivel 5 hasta 1024 chunks, 6 hasta 4096,
+  7 más allá (decidido por el centro del nodo más grande que ya queda lejos: partición en árbol).
+  Claves: nivel 13 con el nivel real en la Y; marca en nivel 14 con Y 0x800|nivel.
+  `NivelesGrandes.desdeSecciones` usa `seccionAproximada` en chunks sin datos por sección, así los
+  niveles 5-10 existen en todo el radio. El planificador no baja de nivel 5 más allá de 512 chunks.
+- Verificado en Xvfb: sin errores, el log muestra nodos por región generándose (lento en llvmpipe:
+  ~1 nodo cada 3 s con la CPU compartida con el render por software).
+- Pendiente de Pista B: juzgar el relieve lejano con la superficie real (y si quedan placas finas
+  flotando donde un vóxel con poco relleno no tiene nada abajo), el costo en vértices, y cuánto
+  tarda en llenarse el horizonte de 8192 chunks en la PC real.
+- Transición gradual entre niveles (fundido con tramado al cambiar de nivel, sección 6): no
+  implementada todavía; es el siguiente paso para que el cambio de nivel no se note.

@@ -89,8 +89,15 @@ public final class GeometriaLod {
      * y si el color del vóxel (que ya trae el tinte del bioma) aplica a esta
      * cara. No aplica, por ejemplo, al costado de un bloque de pasto: la
      * tierra no se tiñe, así que ahí manda el promedio de su textura.
+     *
+     * {@code spriteAbajo} (0 = ninguno): en un costado con franja (pasto,
+     * nieve) la textura que va debajo de la fila de arriba, con su promedio.
      */
-    public record Cara(int sprite, int promedioRgb, boolean usaColorDelVoxel) {
+    public record Cara(int sprite, int promedioRgb, boolean usaColorDelVoxel, int spriteAbajo, int promedioAbajoRgb) {
+
+        public Cara(int sprite, int promedioRgb, boolean usaColorDelVoxel) {
+            this(sprite, promedioRgb, usaColorDelVoxel, 0, 0);
+        }
     }
 
     private float[] posiciones = new float[3 * 1024];
@@ -171,7 +178,9 @@ public final class GeometriaLod {
     public int agregarSeccion(SuperVoxel[] grid, int lado, float ox, float oy, float oz, float escala,
                               int carasOmitidas, GreedyMesher.Vecinos vecinos) {
         int agregados = 0;
-        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos, oclusionAmbiental)) {
+        // Superficie a la altura real dentro de los vóxeles grandes (recortes en bloques enteros).
+        int bloquesPorVoxel = escala >= 2 && escala == Math.round(escala) ? Math.round(escala) : 0;
+        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos, oclusionAmbiental, bloquesPorVoxel)) {
             if (omitida(q, lado, carasOmitidas)) {
                 continue;
             }
@@ -231,11 +240,54 @@ public final class GeometriaLod {
         int[] oclusion = {q.oclusionEn(false, false), q.oclusionEn(true, false),
                 q.oclusionEn(true, true), q.oclusionEn(false, true)};
         int[] orden = ordenEsquinas(antihorarioDirecto(q.eje(), q.positivo()), oclusion);
+        if (!q.recortado()) {
+            float[] sinAjuste = new float[4];
+            emitir(q, plano, us, vs, luces, oclusion, orden, sinAjuste, rgbBase, cara, sombra, ox, oy, oz, escala,
+                    nivelDeEscala(escala));
+            return true;
+        }
+        // Superficie a la altura real: la cara de arriba baja entera; en los costados el borde
+        // de arriba baja y el de abajo sube (el alto está en u para X y en v para Z).
+        float[] arriba = new float[4], abajo = new float[4];
+        boolean[] esArriba = new boolean[4];
+        for (int e = 0; e < 4; e++) {
+            esArriba[e] = switch (q.eje()) {
+                case Y -> true;
+                case X -> us[e] == u1;
+                case Z -> vs[e] == v1;
+            };
+        }
+        int alto = Math.round(escala) - q.recorteArriba() - q.recorteAbajo();
+        boolean franja = q.eje() != Quad.Eje.Y && cara != null && cara.spriteAbajo() != 0 && alto > 1;
+        if (!franja) {
+            for (int e = 0; e < 4; e++) {
+                arriba[e] = esArriba[e] ? -q.recorteArriba() : q.recorteAbajo();
+            }
+            // Nivel 0: el shader repite la textura por bloque sin buscar el borde del vóxel.
+            emitir(q, plano, us, vs, luces, oclusion, orden, arriba, rgbBase, cara, sombra, ox, oy, oz, escala, 0);
+            return true;
+        }
+        // Costado con franja (pasto, nieve): la fila de arriba con su textura y debajo la de abajo
+        // (tierra), como el corte del terreno; el shader no puede saber dónde quedó el borde.
+        for (int e = 0; e < 4; e++) {
+            arriba[e] = esArriba[e] ? -q.recorteArriba() : q.recorteAbajo() + alto - 1;
+            abajo[e] = esArriba[e] ? -q.recorteArriba() - 1 : q.recorteAbajo();
+        }
+        emitir(q, plano, us, vs, luces, oclusion, orden, arriba, rgbBase, cara, sombra, ox, oy, oz, escala, 0);
+        Cara caraAbajo = new Cara(cara.spriteAbajo(), cara.promedioAbajoRgb(), false);
+        emitir(q, plano, us, vs, luces, oclusion, orden, abajo, cara.promedioAbajoRgb(), caraAbajo, sombra,
+                ox, oy, oz, escala, 0);
+        return true;
+    }
+
+    /** Las 4 esquinas del quad en el orden dado, con un ajuste en Y (bloques) por esquina. */
+    private void emitir(Quad q, float plano, int[] us, int[] vs, int[] luces, int[] oclusion, int[] orden,
+                        float[] ajusteY, int rgbBase, Cara cara, float sombra, float ox, float oy, float oz,
+                        float escala, int nivelTextura) {
         for (int e : orden) {
             vertice(q, plano, us[e], vs[e], luces[e], BRILLO_OCLUSION[oclusion[e]], rgbBase, cara, sombra,
-                    ox, oy, oz, escala);
+                    ox, oy, oz, escala, ajusteY[e], nivelTextura);
         }
-        return true;
     }
 
     /**
@@ -262,7 +314,7 @@ public final class GeometriaLod {
     }
 
     private void vertice(Quad q, float plano, int u, int v, int luz, float brilloOclusion, int rgbBase, Cara cara,
-                         float sombra, float ox, float oy, float oz, float escala) {
+                         float sombra, float ox, float oy, float oz, float escala, float ajusteY, int nivelTextura) {
         Quad.Eje eje = q.eje();
         float x, y, z;
         switch (eje) {
@@ -273,7 +325,7 @@ public final class GeometriaLod {
         asegurarCapacidad();
         int i = vertices * 3;
         posiciones[i] = ox + x * escala;
-        posiciones[i + 1] = oy + y * escala;
+        posiciones[i + 1] = oy + y * escala + ajusteY;
         posiciones[i + 2] = oz + z * escala;
         colores[vertices] = color(rgbBase, sombra * brilloOclusion, luz);
         coloresBase[vertices] = color(rgbBase, brilloOclusion, 15);
@@ -281,7 +333,7 @@ public final class GeometriaLod {
         sprites[vertices] = cara == null ? 0 : cara.sprite();
         int indiceCara = eje.ordinal() * 2 + (q.positivo() ? 1 : 0);
         caras[vertices] = (byte) indiceCara;
-        niveles[vertices] = (byte) nivelDeEscala(escala);
+        niveles[vertices] = (byte) nivelTextura;
         float coordenadaPlano = posiciones[i + eje.ordinal()];
         verticesPorCara[indiceCara]++;
         planoMin[indiceCara] = Math.min(planoMin[indiceCara], coordenadaPlano);

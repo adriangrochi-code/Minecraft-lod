@@ -6,6 +6,26 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.20.0 — Relieve lejano a la altura real y horizonte de más de 2048 chunks
+- **Los vóxeles grandes siguen la forma del terreno:** cada vóxel guarda hasta
+  qué altura llega lo sólido adentro, y su superficie se dibuja ahí, no en el
+  borde del cubo. Un vóxel de 16 o de 256 bloques ya no es un escalón de su
+  tamaño: el relieve lejano queda a la altura real, bloque a bloque en
+  vertical, y el mar queda al nivel del mar.
+- **Vóxeles más grandes para lo muy lejano:** niveles hasta vóxeles de 1024
+  bloques, y el radio del LOD llega hasta **8192 chunks (~131 km)**.
+- **Píxeles máximos por vóxel** (Calidad LOD, 4 por defecto): el detalle se
+  elige por cuánto ocupa cada vóxel en pantalla; con este tope ninguno se ve
+  más grande, por lejos o grande que sea. El auto-ajuste no lo pasa: si falta
+  rendimiento, recorta el radio.
+- **Horizonte aproximado por región:** más allá de 512 chunks ya no se
+  aproxima chunk por chunk sino por zonas enteras (una columna por vóxel), con
+  zonas más grandes cuanto más lejos: el horizonte de decenas de km se llena
+  cientos de veces más rápido.
+- Arreglos: una costa o el borde de una meseta ya no desaparecen al pasar a un
+  nivel más grueso.
+- **Se regenera todo el LOD guardado** (cambió el formato de la altura).
+
 ## 0.19.0 — Terreno lejano más natural, nubes y curvatura
 - **Vóxeles grandes como terreno:** a lo lejos, el costado de los bloques de
   pasto (y nieve, micelio, podzol) ya no muestra una línea de pasto por cada

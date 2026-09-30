@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class RenderPuroTest {
 
     private static SuperVoxel solido(int luz) {
-        return new SuperVoxel((byte) 200, (byte) 100, (byte) 50, (byte) 0, SuperVoxel.Material.SOLIDO, (byte) 0)
+        return new SuperVoxel((byte) 200, (byte) 100, (byte) 50, (byte) SuperVoxel.LLENO, SuperVoxel.Material.SOLIDO, (byte) 0)
                 .conLuzHorneada(luz);
     }
 
@@ -120,7 +120,7 @@ class RenderPuroTest {
 
     @Test
     void lasCarasTexturizadasLlevanSuRectanguloYElColorQueCorresponde() {
-        SuperVoxel pasto = new SuperVoxel((byte) 80, (byte) 160, (byte) 40, (byte) 0,
+        SuperVoxel pasto = new SuperVoxel((byte) 80, (byte) 160, (byte) 40, (byte) SuperVoxel.LLENO,
                 SuperVoxel.Material.SOLIDO, (byte) 0, (short) 9).conLuzHorneada(15);
         GeometriaLod g = new GeometriaLod();
         // Arriba: textura teñida (usa el color del vóxel). Costados: tierra sin tinte.
@@ -150,7 +150,7 @@ class RenderPuroTest {
     void elFormatoDeBloqueEsElDeVanillaConNormalYLuzEnElLightmap() {
         assertEquals(net.minecraft.client.renderer.RenderType.solid().format().getVertexSize(), GeometriaLod.BYTES_BLOQUE,
                 "Mismo tamaño que DefaultVertexFormat.BLOCK");
-        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) 0,
+        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) SuperVoxel.LLENO,
                 SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(9);
         GeometriaLod g = new GeometriaLod();
         g.usarOclusionAmbiental(false);
@@ -181,7 +181,7 @@ class RenderPuroTest {
 
     @Test
     void elFormatoExtendidoDeIrisAgregaVeinteBytesDetrasDelDeVanilla() {
-        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) 0,
+        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) SuperVoxel.LLENO,
                 SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(9);
         GeometriaLod g = new GeometriaLod();
         g.agregarSeccion(new SuperVoxel[]{piedra}, 1, 32, -64, 48, 16);
@@ -200,7 +200,7 @@ class RenderPuroTest {
 
     @Test
     void elFormatoCompactoOcupaDoceBytesPorVerticeYConservaTodo() {
-        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) 0,
+        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) SuperVoxel.LLENO,
                 SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(15);
         GeometriaLod g = new GeometriaLod();
         g.usarTexturas((estado, eje, positivo) -> new GeometriaLod.Cara(40000, 0x646E78, true));
@@ -483,7 +483,7 @@ class RenderPuroTest {
 
     @Test
     void elFondoMarinoOscuroNoSeDescartaComoCueva() {
-        SuperVoxel agua = new SuperVoxel((byte) 40, (byte) 70, (byte) 200, (byte) 0, SuperVoxel.Material.AGUA, (byte) 0)
+        SuperVoxel agua = new SuperVoxel((byte) 40, (byte) 70, (byte) 200, (byte) SuperVoxel.LLENO, SuperVoxel.Material.AGUA, (byte) 0)
                 .conLuzHorneada(15);
         SuperVoxel[] g = new SuperVoxel[8];
         for (int x = 0; x < 2; x++) {
@@ -500,5 +500,40 @@ class RenderPuroTest {
             hayFondo |= geo.cara(i) == 3 && geo.y(i) == 1;
         }
         assertTrue(hayFondo, "El fondo a oscuras bajo el agua se dibuja igual");
+    }
+
+    @Test
+    void laSuperficieDeUnVoxelGrandeQuedaALaAlturaRealYElCostadoConFranjaSeParte() {
+        // Vóxel de 16 bloques lleno hasta la mitad: arriba en y = 8, costados de 0 a 8.
+        SuperVoxel pasto = solido(15).conEstado(9).conRelleno(128);
+        GeometriaLod g = new GeometriaLod();
+        g.usarTexturas((estado, eje, positivo) -> eje == com.example.minecraftlodmod.generation.Quad.Eje.Y
+                ? new GeometriaLod.Cara(3, 0x50A028, true)
+                : new GeometriaLod.Cara(5, 0x806040, false, 7, 0x866043));
+        g.agregarSeccion(new SuperVoxel[]{pasto}, 1, 0, 0, 0, 16);
+        assertEquals(8f, g.planoMin(3), "La cara de arriba bajó a la superficie");
+        assertEquals(8f, g.planoMax(3));
+        for (int i = 0; i < g.vertices(); i++) {
+            assertTrue(g.y(i) <= 8f, "Nada por encima de la superficie");
+        }
+        // Cada costado: franja (y 7..8, sprite 5) + resto (y 0..7, sprite de abajo 7), con nivel 0.
+        assertEquals(8, g.verticesDeCara(1));
+        int franja = 0, tierra = 0;
+        for (int i = 0; i < g.vertices(); i++) {
+            if (g.cara(i) != 1) {
+                continue;
+            }
+            assertEquals(0, g.nivel(i), "El shader no busca el borde del vóxel en un costado recortado");
+            if (g.sprite(i) == 5) {
+                franja++;
+                assertTrue(g.y(i) == 7f || g.y(i) == 8f);
+            } else {
+                tierra++;
+                assertEquals(7, g.sprite(i));
+                assertTrue(g.y(i) == 0f || g.y(i) == 7f);
+            }
+        }
+        assertEquals(4, franja);
+        assertEquals(4, tierra);
     }
 }

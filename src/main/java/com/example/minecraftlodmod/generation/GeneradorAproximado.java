@@ -99,6 +99,20 @@ public final class GeneradorAproximado {
     private final java.util.concurrent.atomic.AtomicInteger terminadas = new java.util.concurrent.atomic.AtomicInteger();
     private long ultimoLogNanos = System.nanoTime();
 
+    // Horizonte por región (más allá de TerrenoAproximado.CHUNKS_POR_REGION_DESDE): espiral de nodos de nivel 5.
+    static final int REGIONES_EN_VUELO = 2;
+    static final int REVISIONES_REGION_POR_TICK = 2048;
+    private EspiralChunks espiralRegion;
+    private boolean espiralRegionAgotada;
+    /** Radio pedido (chunks) con el que se armaron las espirales. */
+    private int radioRegion = -1;
+    /** Nodo que no entró en la cola llena: se reintenta primero. */
+    private int[] reintentoRegion;
+    private final Set<Long> regionesEnVuelo = ConcurrentHashMap.newKeySet();
+    private int tareasRegionEnVuelo;
+    private final java.util.concurrent.atomic.AtomicInteger regionesTerminadas = new java.util.concurrent.atomic.AtomicInteger();
+    private final AtomicLong regionesHechas = new AtomicLong();
+
     GeneradorAproximado(GeneradorLocal generador) {
         this.generador = generador;
     }
@@ -124,21 +138,28 @@ public final class GeneradorAproximado {
             return; // dimensión sin generador por ruido, o con techo (Nether)
         }
         int jx = jugador.chunkPosition().x, jz = jugador.chunkPosition().z;
-        if (espiral == null || espiral.radio() != radio
+        if (espiral == null || radioRegion != radio
                 || Math.max(Math.abs(jx - centroX), Math.abs(jz - centroZ)) > RECENTRAR_CHUNKS) {
             centroX = jx;
             centroZ = jz;
-            espiral = new EspiralChunks(radio);
+            // Chunk por chunk solo hasta donde empieza el horizonte por región.
+            espiral = new EspiralChunks(Math.min(radio, TerrenoAproximado.CHUNKS_POR_REGION_DESDE + 32));
             candidatos.clear();
             espiralAgotada = false;
             avisoCompleto = false;
+            espiralRegion = radio > TerrenoAproximado.CHUNKS_POR_REGION_DESDE
+                    ? new EspiralChunks(radio / NivelesGrandes.ladoEnSecciones(NivelesGrandes.NIVEL_MIN) + 2) : null;
+            espiralRegionAgotada = false;
+            radioRegion = radio;
         }
         registrarAvance();
         tareasEnVuelo = Math.max(0, tareasEnVuelo - terminadas.getAndSet(0));
+        tareasRegionEnVuelo = Math.max(0, tareasRegionEnVuelo - regionesTerminadas.getAndSet(0));
         if (servidor.getAverageTickTimeNanos() > MSPT_MAXIMO_NANOS) {
             return;
         }
         Contexto ctx = contexto;
+        lanzarRegiones(ctx, store, scheduler);
         int revisados = 0;
         while (candidatos.size() < VENTANA && revisados < REVISIONES_POR_TICK && !espiralAgotada) {
             if (!espiral.siguiente()) {
@@ -210,6 +231,125 @@ public final class GeneradorAproximado {
             lote.forEach(c -> candidatos.remove(c[0]));
             it = candidatos.iterator();
         }
+    }
+
+    /**
+     * Horizonte por región: recorre en espiral los nodos de nivel 5 y manda a
+     * aproximar el nodo (de nivel 5, 6 o 7, ver
+     * {@link TerrenoAproximado#nivelDeRegion}) que todavía no se hizo. Pocas
+     * tareas a la vez: cada una muestrea 256 columnas.
+     */
+    private void lanzarRegiones(Contexto ctx, RegionFileStore store, GenerationTaskScheduler scheduler) {
+        if (espiralRegion == null || espiralRegionAgotada) {
+            return;
+        }
+        int porNodo5 = NivelesGrandes.ladoEnSecciones(NivelesGrandes.NIVEL_MIN);
+        int centroNodoX = Math.floorDiv(centroX, porNodo5), centroNodoZ = Math.floorDiv(centroZ, porNodo5);
+        int revisados = 0;
+        while (tareasRegionEnVuelo < REGIONES_EN_VUELO && revisados < REVISIONES_REGION_POR_TICK) {
+            int[] r = reintentoRegion;
+            reintentoRegion = null;
+            if (r == null) {
+                if (!espiralRegion.siguiente()) {
+                    espiralRegionAgotada = true;
+                    LOG.info("LOD: horizonte aproximado por región recorrido ({} chunks de radio)", radioRegion);
+                    return;
+                }
+                revisados++;
+                r = TerrenoAproximado.nivelDeRegion(centroNodoX + espiralRegion.dx(),
+                        centroNodoZ + espiralRegion.dz(), centroX, centroZ);
+                if (r == null) {
+                    continue;
+                }
+            }
+            int nivel = r[0], nx = r[1], nz = r[2];
+            int lado = NivelesGrandes.ladoEnSecciones(nivel);
+            // Punto del nodo más cercano al jugador: fuera del radio no se genera.
+            double dx = Math.max(0, Math.max(nx * lado - centroX, centroX - (nx + 1) * lado));
+            double dz = Math.max(0, Math.max(nz * lado - centroZ, centroZ - (nz + 1) * lado));
+            if (Math.hypot(dx, dz) > radioRegion) {
+                continue;
+            }
+            long clave = ((long) nivel << 56) ^ ((long) (nx & 0xFFFFFFF) << 28) ^ (nz & 0xFFFFFFF);
+            RegionFileStore.ClaveRegion region = new RegionFileStore.ClaveRegion(ctx.dimension(),
+                    NivelesGrandes.regionDe(nivel, nx), NivelesGrandes.regionDe(nivel, nz));
+            if (regionesEnVuelo.contains(clave) || store.contiene(region, TerrenoAproximado.claveMarcaGrande(nivel, nx, nz))) {
+                continue;
+            }
+            regionesEnVuelo.add(clave);
+            tareasRegionEnVuelo++;
+            var tarea = scheduler.intentarEnviar(() -> {
+                try {
+                    long inicio = System.nanoTime();
+                    generarGrande(ctx, store, region, nivel, nx, nz);
+                    nanosCalculo.addAndGet(System.nanoTime() - inicio);
+                    regionesHechas.incrementAndGet();
+                    // Los nodos de nivel 5 que cubre se rearman (y con ellos los niveles de arriba).
+                    int n5 = 1 << (nivel - NivelesGrandes.NIVEL_MIN);
+                    for (int i = 0; i < n5; i++) {
+                        for (int j = 0; j < n5; j++) {
+                            generador.chunkAproximadoListo(ctx.dimension(), ctx.minSeccion(), ctx.maxSeccion(),
+                                    nx * lado + i * porNodo5, nz * lado + j * porNodo5);
+                        }
+                    }
+                } catch (RuntimeException e) {
+                    LOG.warn("LOD: no se pudo aproximar el nodo de nivel {} ({}, {})", nivel, nx, nz, e);
+                } finally {
+                    regionesEnVuelo.remove(clave);
+                    regionesTerminadas.incrementAndGet();
+                }
+                return null;
+            });
+            if (tarea == null) {
+                regionesEnVuelo.remove(clave);
+                tareasRegionEnVuelo--;
+                reintentoRegion = r; // cola llena: el mismo nodo en el próximo tick
+                return;
+            }
+        }
+    }
+
+    /**
+     * Hilo del pool: un nodo grande aproximado entero, una columna por vóxel
+     * (16×16), guardado por bandas verticales con su marca.
+     */
+    private static void generarGrande(Contexto ctx, RegionFileStore store, RegionFileStore.ClaveRegion region,
+                                      int nivel, int nodoX, int nodoZ) {
+        int lado = NivelesGrandes.ladoEnBloques(nivel), tamano = 1 << nivel;
+        int n = TerrenoAproximado.COLUMNAS_GRANDE;
+        TerrenoAproximado.Columna[] columnas = new TerrenoAproximado.Columna[n * n];
+        Holder<Biome> biomaAgua = null;
+        int pista = Integer.MIN_VALUE;
+        for (int x = 0; x < n; x++) {
+            for (int zi = 0; zi < n; zi++) {
+                int z = (x & 1) == 0 ? zi : n - 1 - zi; // en zigzag: la pista es siempre la columna vecina
+                int bx = nodoX * lado + x * tamano + tamano / 2, bz = nodoZ * lado + z * tamano + tamano / 2;
+                int altura = altura(ctx, bx, bz, pista);
+                pista = altura;
+                Holder<Biome> bioma = ctx.biomas().getNoiseBiome(QuartPos.fromBlock(bx),
+                        QuartPos.fromBlock(Math.max(altura, ctx.nivelMar())), QuartPos.fromBlock(bz), ctx.clima());
+                if (biomaAgua == null) {
+                    biomaAgua = bioma;
+                }
+                Superficie s = superficie(bioma, altura, ctx.nivelMar(), new BlockPos(bx, altura, bz));
+                columnas[x * n + z] = new TerrenoAproximado.Columna(altura + s.elevacion(),
+                        voxel(s.estado(), bioma.value(), bx, bz, 15),
+                        voxel(s.subsuelo(), bioma.value(), bx, bz, 0));
+            }
+        }
+        SuperVoxel agua = voxel(Blocks.WATER.defaultBlockState(), biomaAgua.value(),
+                nodoX * lado + lado / 2, nodoZ * lado + lado / 2, 15);
+        int porNodo = NivelesGrandes.ladoEnSecciones(nivel);
+        for (int ny = Math.floorDiv(ctx.minSeccion(), porNodo); ny <= Math.floorDiv(ctx.maxSeccion() - 1, porNodo); ny++) {
+            SuperVoxel[] grilla = TerrenoAproximado.grillaGrande(nivel, ny, columnas, agua, ctx.nivelMar());
+            if (grilla == null) {
+                continue;
+            }
+            OctreeNode nodo = OctreeNode.mixto(nivel, nodoX * lado, ny * lado, nodoZ * lado, lado, grilla);
+            store.guardar(region, TerrenoAproximado.claveGrande(nivel, nodoX, ny, nodoZ),
+                    OctreeNodeCodec.serializar(nodo, GeneradorLocal.VOXELES_GRANDE));
+        }
+        store.guardar(region, TerrenoAproximado.claveMarcaGrande(nivel, nodoX, nodoZ), MARCA);
     }
 
     /** Chunk con LOD real o aproximado: no hace falta aproximarlo. */
@@ -403,6 +543,12 @@ public final class GeneradorAproximado {
         enVuelo.clear();
         tareasEnVuelo = 0;
         terminadas.set(0);
+        espiralRegion = null;
+        reintentoRegion = null;
+        radioRegion = -1;
+        regionesEnVuelo.clear();
+        tareasRegionEnVuelo = 0;
+        regionesTerminadas.set(0);
     }
 
     private void registrarAvance() {
@@ -410,12 +556,14 @@ public final class GeneradorAproximado {
         if (ahora - ultimoLogNanos < PERIODO_LOG_NANOS || espiral == null) {
             return;
         }
-        long n = hechos.getAndSet(0), nanos = nanosCalculo.getAndSet(0);
-        if (n > 0) {
-            LOG.info("LOD horizonte aproximado: anillo {} de {}, {} chunks ({} /s, {} ms/chunk en el pool)",
+        long n = hechos.getAndSet(0), nanos = nanosCalculo.getAndSet(0), regiones = regionesHechas.getAndSet(0);
+        if (n > 0 || regiones > 0) {
+            LOG.info("LOD horizonte aproximado: anillo {} de {}, {} chunks ({} /s), {} nodos por región "
+                            + "(anillo {} de {}), {} ms de cálculo en el pool",
                     espiral.anillo(), espiral.radio(), n,
-                    String.format("%.0f", n / ((ahora - ultimoLogNanos) / 1e9)),
-                    String.format("%.2f", nanos / 1e6 / n));
+                    String.format("%.0f", n / ((ahora - ultimoLogNanos) / 1e9)), regiones,
+                    espiralRegion == null ? 0 : espiralRegion.anillo(), espiralRegion == null ? 0 : espiralRegion.radio(),
+                    nanos / 1_000_000);
         }
         ultimoLogNanos = ahora;
     }

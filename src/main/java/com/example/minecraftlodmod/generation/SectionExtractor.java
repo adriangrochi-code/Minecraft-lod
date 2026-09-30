@@ -32,9 +32,10 @@ import java.util.List;
  * 4. SECCIÓN VACÍA/HOMOGÉNEA — detectadas sin asumir qué bloque es (piedra
  *    vanilla o el "stone replacement" de un mod de worldgen).
  *
- * Convención de {@code alturaLocal} en el nivel 0: la Y del bloque dentro de
- * la sección (0-15), así el promedio de {@link HierarchicalReducer} en los
- * niveles superiores da la altura media de lo que representa.
+ * Convención de {@code alturaLocal} ({@link SuperVoxel#relleno()}): en el
+ * nivel 0 todo bloque visible está lleno ({@link SuperVoxel#LLENO}); en los
+ * niveles reducidos {@link HierarchicalReducer} calcula a qué altura llega
+ * lo sólido dentro de cada vóxel.
  */
 public final class SectionExtractor {
 
@@ -56,7 +57,7 @@ public final class SectionExtractor {
         /** true si toda la sección es un único estado de bloque — idealmente sin recorrer los 4096. */
         boolean homogenea();
 
-        /** Supervóxel de nivel 0 del bloque en (x, y, z), con {@code alturaLocal} = y. */
+        /** Supervóxel de nivel 0 del bloque en (x, y, z), lleno si es visible. */
         SuperVoxel voxel(int x, int y, int z);
     }
 
@@ -89,7 +90,7 @@ public final class SectionExtractor {
             for (int x = 0; x < LADO; x++) {
                 for (int y = 0; y < LADO; y++) {
                     for (int z = 0; z < LADO; z++) {
-                        voxeles[indice(x, y, z, LADO)] = conAltura(unico, y);
+                        voxeles[indice(x, y, z, LADO)] = unico.conRelleno(SuperVoxel.LLENO);
                     }
                 }
             }
@@ -138,8 +139,8 @@ public final class SectionExtractor {
                     && (seccion.homogeneaEnOrigen() || todosIguales(actual));
             if (colapsar) {
                 SuperVoxel unico = actual[0];
-                // Una sección llena de un solo bloque tiene su superficie arriba de todo.
-                byte altura = seccion.homogeneaEnOrigen() ? (byte) (LADO - 1) : unico.alturaLocal();
+                // Una sección llena de un solo bloque está llena hasta arriba.
+                byte altura = seccion.homogeneaEnOrigen() ? (byte) SuperVoxel.LLENO : unico.alturaLocal();
                 SuperVoxel marcado = new SuperVoxel(unico.r(), unico.g(), unico.b(), altura,
                         unico.material(), (byte) (unico.flags() | 0b0000_0001), unico.estado());
                 niveles.add(OctreeNode.homogeneo(nivel, ox, oy, oz, LADO, marcado));
@@ -174,10 +175,6 @@ public final class SectionExtractor {
         int localX = Math.floorMod(seccionX, LADO_REGION);
         int localZ = Math.floorMod(seccionZ, LADO_REGION);
         return ((long) nivel << 22) | ((long) (seccionY & 0xFFF) << 10) | ((long) localX << 5) | localZ;
-    }
-
-    private static SuperVoxel conAltura(SuperVoxel v, int y) {
-        return new SuperVoxel(v.r(), v.g(), v.b(), (byte) y, v.material(), v.flags(), v.estado());
     }
 
     private static boolean todosIguales(SuperVoxel[] voxeles) {

@@ -192,7 +192,10 @@ public final class PlanCeldas {
         }
         boolean lejosDeVanilla = masCerca > distanciaVanilla * 16.0;
         double fovTesela = fovPara(vista, fov, camX, camZ, minX, minZ, lado);
-        if (lejosDeVanilla && nivelPara(masCerca, fovTesela, alto, umbral, NivelesGrandes.NIVEL_MAX) >= nivel) {
+        // Lejos del todo, el horizonte aproximado por región solo tiene niveles grandes: no se baja de ahí.
+        boolean soloGrandes = masCerca > distanciaSoloGrandes && nivel == NivelesGrandes.NIVEL_MIN;
+        if (lejosDeVanilla && (soloGrandes
+                || nivelPara(masCerca, fovTesela, alto, umbral, NivelesGrandes.NIVEL_MAX) >= nivel)) {
             plan.add(new Celda(tx, tz, nivel, 0, true));
         } else if (nivel > NIVEL_TESELA_MIN) {
             for (int hx = 0; hx < 2; hx++) {
@@ -260,6 +263,27 @@ public final class PlanCeldas {
         return nivelPara(distancia, fovRadianes, alturaPantallaPx, umbralPx, NIVEL_MAXIMO);
     }
 
+    /**
+     * Tamaño máximo en pantalla de un vóxel, en píxeles, por más que el
+     * umbral (preset × distancia × auto-ajuste) pida menos detalle: el nivel
+     * se elige por cuánto ocupa en pantalla, así que un vóxel de 1024 bloques
+     * a 100 km se ve igual de chico que uno de 8 a 800 bloques. Infinito =
+     * sin tope (tests).
+     */
+    private static volatile double techoPixeles = Double.POSITIVE_INFINITY;
+    /** Distancia (bloques) desde la que solo hay teselas de nivel ≥ {@link NivelesGrandes#NIVEL_MIN}. */
+    private static volatile double distanciaSoloGrandes = Double.POSITIVE_INFINITY;
+
+    /**
+     * @param techoPx         ver {@link #techoPixeles}
+     * @param soloGrandesDesde bloques: más lejos, el horizonte aproximado por
+     *                         región no tiene niveles por sección y no se los pide
+     */
+    public static void configurar(double techoPx, double soloGrandesDesde) {
+        techoPixeles = techoPx > 0 ? techoPx : Double.POSITIVE_INFINITY;
+        distanciaSoloGrandes = soloGrandesDesde > 0 ? soloGrandesDesde : Double.POSITIVE_INFINITY;
+    }
+
     /** Umbral cerca del jugador (fracción del configurado): más detalle donde un salto de nivel se nota. */
     static final double FACTOR_UMBRAL_CERCA = 0.6;
     /** Umbral en el horizonte lejano: menos detalle donde casi no se distingue. */
@@ -282,7 +306,7 @@ public final class PlanCeldas {
     /** Como {@link #nivelPara(double, double, double, double)}, hasta {@code nivelMaximo}. */
     public static int nivelPara(double distancia, double fovRadianes, double alturaPantallaPx, double umbralPx,
                                 int nivelMaximo) {
-        double umbral = umbralPx * factorUmbral(distancia);
+        double umbral = Math.min(umbralPx * factorUmbral(distancia), techoPixeles);
         for (int nivel = nivelMaximo; nivel > 0; nivel--) {
             double tamanoVoxel = 1 << nivel;
             if (LodSelector.errorDePantalla(tamanoVoxel, distancia, fovRadianes, alturaPantallaPx) <= umbral) {

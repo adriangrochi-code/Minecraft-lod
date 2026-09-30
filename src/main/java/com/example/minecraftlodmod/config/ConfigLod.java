@@ -56,6 +56,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue curvatura;
         public final ModConfigSpec.IntValue radioCurvaturaKm;
         public final ModConfigSpec.BooleanValue horizonteReal;
+        public final ModConfigSpec.DoubleValue pixelesMaximos;
 
         Cliente(ModConfigSpec.Builder b) {
             ParametrosCalidad medio = ParametrosCalidad.de(QualityPreset.MEDIO);
@@ -106,6 +107,10 @@ public final class ConfigLod {
             horizonteReal = b.comment("Con curvatura: el radio del LOD sale de la altura de los ojos y el radio del planeta",
                             "(hasta dónde se vería el horizonte de verdad) en vez del radio del preset. Tope: " + ParametrosCalidad.RADIO_MAX + " chunks.")
                     .define("horizonteReal", false);
+            pixelesMaximos = b.comment("Tamaño máximo en pantalla de un vóxel del LOD, en píxeles. El nivel de detalle se elige",
+                            "por cuánto ocupa en pantalla: con este tope, ni el preset ni el auto-ajuste dejan que un vóxel",
+                            "se vea más grande que esto, por lejos o grande que sea. Más bajo = más nítido y más caro.")
+                    .defineInRange("pixelesMaximos", 4.0, 1.0, 16.0);
 
             b.comment("Depuración y funciones experimentales.").push("experimental");
             escalado = b.comment("EXPERIMENTAL: dibujar el mundo a menor resolución y llevarlo a la pantalla con un",

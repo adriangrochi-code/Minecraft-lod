@@ -768,3 +768,31 @@ el shader no es nuestro (colores planos, VulkanMod, shaderpacks).
 más una colina de 32 bloques detrás), con tope `RADIO_MAX`; el auto-ajuste lo
 recorta en la misma proporción que al radio del preset, y la generación
 aproximada genera hasta ahí (`GeneradorLocal.radioHorizonteCliente`).
+
+## 30. Superficie a la altura real, niveles hasta 10 y horizonte por región — 2026-09-30
+
+Pedido: pasar de 2048 chunks, vóxeles "más suaves según la forma" en vez de
+cubos de 2/4/8/16, vóxeles de 16 recién lejos, niveles más grandes para lo
+muy lejano, y detalle por píxeles en pantalla.
+
+**Por qué no tamaños que no sean potencia de 2:** el octree (sección 2) anida
+cada nivel en el anterior y la sección de 16 bloques solo se divide en
+potencias de 2; tamaños intermedios romperían el formato de disco y red
+(sección 5) y la derivación jerárquica. En cambio:
+
+- **Relleno por vóxel** (`SuperVoxel.relleno`, el byte `alturaLocal`): qué
+  parte del alto del vóxel está llena. El mesher dibuja la superficie a esa
+  altura (recortes en bloques enteros) y los costados hasta ahí. Así la
+  forma vertical queda a resolución de bloque en todos los niveles y el
+  tamaño del vóxel solo se nota a lo ancho, donde el tope de píxeles lo
+  acota. Es lo que hace "según la forma" la transición entre niveles.
+- **Detalle por píxeles** (ya existía, sección 3): ahora con un tope duro
+  (`pixelesMaximos`) que ni el preset ni el auto-ajuste pasan. Los vóxeles de
+  16 solo aparecen donde ocupan menos que eso.
+- **Niveles 9 y 10** (vóxeles de 512 y 1024; la tesela de nivel 10 mide
+  16 384 bloques, el máximo que entra en los shorts del vértice compacto).
+- **Radio 8192** con el horizonte aproximado por región (nodo entero de nivel
+  5/6/7 por tarea), porque chunk por chunk serían ~200 millones de chunks.
+
+Pendiente: fundido con tramado entre niveles (sección 6) para que el cambio de
+nivel tampoco se note en el tiempo.

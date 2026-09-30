@@ -22,7 +22,16 @@ public record Quad(
          * 3 = sin oclusión), en el orden (u0,v0) (u1,v0) (u0,v1) (u1,v1) de la
          * descomposición de GreedyMesher; ver {@link #oclusionEn}.
          */
-        int oclusion
+        int oclusion,
+        /*
+         * Superficie a la altura real (ver SuperVoxel#relleno), en BLOQUES:
+         * cuánto baja el borde de arriba del quad y cuánto sube el de abajo.
+         * Arriba: la cara +Y de un vóxel de superficie a medio llenar. Costados:
+         * el tramo que queda a la vista sobre el vecino más bajo. Un quad
+         * recortado ocupa un solo vóxel de alto.
+         */
+        int recorteArriba,
+        int recorteAbajo
 ) {
     public enum Eje {X, Y, Z}
 
@@ -38,6 +47,16 @@ public record Quad(
     public Quad(int x, int y, int z, int ancho, int alto, Eje eje, boolean positivo,
                 SuperVoxel voxelRepresentativo) {
         this(x, y, z, ancho, alto, eje, positivo, voxelRepresentativo, SIN_OCLUSION);
+    }
+
+    public Quad(int x, int y, int z, int ancho, int alto, Eje eje, boolean positivo,
+                SuperVoxel voxelRepresentativo, int oclusion) {
+        this(x, y, z, ancho, alto, eje, positivo, voxelRepresentativo, oclusion, 0, 0);
+    }
+
+    /** true si la superficie a la altura real movió algún borde del quad. */
+    public boolean recortado() {
+        return recorteArriba != 0 || recorteAbajo != 0;
     }
 
     /**

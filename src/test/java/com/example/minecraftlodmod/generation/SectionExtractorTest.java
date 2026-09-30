@@ -68,9 +68,9 @@ class SectionExtractorTest {
         assertTrue(s.homogeneaEnOrigen());
         assertEquals(1, lector.lecturas.get(), "Una sección homogénea no debería recorrer los 4096 bloques");
         assertEquals(16 * 16 * 16, s.voxeles().length);
-        // La altura local sigue la Y de cada bloque aunque el color sea único.
-        assertEquals(0, s.voxeles()[0].alturaLocal());
-        assertEquals(15, s.voxeles()[15 * 16].alturaLocal(), "índice (x*16+y)*16+z con y=15");
+        // Todo bloque visible del nivel 0 está lleno (relleno = superficie en el borde de arriba).
+        assertEquals(SuperVoxel.LLENO, s.voxeles()[0].relleno());
+        assertEquals(SuperVoxel.LLENO, s.voxeles()[15 * 16].relleno());
     }
 
     @Test
@@ -83,7 +83,7 @@ class SectionExtractorTest {
         assertFalse(niveles.get(1).esHomogeneo());
         assertTrue(niveles.get(2).esHomogeneo());
         assertTrue(niveles.get(2).voxelHomogeneo().esHomogeneo(), "El supervóxel colapsado lleva el flag");
-        assertEquals(15, niveles.get(2).voxelHomogeneo().alturaLocal(), "Sección llena: superficie arriba");
+        assertEquals(SuperVoxel.LLENO, niveles.get(2).voxelHomogeneo().relleno(), "Sección llena: llena hasta arriba");
     }
 
     @Test

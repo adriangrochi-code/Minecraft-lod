@@ -32,7 +32,8 @@ public record ParametrosCalidad(
         }
     }
 
-    public static final int RADIO_MIN = 0, RADIO_MAX = 2048;
+    /** Hasta 8192 chunks (~131 km): lo lejano va en teselas de nivel 10 y se aproxima por región. */
+    public static final int RADIO_MIN = 0, RADIO_MAX = 8192;
     public static final double UMBRAL_MIN = 0.25, UMBRAL_MAX = 32.0;
     public static final int HILOS_MIN = 1, HILOS_MAX = 32;
     public static final int CACHE_MIN_MB = 32, CACHE_MAX_MB = 16384;

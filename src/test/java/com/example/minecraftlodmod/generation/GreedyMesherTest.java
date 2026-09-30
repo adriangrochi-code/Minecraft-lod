@@ -208,4 +208,61 @@ class GreedyMesherTest {
             }
         }
     }
+
+    // ------------------------------------------------------------------ superficie a la altura real
+
+    private static SuperVoxel conRelleno(int relleno) {
+        return solido().conRelleno(relleno);
+    }
+
+    private static Quad cara(List<Quad> quads, Quad.Eje eje, boolean positivo) {
+        return quads.stream().filter(q -> q.eje() == eje && q.positivo() == positivo).findFirst().orElse(null);
+    }
+
+    @Test
+    void sinTamanoDeVoxelNoHayRecortes() {
+        List<Quad> quads = GreedyMesher.mallar(new SuperVoxel[]{conRelleno(128)}, 1, null, false, 0);
+        assertEquals(6, quads.size());
+        assertTrue(quads.stream().noneMatch(Quad::recortado), "Cubos enteros, como antes");
+    }
+
+    @Test
+    void laCaraDeArribaBajaALaAlturaDelRelleno() {
+        // Vóxel de 16 bloques lleno hasta la mitad (128/255 → 8 bloques).
+        List<Quad> quads = GreedyMesher.mallar(new SuperVoxel[]{conRelleno(128)}, 1, null, false, 16);
+        assertEquals(8, cara(quads, Quad.Eje.Y, true).recorteArriba());
+        assertEquals(0, cara(quads, Quad.Eje.Y, false).recorteArriba(), "La de abajo queda en el piso del vóxel");
+        assertEquals(8, cara(quads, Quad.Eje.X, true).recorteArriba(), "Los costados llegan hasta la superficie");
+        assertEquals(0, cara(quads, Quad.Eje.X, true).recorteAbajo());
+    }
+
+    @Test
+    void unVoxelLlenoConOtroEncimaNoSeRecorta() {
+        // Columna de 2: el de abajo tiene sólido encima (no es superficie) aunque su relleno diga otra cosa.
+        SuperVoxel[] grid = new SuperVoxel[8];
+        java.util.Arrays.fill(grid, aire());
+        grid[0] = conRelleno(40);  // (0,0,0)
+        grid[2] = conRelleno(128); // (0,1,0): índice (x*2+y)*2+z
+        List<Quad> columna = GreedyMesher.mallar(grid, 2, null, false, 16);
+        Quad abajoMenosX = columna.stream().filter(q -> q.eje() == Quad.Eje.X && !q.positivo() && q.y() == 0)
+                .findFirst().orElseThrow();
+        assertEquals(0, abajoMenosX.recorteArriba(), "Con sólido encima llega hasta el borde del vóxel");
+        assertEquals(1, abajoMenosX.alto(), "El costado recortado de arriba no se fusiona con el de abajo");
+    }
+
+    @Test
+    void contraUnVecinoMasBajoQuedaALaVistaElTramoDeEnMedio() {
+        // lado 2, fila y = 0: A en x = 0 lleno (16 bloques), B en x = 1 con 4 bloques; arriba aire.
+        SuperVoxel[] grid = new SuperVoxel[8];
+        java.util.Arrays.fill(grid, aire());
+        grid[0] = conRelleno(255);           // (0,0,0)
+        grid[4] = conRelleno(64);            // (1,0,0): 64/255·16 = 4 bloques
+        List<Quad> quads = GreedyMesher.mallar(grid, 2, null, false, 16);
+        Quad tramo = quads.stream().filter(q -> q.eje() == Quad.Eje.X && q.positivo() && q.x() == 0)
+                .findFirst().orElseThrow(() -> new AssertionError("Falta el costado de A sobre B"));
+        assertEquals(0, tramo.recorteArriba());
+        assertEquals(4, tramo.recorteAbajo(), "Arranca donde termina B");
+        assertTrue(quads.stream().noneMatch(q -> q.eje() == Quad.Eje.X && !q.positivo() && q.x() == 1),
+                "B no muestra costado contra A, que es más alto");
+    }
 }

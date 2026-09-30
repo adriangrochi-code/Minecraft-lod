@@ -601,6 +601,8 @@ public final class RenderLod {
         double aspecto = (double) mc.getWindow().getWidth() / Math.max(1, mc.getWindow().getHeight());
         double mediaApertura = Math.atan(Math.tan(Math.toRadians(fovGrados) / 2) * aspecto) + MARGEN_ZOOM;
         PlanCeldas.Vista vista = new PlanCeldas.Vista(miraX, miraZ, Math.toRadians(fovNormal), mediaApertura);
+        PlanCeldas.configurar(ConfigLod.CLIENTE.pixelesMaximos.get(),
+                TerrenoAproximado.CHUNKS_POR_REGION_DESDE * 16.0);
         List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, radioChunks,
                 distanciaVanilla, cubiertos::contains, vista, Math.toRadians(fovGrados), mc.getWindow().getHeight(),
                 umbralPx);

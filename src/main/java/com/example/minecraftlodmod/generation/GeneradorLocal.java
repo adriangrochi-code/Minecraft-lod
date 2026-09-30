@@ -70,7 +70,7 @@ public final class GeneradorLocal {
      * Versión del algoritmo de extracción/reducción, mezclada en el
      * {@code hashFuente} del cache: subirla invalida todo lo generado antes.
      */
-    public static final long VERSION_ALGORITMO = 10;
+    public static final long VERSION_ALGORITMO = 11;
 
     /** Nivel reservado en {@link SectionExtractor#claveNodo} para marcar "este chunk ya se generó". */
     private static final int NIVEL_MARCA_CHUNK = 15;
@@ -392,8 +392,53 @@ public final class GeneradorLocal {
         }
     }
 
-    /** {@link NivelesGrandes.Acceso} sobre el cache de disco de una dimensión. */
-    private record AccesoStore(RegionFileStore store, byte dimension) implements NivelesGrandes.Acceso {
+    /**
+     * {@link NivelesGrandes.Acceso} sobre el cache de disco de una dimensión.
+     * Guarda las grillas del horizonte por región ya leídas: un nodo de nivel
+     * 5 consulta miles de secciones que caen en la misma grilla.
+     */
+    private record NodoAproximado(int nivel, int x, int y, int z) {
+    }
+
+    private record AccesoStore(RegionFileStore store, byte dimension, Map<NodoAproximado, SuperVoxel[]> aproximadas)
+            implements NivelesGrandes.Acceso {
+
+        AccesoStore(RegionFileStore store, byte dimension) {
+            this(store, dimension, new HashMap<>());
+        }
+
+        /** Grilla vacía: la zona se aproximó y esa banda quedó toda de aire. */
+        private static final SuperVoxel[] SIN_GRILLA = new SuperVoxel[0];
+
+        @Override
+        public boolean chunkConDatos(int chunkX, int chunkZ) {
+            return GeneradorAproximado.tieneLod(store, dimension, chunkX, chunkZ);
+        }
+
+        @Override
+        public SuperVoxel seccionAproximada(int seccionX, int seccionY, int seccionZ) {
+            for (int nivel = TerrenoAproximado.NIVEL_REGION_MIN; nivel <= TerrenoAproximado.NIVEL_REGION_MAX; nivel++) {
+                int porNodo = NivelesGrandes.ladoEnSecciones(nivel);
+                int nx = Math.floorDiv(seccionX, porNodo), nz = Math.floorDiv(seccionZ, porNodo);
+                int ny = Math.floorDiv(seccionY, porNodo);
+                NodoAproximado clave = new NodoAproximado(nivel, nx, ny, nz);
+                SuperVoxel[] grilla = aproximadas.get(clave);
+                if (grilla == null) {
+                    RegionFileStore.ClaveRegion region = new RegionFileStore.ClaveRegion(dimension,
+                            NivelesGrandes.regionDe(nivel, nx), NivelesGrandes.regionDe(nivel, nz));
+                    if (!store.contiene(region, TerrenoAproximado.claveMarcaGrande(nivel, nx, nz))) {
+                        continue;
+                    }
+                    byte[] bytes = store.leer(region, TerrenoAproximado.claveGrande(nivel, nx, ny, nz));
+                    grilla = bytes == null ? SIN_GRILLA
+                            : OctreeNodeCodec.deserializar(bytes, 0, VOXELES_GRANDE).voxeles();
+                    aproximadas.put(clave, grilla);
+                }
+                return grilla == SIN_GRILLA ? null
+                        : TerrenoAproximado.seccionDe(grilla, nivel, seccionX, seccionY, seccionZ);
+            }
+            return null;
+        }
         @Override
         public SuperVoxel[] seccion(int nivel, int seccionX, int seccionY, int seccionZ) {
             RegionFileStore.ClaveRegion region = claveRegion(dimension, seccionX, seccionZ);

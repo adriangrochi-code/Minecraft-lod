@@ -90,6 +90,39 @@ class HierarchicalReducerTest {
         assertEquals(SuperVoxel.Material.AIRE, HierarchicalReducer.reducir(entrada, 2)[0].material());
     }
 
+    private static SuperVoxel lleno() {
+        return voxel(10, SuperVoxel.Material.SOLIDO).conRelleno(SuperVoxel.LLENO);
+    }
+
+    @Test
+    void elRellenoEsLaAlturaMediaDeLoSolido() {
+        SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        java.util.Arrays.fill(entrada, aire);
+        // Fila de abajo llena (y = 0 en los índices (x*2+y)*2+z: 0, 1, 4, 5), arriba aire.
+        for (int i : new int[]{0, 1, 4, 5}) {
+            entrada[i] = lleno();
+        }
+        assertEquals(128, HierarchicalReducer.reducir(entrada, 2)[0].relleno(), "Lleno hasta la mitad");
+        // Una columna con el hijo de arriba a medio llenar: (1 + 0,5) en vez de 1.
+        entrada[2] = lleno().conRelleno(128);
+        assertEquals(Math.round((1 + 1 + 1 + 1 + 128 / 255.0) / 4 / 2 * 255),
+                HierarchicalReducer.reducir(entrada, 2)[0].relleno());
+    }
+
+    @Test
+    void tresColumnasLlenasHastaLaMitadYaNoSePierden() {
+        SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        java.util.Arrays.fill(entrada, aire);
+        for (int i : new int[]{0, 1, 4}) {
+            entrada[i] = lleno();
+        }
+        SuperVoxel r = HierarchicalReducer.reducir(entrada, 2)[0];
+        assertEquals(SuperVoxel.Material.SOLIDO, r.material(), "Borde de una meseta: 3 de 4 columnas");
+        assertEquals(96, r.relleno(), "Tres cuartos de medio alto");
+    }
+
     @Test
     void laSuperficieDecideColorYEstadoAunqueAbajoHayaMasVolumen() {
         SuperVoxel pasto = new SuperVoxel((byte) 90, (byte) 160, (byte) 60, (byte) 1,

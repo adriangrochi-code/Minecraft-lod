@@ -10,6 +10,11 @@ package com.example.minecraftlodmod.core;
  * en el pipeline de generation/ y no se mutan después — cualquier cambio
  * (por ejemplo al recalcular un nivel LOD, o al hornear la luz) crea uno nuevo.
  *
+ * {@code alturaLocal} es el RELLENO del vóxel (ver {@link #relleno()}): qué
+ * fracción de su alto ocupa lo sólido, medida desde abajo y promediada entre
+ * sus columnas. Con eso la superficie de un vóxel grande se dibuja a la
+ * altura real del terreno y no en el borde del cubo.
+ *
  * Uso de {@code flags}: bit 0 = colapsado por homogeneidad, bit 1 = nevado
  * (ver {@link #nevado()}), bits 4-7 = luz horneada (0-15, ver
  * {@link #luzHorneada()}). Los bits 2-3 quedan libres para futuros flags
@@ -24,6 +29,9 @@ public record SuperVoxel(
 ) {
 
     public static final int BYTES = 8;
+
+    /** Relleno de un vóxel lleno (todo bloque visible del nivel 0). */
+    public static final int LLENO = 255;
 
     /** Sin estado de bloque conocido: se dibuja con color plano. */
     public static final short SIN_ESTADO = 0;
@@ -43,6 +51,21 @@ public record SuperVoxel(
      */
     public int idEstado() {
         return estado & 0xFFFF;
+    }
+
+    /**
+     * Cuánto del alto del vóxel ocupa lo sólido, de 0 a {@link #LLENO}: la
+     * superficie de un vóxel con aire arriba está a {@code relleno/255} de su
+     * alto. Es el promedio entre sus columnas, así una ladera queda a media
+     * altura en vez de un escalón del tamaño del vóxel.
+     */
+    public int relleno() {
+        return alturaLocal & 0xFF;
+    }
+
+    /** Copia con el relleno indicado (0-{@link #LLENO}). */
+    public SuperVoxel conRelleno(int relleno) {
+        return new SuperVoxel(r, g, b, (byte) Math.max(0, Math.min(LLENO, relleno)), material, flags, estado);
     }
 
     /** Copia con el estado de bloque indicado (0-65535; fuera de rango queda sin estado). */

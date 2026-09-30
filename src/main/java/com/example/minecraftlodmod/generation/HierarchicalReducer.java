@@ -10,11 +10,16 @@ import com.example.minecraftlodmod.core.SuperVoxel;
  *
  * Fusiona bloques de 2x2x2 supervóxeles del nivel de entrada en 1
  * supervóxel del nivel de salida:
- *  - es AIRE solo si más de la mitad del bloque es aire; con 4 o más
- *    vóxeles visibles queda visible, así las superficies de un bloque de
- *    espesor no se "hunden" al subir de nivel;
+ *  - queda visible con 4 o más vóxeles visibles (así las superficies de un
+ *    bloque de espesor no se "hunden" al subir de nivel), o si lo sólido
+ *    llega en promedio a un cuarto de su alto (una costa, el borde de una
+ *    meseta: 3 hijos de abajo llenos ya no se pierden);
+ *  - el RELLENO ({@link SuperVoxel#relleno()}) es la altura media de lo
+ *    sólido en sus 4 columnas: en cada una, el hijo de arriba cuenta su
+ *    relleno más el alto entero del de abajo; el de abajo solo, su relleno.
+ *    Así una sección de pasto a 5 bloques del piso da un vóxel de 16 con la
+ *    superficie a 5 bloques, no un cubo entero;
  *  - el material es el más votado entre los vóxeles visibles;
- *  - la altura se promedia sobre los visibles;
  *  - color, luz horneada y estado de bloque salen de la SUPERFICIE vista
  *    desde arriba (por columna, el vóxel visible más alto): el terreno
  *    lejano se ve desde arriba, y una ladera de pasto tiene que seguir
@@ -56,8 +61,11 @@ public final class HierarchicalReducer {
         return salida;
     }
 
+    /** Relleno medio mínimo (en altos de hijo, de 0 a 2) para que el vóxel sea visible sin mayoría. */
+    static final double RELLENO_VISIBLE = 0.5;
+
     private static SuperVoxel fusionarBloque(SuperVoxel[] entrada, int lado, int ox, int oy, int oz) {
-        int sumaAltura = 0;
+        double sumaRelleno = 0; // por columna, en altos de hijo (0 a 2)
         int[] votosMaterial = new int[SuperVoxel.Material.TODOS.length];
         int visibles = 0;
         SuperVoxel[] superficie = new SuperVoxel[4];
@@ -66,23 +74,26 @@ public final class HierarchicalReducer {
         for (int dx = 0; dx < 2; dx++) {
             for (int dz = 0; dz < 2; dz++) {
                 SuperVoxel masAlto = null;
+                double rellenoColumna = 0;
                 for (int dy = 0; dy < 2; dy++) {
                     SuperVoxel v = entrada[indice(ox + dx, oy + dy, oz + dz, lado)];
                     if (v.material() == SuperVoxel.Material.AIRE) {
                         continue;
                     }
-                    sumaAltura += v.alturaLocal() & 0xFF;
                     votosMaterial[v.material().ordinal()]++;
                     visibles++;
                     masAlto = v; // dy crece: el último visible es el más alto
+                    rellenoColumna = dy + v.relleno() / (double) SuperVoxel.LLENO;
                 }
                 if (masAlto != null) {
                     superficie[enSuperficie++] = masAlto;
                 }
+                sumaRelleno += rellenoColumna;
             }
         }
 
-        if (visibles * 2 < 8) {
+        double rellenoMedio = sumaRelleno / 4;
+        if (visibles * 2 < 8 && rellenoMedio < RELLENO_VISIBLE) {
             return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
         }
         short estado = estadoMasFrecuente(superficie, enSuperficie);
@@ -105,7 +116,7 @@ public final class HierarchicalReducer {
                 (byte) (sumaR / delEstado),
                 (byte) (sumaG / delEstado),
                 (byte) (sumaB / delEstado),
-                (byte) (sumaAltura / visibles),
+                (byte) Math.round(rellenoMedio / 2 * SuperVoxel.LLENO),
                 materialMasVotado(votosMaterial),
                 (byte) 0,
                 estado

@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class NivelesGrandesTest {
 
     /** Mundo falso: secciones de nivel 4 sólidas bajo una altura, y los nodos grandes guardados. */
-    private static final class MundoFalso implements NivelesGrandes.Acceso {
+    private static class MundoFalso implements NivelesGrandes.Acceso {
         final Map<List<Integer>, SuperVoxel[]> grandes = new HashMap<>();
         final int seccionesSolidas; // secciones Y [0, seccionesSolidas) son piedra
         int lecturasSeccion;
@@ -100,5 +100,27 @@ class NivelesGrandesTest {
         assertNotEquals(seccion, n5);
         assertNotEquals(n5, n6);
         assertEquals(NivelesGrandes.regionDe(6, 1), 2, "Un nodo de nivel 6 cubre 2 regiones");
+    }
+
+    @Test
+    void sinDatosPorSeccionUsaElHorizonteAproximadoPorRegion() {
+        SuperVoxel pasto = new SuperVoxel((byte) 90, (byte) 160, (byte) 60, (byte) 0,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 9).conLuzHorneada(15);
+        MundoFalso sinSecciones = new MundoFalso(0) {
+            @Override
+            public boolean chunkConDatos(int chunkX, int chunkZ) {
+                return false;
+            }
+
+            @Override
+            public SuperVoxel seccionAproximada(int x, int y, int z) {
+                return y >= 0 && y < 4 ? pasto.conRelleno(SuperVoxel.LLENO) : null;
+            }
+        };
+        NivelesGrandes.actualizar(Set.of(NivelesGrandes.empaquetar(0, 0)), -4, 20, sinSecciones);
+        SuperVoxel[] n5 = sinSecciones.grande(5, 0, 0, 0);
+        assertNotNull(n5, "El nivel 5 se arma con el aproximado");
+        assertEquals(SuperVoxel.Material.SOLIDO, n5[(0 * 16 + 1) * 16].material());
+        assertEquals(0, sinSecciones.lecturasSeccion, "Sin datos por sección no se leen secciones");
     }
 }
