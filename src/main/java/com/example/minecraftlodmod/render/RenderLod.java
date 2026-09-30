@@ -280,6 +280,9 @@ public final class RenderLod {
     }
 
     private final GeneradorLocal generador;
+    /** Auto-ajuste según el cuello de botella (detalle, radio, agrupado de caras, oclusión). */
+    private final BalanceCpuGpu balance;
+    private int versionBalancePlan = -1;
     /**
      * Un hilo con cola de PRIORIDAD por distancia a la cámara: las celdas se
      * arman del centro (el jugador) hacia afuera, aunque una lejana se haya
@@ -326,12 +329,6 @@ public final class RenderLod {
     private double miraPlanX, miraPlanZ;
     /** Con zoom, girar más que esto replanifica (el detalle fino sigue a la mirada). */
     static final double REPLANIFICAR_GIRO = Math.toRadians(10);
-    /**
-     * Más lejos que esto (bloques), una celda va en un solo buffer en vez de
-     * uno por dirección: se ve chica y pesa más la cantidad de llamadas de
-     * dibujo que los vértices que ahorra separar por dirección.
-     */
-    static final double UN_BUFFER_DESDE = 768;
     /** Margen del cono con zoom, a cada lado, para que al girar un poco ya esté armado. */
     static final double MARGEN_ZOOM = Math.toRadians(10);
     /** Si la cámara sube o baja esto, se replanifica (la oclusión por relieve depende de la altura). */
@@ -374,8 +371,9 @@ public final class RenderLod {
                               ByteBufferBuilder memoria, int chunksConDatos, TipoMalla tipo) {
     }
 
-    public RenderLod(GeneradorLocal generador) {
+    public RenderLod(GeneradorLocal generador, BalanceCpuGpu balance) {
         this.generador = generador;
+        this.balance = balance;
     }
 
     /** Calidad a usar; la calibración la cambia por escalón ({@code SesionCalibracion.asignarAplicador}). */
@@ -544,10 +542,14 @@ public final class RenderLod {
         double fovNormal = mc.options.fov().get();
         boolean conZoom = fovGrados < fovNormal - 1;
         boolean giro = conZoom && angulo(miraX, miraZ, miraPlanX, miraPlanZ) > REPLANIFICAR_GIRO;
+        ParametrosCalidad c = calidad;
+        balance.usarBase(c);
         if (chunkX == chunkPlanX && chunkZ == chunkPlanZ && Math.abs(fovGrados - fovPlan) < 1 && !giro
-                && Math.abs(camara.y - yPlan) < REPLANIFICAR_ALTURA && ahora - ultimoPlanNanos < REPLANIFICAR_NANOS) {
+                && Math.abs(camara.y - yPlan) < REPLANIFICAR_ALTURA && ahora - ultimoPlanNanos < REPLANIFICAR_NANOS
+                && balance.version() == versionBalancePlan) {
             return;
         }
+        versionBalancePlan = balance.version();
         miraPlanX = miraX;
         miraPlanZ = miraZ;
         chunkPlanX = chunkX;
@@ -555,8 +557,10 @@ public final class RenderLod {
         fovPlan = fovGrados;
         yPlan = camara.y;
         ultimoPlanNanos = ahora;
-
-        ParametrosCalidad c = calidad;
+        // Detalle y radio del auto-ajuste (los del preset si está apagado).
+        int radioChunks = balance.radioChunks(c);
+        double umbralPx = balance.umbralPx(c);
+        double distanciaUnBuffer = balance.distanciaUnBuffer();
         // Vanilla dibuja hasta su distancia de render; se deja un chunk de
         // solapamiento para que no queden huecos en el borde (vanilla queda encima).
         int distanciaVanilla = Math.max(0, mc.options.getEffectiveRenderDistance() - 1);
@@ -582,14 +586,14 @@ public final class RenderLod {
         double aspecto = (double) mc.getWindow().getWidth() / Math.max(1, mc.getWindow().getHeight());
         double mediaApertura = Math.atan(Math.tan(Math.toRadians(fovGrados) / 2) * aspecto) + MARGEN_ZOOM;
         PlanCeldas.Vista vista = new PlanCeldas.Vista(miraX, miraZ, Math.toRadians(fovNormal), mediaApertura);
-        List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, c.radioLodChunks(),
+        List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, radioChunks,
                 distanciaVanilla, cubiertos::contains, vista, Math.toRadians(fovGrados), mc.getWindow().getHeight(),
-                c.umbralPx());
+                umbralPx);
         // Primero lo que se mira, después el margen, al final lo de atrás.
         plan.sort(Comparator.comparingDouble(celda -> prioridad(celda, camara, miraX, miraZ)));
         byte dimension = GeneradorLocal.idDimension(mc.level.dimension());
         boolean[] ocultas = ocultasPorRelieve(plan, camara, store, dimension, mc.level.getMinSection(),
-                mc.level.getMaxSection(), c.radioLodChunks());
+                mc.level.getMaxSection(), radioChunks);
 
         Set<Long> vigentes = new HashSet<>();
         ordenDibujo.clear();
@@ -622,7 +626,7 @@ public final class RenderLod {
             double mitad = celda.ladoEnBloques() / 2.0;
             // Con shaderpack cada llamada pasa por el apply() de Iris: un buffer por celda.
             boolean unBuffer = bloque || celda.esGrande() || Math.hypot(celda.origenX() + mitad - camara.x,
-                    celda.origenZ() + mitad - camara.z) > UN_BUFFER_DESDE;
+                    celda.origenZ() + mitad - camara.z) > distanciaUnBuffer;
             if (!estado.enConstruccion && (cambio || incompleta) && encoladas < ENCOLADAS_POR_PLAN) {
                 estado.enConstruccion = true;
                 encoladas++;
@@ -670,7 +674,8 @@ public final class RenderLod {
             MeshData[][] mallas = new MeshData[GeometriaLod.CARAS][];
             float[] planos = new float[2 * GeometriaLod.CARAS];
             if (unBuffer) {
-                // Lejos (teselas y celdas pasando UN_BUFFER_DESDE): un solo buffer con todas las caras.
+                // Lejos (teselas y celdas pasada la distancia de agrupado, 768 bloques o la que fije el
+                // auto-ajuste): un solo buffer con todas las caras.
                 // Se ven chicas y la GPU ya descarta las de espaldas; separarlas triplicaba las llamadas.
                 mallas[0] = malla(geometria, -1, geometria.vertices(), formato, memoria, tipo);
                 planos[0] = Float.NEGATIVE_INFINITY;
@@ -1117,7 +1122,7 @@ public final class RenderLod {
             return new boolean[plan.size()];
         }
         long inicio = System.nanoTime();
-        double radioOclusores = Math.min(RADIO_OCLUSORES, radioLodChunks * 16.0);
+        double radioOclusores = Math.min(RADIO_OCLUSORES, radioLodChunks * 16.0) * balance.factorOclusion();
         relieve.preparar(store, dimension, minSeccion, maxSeccion, camara.x, camara.z, radioLodChunks * 16.0);
         List<OclusionRelieve.Pieza> piezas = new ArrayList<>(plan.size());
         for (PlanCeldas.Celda celda : plan) {

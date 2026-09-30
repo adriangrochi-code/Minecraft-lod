@@ -6,6 +6,25 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.16.0 — Auto-ajuste según el procesador y la placa de video
+- **"Auto-ajuste dinámico" ahora funciona** (la opción existía pero no estaba
+  conectada al juego). Cada segundo mide cuánto tarda el cuadro y cuánto
+  trabaja la placa de video, decide cuál de los dos limita y alivia a ese lado:
+  - **Placa de video al límite:** separa más las caras del terreno lejano (la
+    placa se saltea las que dan la espalda), oculta más terreno tapado y, si
+    usás escalado, baja un poco su resolución (hasta 15 puntos, nunca por
+    debajo del 50%).
+  - **Procesador al límite:** genera menos terreno a la vez y agrupa más las
+    caras (menos llamadas de dibujo).
+  - **Tirones:** si el promedio alcanza pero hay cuadros muy lentos, baja la
+    generación simultánea, que es lo que suele causarlos.
+  - Solo si nada de eso alcanza baja el detalle (como mucho al doble del
+    preset) y el radio, y los recupera cuando sobra margen.
+- El HUD de rendimiento muestra qué limita ("límite GPU (GPU 12.3 ms)"), si
+  hay tirones y "PISO" si ya no queda nada que bajar.
+- Respeta el tope de FPS de las opciones de video como objetivo si es menor
+  que el del preset.
+
 ## 0.15.1 — Optimización (medida con un perfilador)
 - **Guardado del LOD mucho más liviano:** el hilo que escribe las regiones a
   disco pasaba casi todo su tiempo copiando la lista de nodos de cada región

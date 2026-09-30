@@ -692,3 +692,33 @@ profundidad y máscara reactiva (agua, partículas). Por hardware:
   Pista B. Si fallan al cargar o al ejecutar, el escalado cae solo al
   TEMPORAL y lo dice en el log. `invertirJitter` (experimental) por si la
   convención del signo del jitter resulta la contraria.
+
+## 28. Auto-ajuste según el cuello de botella (CPU o GPU) — 2026-09-30
+
+Pedido: detectar en tiempo real si el límite es el CPU o la GPU y pasar
+trabajo al que está más libre, para más FPS y sobre todo más estabilidad.
+
+**Medición (sin GL crudo):** tiempo de cuadro y `TimerQuery` de Minecraft
+para el tiempo de GPU del cuadro (con F3 abierto se lee el de Minecraft).
+GPU ocupada casi todo el cuadro = límite GPU; si no, límite CPU. Con
+VulkanMod no hay medición de GPU: se ajusta con el orden genérico.
+
+**Qué se puede mover de un lado al otro:** no hay tareas con dos
+implementaciones (generar mallas en GPU con compute rompería la regla de
+compatibilidad, secciones 6/15/20). Sí hay perillas que cambian CPU por GPU:
+- distancia de agrupado de caras (buffer por dirección = más llamadas y
+  menos triángulos de espaldas, un buffer = lo contrario);
+- radio de los oclusores del relieve (CPU por plan contra celdas dibujadas);
+- escala del escalado (GPU), si hay escalado;
+- generación simultánea (CPU; es la que causa tirones).
+
+**Orden (`core/BalanceadorCpuGpu`, una perilla por segundo):**
+- GPU al límite: agrupado ↓, oclusión ↑, escala ↓, recién después detalle ↓ y radio ↓.
+- CPU al límite: generación ↓, agrupado ↑, oclusión ↓, después detalle y radio.
+- Tirones con promedio bueno: generación ↓.
+- Con margen (2 ciclos seguidos por debajo del 80% del objetivo): se
+  recupera generación, radio, detalle y escala; las perillas invisibles de
+  reparto quedan donde están.
+Reemplaza en la práctica a `PerformanceAutoTuner` (secciones 7, 21, 23),
+que nunca llegó a conectarse al juego.
+

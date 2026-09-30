@@ -65,6 +65,7 @@ public final class MonitorRendimiento {
 
     private final RenderLod render;
     private final GeneradorLocal generador;
+    private final BalanceCpuGpu balance;
     private final EstadisticaFrames frames = new EstadisticaFrames();
     private final com.sun.management.OperatingSystemMXBean so;
 
@@ -75,9 +76,10 @@ public final class MonitorRendimiento {
     private BufferedWriter log;
     private Vec3 posicionAnterior;
 
-    public MonitorRendimiento(RenderLod render, GeneradorLocal generador) {
+    public MonitorRendimiento(RenderLod render, GeneradorLocal generador, BalanceCpuGpu balance) {
         this.render = render;
         this.generador = generador;
+        this.balance = balance;
         var bean = ManagementFactory.getOperatingSystemMXBean();
         this.so = bean instanceof com.sun.management.OperatingSystemMXBean s ? s : null;
     }
@@ -150,7 +152,8 @@ public final class MonitorRendimiento {
                 .append(Component.translatable("minecraftlodmod.hud.linea2",
                 m.lod().activo() ? decimal(m.lod().msDibujo()) : "off", millones(m.lod().verticesDibujados()),
                 m.lod().piezas(), m.lod().vramMb(), m.lod().mallasEnCola(), entero(m.extraidosPorSegundo()),
-                m.pendientes(), entero(m.aproximadosPorSegundo()), pregeneracion(m.pregeneracion())));
+                m.pendientes(), entero(m.aproximadosPorSegundo()), pregeneracion(m.pregeneracion())))
+                .append(Component.translatable("minecraftlodmod.hud.limite", balance.diagnostico()));
         // Con escala de interfaz grande las líneas no entran: se achica el texto hasta que entren.
         Component[] lineas = linea2.getString().isEmpty() ? new Component[]{linea1} : new Component[]{linea1, linea2};
         int anchoMaximo = 0;
@@ -236,6 +239,7 @@ public final class MonitorRendimiento {
         }
         s.append(String.format(Locale.ROOT, " extraidos=%.0f/s pendientes=%d aproximados=%.0f/s pregen=%s",
                 m.extraidosPorSegundo(), m.pendientes(), m.aproximadosPorSegundo(), pregeneracion(m.pregeneracion())));
+        s.append(" balance=").append(balance.resumen());
         escribir(w, s.toString());
     }
 

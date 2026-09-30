@@ -467,3 +467,21 @@ Siguiente candidato (sin tocar): `CacheRelieve.preparar` lee hasta 32 regiones d
 replanificación EN EL HILO DE RENDER (hasta ~14 ms cada 3 s = tirón en equipos débiles).
 Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
 
+## Auto-ajuste CPU/GPU (0.16.0)
+
+- `core/BalanceadorCpuGpu` (lógica pura, tests) + `render/BalanceCpuGpu` (medición). Antes de esto
+  `PerformanceAutoTuner`/`ControlDeRendimiento` existían con tests pero NADA los usaba: la opción
+  `autoAjuste` no hacía nada. Quedan sin uso (el balanceador los reemplaza); no se borraron.
+- GPU: `TimerQuery` de Minecraft entre `RenderFrameEvent.Pre` y `Post` (consultas sin esperar, se
+  leen cuando están listas). Con F3 la consulta es de Minecraft: se usa `getGpuUtilization()`.
+  Con VulkanMod no hay medición (límite "?": orden genérico).
+- Diagnóstico: GPU ocupada >= 85% del cuadro = límite GPU. Un cambio de lado se confirma en el
+  ciclo siguiente (en el borde alternaba y el agrupado iba y venía 256 <-> 384).
+- Tope de detalle: 2x el preset y nunca más de 6 px. Medido en Xvfb: a 10 px el plan usaba teselas
+  grandes también cerca, sin datos, y el LOD desaparecía (6 piezas de 168) mientras el FPS "subía".
+  Pendiente de investigar aparte: por qué esas teselas cercanas no tienen datos.
+- En Xvfb (render por software, imposible llegar a 40 FPS) llega al piso (5 px, radio 40) con el
+  LOD visible (113 piezas). Una corrida anterior quedó en 19 piezas en el mismo estado y no se
+  repitió: observar en la PC real si el LOD queda muy recortado en el piso.
+- Pista B: ver en la 1060 y en la 3500U/A275 qué diagnostica y si los tirones bajan.
+

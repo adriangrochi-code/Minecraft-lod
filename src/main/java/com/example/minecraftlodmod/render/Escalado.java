@@ -168,7 +168,10 @@ public final class Escalado {
             return;
         }
         int ancho = mc.getWindow().getWidth(), alto = mc.getWindow().getHeight();
-        double escala = ConfigLod.CLIENTE.fsrEscalaPorcentaje.get() / 100.0;
+        // El auto-ajuste resta hasta 15 puntos cuando la GPU es el límite (nunca menos del 50%).
+        BalanceCpuGpu balance = BalanceCpuGpu.actual();
+        int porcentaje = ConfigLod.CLIENTE.fsrEscalaPorcentaje.get() - (balance == null ? 0 : balance.reduccionEscala());
+        double escala = Math.max(50, porcentaje) / 100.0;
         int anchoChico = tamanoEscalado(ancho, escala), altoChico = tamanoEscalado(alto, escala);
         if (anchoChico >= ancho && altoChico >= alto) {
             modo = ModoEscalado.APAGADO;

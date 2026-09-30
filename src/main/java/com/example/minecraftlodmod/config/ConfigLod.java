@@ -61,7 +61,7 @@ public final class ConfigLod {
                             "los presets traen el suyo).")
                     .defineInRange("fpsObjetivo", medio.fpsObjetivo(),
                             ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX);
-            autoAjuste = b.comment("Ajustar detalle, radio y generación en caliente para sostener el FPS objetivo.")
+            autoAjuste = b.comment("Auto-ajuste según el cuello de botella (CPU o GPU) para sostener el FPS objetivo: agrupado de caras, oclusión, escala del escalado, generación simultánea, detalle y radio.")
                     .define("autoAjuste", true);
             lodActivo = b.comment("Dibujar el LOD. Apagarlo sirve para comparar contra vanilla; la generación sigue.")
                     .define("lodActivo", true);
