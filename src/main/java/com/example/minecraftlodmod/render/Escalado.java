@@ -1,8 +1,10 @@
 package com.example.minecraftlodmod.render;
 
 import com.example.minecraftlodmod.MinecraftLodMod;
+import com.example.minecraftlodmod.config.CompatibilidadEscalado;
 import com.example.minecraftlodmod.config.ConfigLod;
 import com.example.minecraftlodmod.config.ModoEscalado;
+import com.mojang.blaze3d.platform.GlUtil;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
@@ -13,6 +15,7 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
+import net.minecraft.Util;
 import net.minecraft.client.GraphicsStatus;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ShaderInstance;
@@ -25,6 +28,7 @@ import org.joml.Matrix4f;
 import org.slf4j.Logger;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -71,6 +75,24 @@ public final class Escalado {
     private static boolean activo;
     private static ModoEscalado modo = ModoEscalado.APAGADO;
     private static boolean avisoIncompatible;
+    private static volatile List<ModoEscalado> modosDisponibles;
+    private static ModoEscalado avisadoNoDisponible;
+
+    /**
+     * Los modos que esta GPU y este sistema pueden usar ({@link CompatibilidadEscalado});
+     * el menú muestra solo estos. Se calcula una vez, en el hilo de render.
+     */
+    public static List<ModoEscalado> modosDisponibles() {
+        List<ModoEscalado> modos = modosDisponibles;
+        if (modos == null) {
+            String gpu = RenderLod.conVulkanMod() ? "VulkanMod" : GlUtil.getVendor() + " " + GlUtil.getRenderer();
+            modos = CompatibilidadEscalado.disponibles(gpu, Util.getPlatform() == Util.OS.WINDOWS,
+                    RenderLod.conVulkanMod());
+            modosDisponibles = modos;
+            LOG.info("LOD: escalado disponible en {}: {}", gpu, modos);
+        }
+        return modos;
+    }
     private static ModoEscalado avisoSinBackend;
     private static long ultimoTamanoAvisado;
 
@@ -410,7 +432,12 @@ public final class Escalado {
 
     /** Modo pedido en la config, o APAGADO si falta algo o choca con otra cosa. */
     private static ModoEscalado modoHabilitado(Minecraft mc) {
-        ModoEscalado pedido = ConfigLod.CLIENTE.escalado.get();
+        ModoEscalado enConfig = ConfigLod.CLIENTE.escalado.get();
+        ModoEscalado pedido = CompatibilidadEscalado.efectivo(enConfig, modosDisponibles());
+        if (pedido != enConfig && avisadoNoDisponible != enConfig) {
+            avisadoNoDisponible = enConfig;
+            LOG.warn("LOD: {} no es compatible con esta GPU o sistema; se usa {}", enConfig, pedido);
+        }
         if (pedido == ModoEscalado.APAGADO || easu == null || rcas == null) {
             return ModoEscalado.APAGADO;
         }

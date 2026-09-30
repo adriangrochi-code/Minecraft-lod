@@ -4,6 +4,7 @@
   "package": "com.example.minecraftlodmod.render.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "AccesoLightTexture",
     "MixinGameRenderer",
     "MixinMinecraft",
     "MixinRenderTarget",

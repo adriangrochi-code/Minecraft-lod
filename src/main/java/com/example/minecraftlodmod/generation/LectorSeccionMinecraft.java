@@ -110,6 +110,11 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         this.bloqueArriba = bloqueArriba;
     }
 
+    /** Lector sobre estados ya armados, sin luz ni biomas (cielo abierto): para tests. */
+    static LectorSeccionMinecraft deEstados(PalettedContainer<BlockState> estados) {
+        return new LectorSeccionMinecraft(estados, null, false, null, null, null, null, new Biome[64], 0, 0);
+    }
+
     /** Una sección capturada, con su posición en coordenadas de sección. */
     public record Captura(int seccionX, int seccionY, int seccionZ, LectorSeccionMinecraft lector) {
         public SectionExtractor.SeccionExtraida extraer() {
@@ -207,17 +212,24 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         if (material == SuperVoxel.Material.AIRE) {
             return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) y, material, (byte) 0);
         }
-        // Nieve fina o alfombra encima: la cara de arriba de este bloque es la de la cubierta.
+        // Alfombra encima: el bloque toma la cubierta. Nieve fina: el bloque queda como es
+        // (hojas, pasto) y solo su cara de arriba se dibuja nevada (SuperVoxel.nevado).
         BlockState encima = y < SectionExtractor.LADO - 1 ? estados.get(x, y + 1, z)
                 : estadosArriba != null ? estadosArriba.get(x, 0, z) : null;
+        boolean nevado = false;
         if (encima != null && forma(encima) == Forma.CUBIERTA) {
-            estado = encima;
+            if (encima.is(Blocks.SNOW)) {
+                nevado = true;
+            } else {
+                estado = encima;
+            }
         }
         Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
         int rgb = ColoresBloque.rgb(estado, bioma, origenX + x, origenZ + z);
         return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) y, material, (byte) 0)
                 .conLuzHorneada(luz(x, y, z))
-                .conEstado(Block.getId(estado)); // para dibujar su textura; ids > 65535 quedan sin estado
+                .conEstado(Block.getId(estado)) // para dibujar su textura; ids > 65535 quedan sin estado
+                .conNevado(nevado);
     }
 
     /**

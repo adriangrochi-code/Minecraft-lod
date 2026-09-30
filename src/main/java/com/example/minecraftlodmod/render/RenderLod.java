@@ -8,6 +8,7 @@ import com.example.minecraftlodmod.core.SuperVoxel;
 import com.example.minecraftlodmod.generation.SectionExtractor;
 import com.example.minecraftlodmod.storage.OctreeNodeCodec;
 import com.example.minecraftlodmod.storage.RegionFileStore;
+import com.example.minecraftlodmod.render.mixin.AccesoLightTexture;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
@@ -207,12 +208,12 @@ public final class RenderLod {
         Runtime rt = Runtime.getRuntime();
         LOG.info("LOD stats: fps={} | dibujo LOD {} ms/frame, {} llamadas/frame, {} vértices dibujados/frame | "
                         + "{} piezas, {} vértices ({} triángulos), VRAM LOD ~{} MB | mallas armadas {} ({} ms prom) "
-                        + "| ocultas por relieve {} ({} ms) | heap {} / {} MB",
+                        + "| ocultas por relieve {} ({} ms) | luz cielo #{} | heap {} / {} MB",
                 mc.getFps(), String.format("%.2f", nanosDibujo / 1e6 / Math.max(1, framesDesdeEstadistica)),
                 llamadasUltimoFrame, verticesUltimoFrame, piezas, vertices, vertices / 2, bytesVram >> 20, mallas,
                 mallas == 0 ? 0 : String.format("%.1f", nanos / 1e6 / mallas),
                 piezasOcultas, String.format("%.1f", nanosOclusion / 1e6),
-                (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20);
+                String.format("%06X", colorLuzCielo(mc)), (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20);
         ultimaEstadisticaNanos = ahora;
         framesDesdeEstadistica = 0;
         nanosDibujo = 0;
@@ -345,8 +346,11 @@ public final class RenderLod {
     private static final class EstadoCelda {
         PlanCeldas.Celda plan;
         PlanCeldas.Celda construidaCon;
-        /** Un buffer por dirección de cara (GeometriaLod.CARAS), null si no tiene caras. */
-        final VertexBuffer[] buffers = new VertexBuffer[GeometriaLod.CARAS];
+        /**
+         * Buffers por dirección de cara (GeometriaLod.CARAS), null si no tiene caras.
+         * Casi siempre uno por cara; con VulkanMod, más si pasa de {@link #MAX_VERTICES_VULKANMOD}.
+         */
+        final VertexBuffer[][] buffers = new VertexBuffer[GeometriaLod.CARAS][];
         /** Planos extremos de cada grupo: [2*cara] mínimo, [2*cara+1] máximo. */
         float[] planos;
         final int[] verticesCara = new int[GeometriaLod.CARAS];
@@ -365,7 +369,7 @@ public final class RenderLod {
      * Resultado del hilo de mallas: una malla por dirección de cara (null las
      * vacías). {@code mallas} y {@code memoria} null = nada que dibujar.
      */
-    private record MallaLista(long clave, PlanCeldas.Celda celda, MeshData[] mallas, float[] planos,
+    private record MallaLista(long clave, PlanCeldas.Celda celda, MeshData[][] mallas, float[] planos,
                               ByteBufferBuilder memoria, int chunksConDatos, TipoMalla tipo) {
     }
 
@@ -482,31 +486,38 @@ public final class RenderLod {
             } else {
                 estado.vertices = 0;
                 for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
-                    MeshData malla = lista.mallas()[cara];
-                    estado.verticesCara[cara] = malla == null ? 0 : malla.drawState().vertexCount();
-                    if (malla == null) {
-                        if (estado.buffers[cara] != null) {
-                            estado.buffers[cara].close();
-                            estado.buffers[cara] = null;
+                    MeshData[] piezas = lista.mallas()[cara];
+                    VertexBuffer[] anteriores = estado.buffers[cara];
+                    int n = piezas == null ? 0 : piezas.length;
+                    VertexBuffer[] nuevos = n == 0 ? null : new VertexBuffer[n];
+                    estado.verticesCara[cara] = 0;
+                    for (int p = 0; p < n; p++) {
+                        MeshData malla = piezas[p];
+                        VertexBuffer buffer = anteriores != null && p < anteriores.length ? anteriores[p] : null;
+                        if (buffer != null && buffer.getFormat() != null
+                                && !buffer.getFormat().equals(malla.drawState().format())) {
+                            // Otro formato (se prendió o apagó un shaderpack, o las texturas): VAO
+                            // nuevo. Re-subir al mismo dejaba atributos del formato viejo (con Iris,
+                            // las celdas cercanas salían a medio dibujar).
+                            buffer.close();
+                            buffer = null;
                         }
-                        continue;
+                        if (buffer == null) {
+                            buffer = new VertexBuffer(VertexBuffer.Usage.STATIC);
+                        }
+                        estado.verticesCara[cara] += malla.drawState().vertexCount();
+                        estado.bytesVertice = malla.drawState().format().getVertexSize();
+                        buffer.bind();
+                        buffer.upload(malla); // cierra el MeshData
+                        nuevos[p] = buffer;
                     }
-                    VertexBuffer anterior = estado.buffers[cara];
-                    if (anterior != null && anterior.getFormat() != null
-                            && !anterior.getFormat().equals(malla.drawState().format())) {
-                        // Otro formato (se prendió o apagó un shaderpack, o las texturas): VAO
-                        // nuevo. Re-subir al mismo dejaba atributos del formato viejo (con Iris,
-                        // las celdas cercanas salían a medio dibujar).
-                        anterior.close();
-                        estado.buffers[cara] = null;
+                    if (anteriores != null) {
+                        for (int p = n; p < anteriores.length; p++) {
+                            anteriores[p].close();
+                        }
                     }
-                    if (estado.buffers[cara] == null) {
-                        estado.buffers[cara] = new VertexBuffer(VertexBuffer.Usage.STATIC);
-                    }
-                    estado.vertices += malla.drawState().vertexCount();
-                    estado.bytesVertice = malla.drawState().format().getVertexSize();
-                    estado.buffers[cara].bind();
-                    estado.buffers[cara].upload(malla); // cierra el MeshData
+                    estado.buffers[cara] = nuevos;
+                    estado.vertices += estado.verticesCara[cara];
                 }
                 VertexBuffer.unbind();
                 estado.planos = lista.planos();
@@ -655,7 +666,7 @@ public final class RenderLod {
             };
             // Toda la memoria de una vez: las 6 mallas salen del mismo bloque, sin realocar.
             ByteBufferBuilder memoria = new ByteBufferBuilder(geometria.vertices() * formato.getVertexSize());
-            MeshData[] mallas = new MeshData[GeometriaLod.CARAS];
+            MeshData[][] mallas = new MeshData[GeometriaLod.CARAS][];
             float[] planos = new float[2 * GeometriaLod.CARAS];
             if (unBuffer) {
                 // Lejos (teselas y celdas pasando UN_BUFFER_DESDE): un solo buffer con todas las caras.
@@ -685,29 +696,69 @@ public final class RenderLod {
         }
     }
 
-    /** @param cara 0-5, o -1 para todas las caras en una sola malla */
-    private static MeshData malla(GeometriaLod geometria, int cara, int n, VertexFormat formato,
-                                  ByteBufferBuilder memoria, TipoMalla tipo) {
+    /**
+     * Tope de vértices por buffer con VulkanMod (0.5.5): su buffer de índices de quads es
+     * compartido y empieza con 65536 vértices; cuando un buffer más grande lo hace crecer,
+     * libera el anterior y los buffers ya subidos siguen apuntando a él (índices basura:
+     * espigas). Con mallas de hasta este tamaño nunca crece.
+     */
+    static final int MAX_VERTICES_VULKANMOD = 65536;
+
+    /**
+     * Una malla, partida en piezas de hasta {@link #MAX_VERTICES_VULKANMOD} vértices con
+     * VulkanMod (una sola pieza si no).
+     *
+     * @param cara 0-5, o -1 para todas las caras en una sola malla
+     */
+    private static MeshData[] malla(GeometriaLod geometria, int cara, int n, VertexFormat formato,
+                                    ByteBufferBuilder memoria, TipoMalla tipo) {
+        int maximo = conVulkanMod() ? MAX_VERTICES_VULKANMOD : Integer.MAX_VALUE;
+        MeshData[] piezas = new MeshData[n <= maximo ? 1 : (n - 1) / maximo + 1];
         if (tipo != TipoMalla.PLANA) {
             // Bytes escritos directo y envueltos en un MeshData como el de BufferBuilder
             // (que exige POSITION en float y no conoce el formato compacto).
-            int bytes = n * formato.getVertexSize();
-            ByteBuffer destino = MemoryUtil.memByteBuffer(memoria.reserve(bytes), bytes);
-            if (tipo == TipoMalla.TEXTURA) {
-                geometria.escribirCompacto(destino, cara);
-            } else {
-                geometria.escribirBloque(destino, cara, formato.getVertexSize() == GeometriaLod.BYTES_BLOQUE_IRIS);
+            int tamVertice = formato.getVertexSize();
+            int bytes = n * tamVertice;
+            boolean partida = piezas.length > 1;
+            ByteBuffer destino = partida ? MemoryUtil.memAlloc(bytes)
+                    : MemoryUtil.memByteBuffer(memoria.reserve(bytes), bytes);
+            try {
+                if (tipo == TipoMalla.TEXTURA) {
+                    geometria.escribirCompacto(destino, cara);
+                } else {
+                    geometria.escribirBloque(destino, cara, tamVertice == GeometriaLod.BYTES_BLOQUE_IRIS);
+                }
+                for (int p = 0; p < piezas.length; p++) {
+                    int desde = p * maximo;
+                    int cuantos = Math.min(maximo, n - desde);
+                    if (partida) {
+                        MemoryUtil.memCopy(MemoryUtil.memAddress(destino) + (long) desde * tamVertice,
+                                memoria.reserve(cuantos * tamVertice), (long) cuantos * tamVertice);
+                    }
+                    piezas[p] = new MeshData(memoria.build(), new MeshData.DrawState(formato, cuantos,
+                            VertexFormat.Mode.QUADS.indexCount(cuantos), VertexFormat.Mode.QUADS,
+                            VertexFormat.IndexType.least(cuantos)));
+                }
+            } finally {
+                if (partida) {
+                    MemoryUtil.memFree(destino);
+                }
             }
-            return new MeshData(memoria.build(), new MeshData.DrawState(formato, n,
-                    VertexFormat.Mode.QUADS.indexCount(n), VertexFormat.Mode.QUADS, VertexFormat.IndexType.least(n)));
+            return piezas;
         }
-        BufferBuilder builder = new BufferBuilder(memoria, VertexFormat.Mode.QUADS, formato);
-        for (int i = 0; i < geometria.vertices(); i++) {
-            if (cara < 0 || geometria.cara(i) == cara) {
-                builder.addVertex(geometria.x(i), geometria.y(i), geometria.z(i)).setColor(geometria.color(i));
+        int i = 0;
+        for (int p = 0; p < piezas.length; p++) {
+            BufferBuilder builder = new BufferBuilder(memoria, VertexFormat.Mode.QUADS, formato);
+            int escritos = 0;
+            for (; i < geometria.vertices() && escritos < maximo; i++) {
+                if (cara < 0 || geometria.cara(i) == cara) {
+                    builder.addVertex(geometria.x(i), geometria.y(i), geometria.z(i)).setColor(geometria.color(i));
+                    escritos++;
+                }
             }
+            piezas[p] = builder.buildOrThrow();
         }
-        return builder.buildOrThrow();
+        return piezas;
     }
 
     /**
@@ -863,6 +914,10 @@ public final class RenderLod {
         RenderSystem.disableBlend();
         // Todas las caras son antihorarias vistas desde afuera (GeometriaLod): culling normal.
         RenderSystem.enableCull();
+        // La luz horneada es la del mediodía: el lightmap actual la lleva a la hora del día.
+        int luzCielo = colorLuzCielo(mc);
+        RenderSystem.setShaderColor(((luzCielo >> 16) & 0xFF) / 255f, ((luzCielo >> 8) & 0xFF) / 255f,
+                (luzCielo & 0xFF) / 255f, 1f);
         dibujarPasada(evento, camara, proyeccion, TipoMalla.PLANA, GameRenderer.getPositionColorShader());
         ShaderInstance conTextura = shaderTextura;
         if (conTextura != null) {
@@ -872,6 +927,7 @@ public final class RenderLod {
             RenderSystem.setShaderTexture(1, PaletaTexturas.TABLA_SPRITES);
             dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura);
         }
+        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         VertexBuffer.unbind();
         RenderSystem.enableCull();
         // GL_DEPTH_BUFFER_BIT: el terreno vanilla se dibuja después, siempre delante del LOD.
@@ -902,6 +958,34 @@ public final class RenderLod {
                 GameRenderer.getRendertypeSolidShader());
         mc.gameRenderer.lightTexture().turnOffLightLayer();
         VertexBuffer.unbind();
+    }
+
+    /**
+     * Color del lightmap con el cielo a pleno y sin luz de bloque, como 0xRRGGBB normalizado
+     * al del mediodía: blanco de día, oscuro y azulado de noche. Sigue la hora, la lluvia,
+     * los rayos, la visión nocturna y el brillo de la config, como el terreno vanilla. La
+     * luz de bloque (antorchas) no se separa de la horneada: de noche se oscurece igual.
+     */
+    static int colorLuzCielo(Minecraft mc) {
+        NativeImage pixeles = ((AccesoLightTexture) mc.gameRenderer.lightTexture()).minecraftlodmod$pixeles();
+        if (pixeles == null) {
+            return 0xFFFFFF;
+        }
+        return normalizarLuz(pixeles.getPixelRGBA(0, 15));
+    }
+
+    /** Valor del lightmap a pleno sol con el brillo por defecto (vanilla lo acerca a 0.75 un 4%). */
+    static final int LUZ_MEDIODIA = 250;
+
+    /**
+     * Píxel ABGR del lightmap (como lo guarda NativeImage) a 0xRRGGBB, llevando
+     * {@link #LUZ_MEDIODIA} a 255 para que de día el LOD quede igual que sin el ajuste.
+     */
+    static int normalizarLuz(int abgr) {
+        int r = Math.min(255, (abgr & 0xFF) * 255 / LUZ_MEDIODIA);
+        int g = Math.min(255, ((abgr >> 8) & 0xFF) * 255 / LUZ_MEDIODIA);
+        int b = Math.min(255, ((abgr >> 16) & 0xFF) * 255 / LUZ_MEDIODIA);
+        return r << 16 | g << 8 | b;
     }
 
     private static void asegurarTexturaBlanca(Minecraft mc) {
@@ -956,23 +1040,25 @@ public final class RenderLod {
                 vista = new Matrix4f(evento.getModelViewMatrix()).translate(ox, (float) -camara.y, oz);
             }
             for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
-                VertexBuffer buffer = estado.buffers[cara];
+                VertexBuffer[] piezas = estado.buffers[cara];
                 double camaraEnEje = switch (cara >> 1) {
                     case 0 -> camara.x - origenX;
                     case 1 -> camara.y;
                     default -> camara.z - origenZ;
                 };
-                if (buffer == null || !GeometriaLod.caraVisible(cara, camaraEnEje,
+                if (piezas == null || !GeometriaLod.caraVisible(cara, camaraEnEje,
                         estado.planos[2 * cara], estado.planos[2 * cara + 1])) {
                     continue;
                 }
-                buffer.bind();
-                if (desplazamiento != null) {
-                    buffer.draw();
-                } else {
-                    buffer.drawWithShader(vista, proyeccion, shader);
+                for (VertexBuffer buffer : piezas) {
+                    buffer.bind();
+                    if (desplazamiento != null) {
+                        buffer.draw();
+                    } else {
+                        buffer.drawWithShader(vista, proyeccion, shader);
+                    }
+                    llamadasUltimoFrame++;
                 }
-                llamadasUltimoFrame++;
                 verticesUltimoFrame += estado.verticesCara[cara];
             }
         }
@@ -1281,7 +1367,9 @@ public final class RenderLod {
     private static void cerrarBuffer(EstadoCelda estado) {
         for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
             if (estado.buffers[cara] != null) {
-                estado.buffers[cara].close();
+                for (VertexBuffer buffer : estado.buffers[cara]) {
+                    buffer.close();
+                }
                 estado.buffers[cara] = null;
             }
         }
@@ -1290,9 +1378,11 @@ public final class RenderLod {
 
     private static void cerrar(MallaLista lista) {
         if (lista.mallas() != null) {
-            for (MeshData malla : lista.mallas()) {
-                if (malla != null) {
-                    malla.close();
+            for (MeshData[] piezas : lista.mallas()) {
+                if (piezas != null) {
+                    for (MeshData malla : piezas) {
+                        malla.close();
+                    }
                 }
             }
         }

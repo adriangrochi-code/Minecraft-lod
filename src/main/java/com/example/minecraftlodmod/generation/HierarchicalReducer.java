@@ -86,10 +86,13 @@ public final class HierarchicalReducer {
             return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
         }
         short estado = estadoMasFrecuente(superficie, enSuperficie);
-        int sumaR = 0, sumaG = 0, sumaB = 0, sumaLuz = 0, delEstado = 0;
+        int sumaR = 0, sumaG = 0, sumaB = 0, sumaLuz = 0, delEstado = 0, nevados = 0;
         for (int i = 0; i < enSuperficie; i++) {
             SuperVoxel v = superficie[i];
             sumaLuz += v.luzHorneada();
+            if (v.nevado()) {
+                nevados++;
+            }
             if (v.estado() != estado) {
                 continue;
             }
@@ -106,7 +109,8 @@ public final class HierarchicalReducer {
                 materialMasVotado(votosMaterial),
                 (byte) 0,
                 estado
-        ).conLuzHorneada(Math.round(sumaLuz / (float) enSuperficie));
+        ).conLuzHorneada(Math.round(sumaLuz / (float) enSuperficie))
+                .conNevado(nevados * 2 >= enSuperficie); // nieve si cubre al menos la mitad de la superficie
     }
 
     /** Estado más repetido entre (a lo sumo 4) vóxeles; en empate, el primero encontrado. */

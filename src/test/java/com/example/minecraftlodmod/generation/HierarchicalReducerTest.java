@@ -4,6 +4,7 @@ import com.example.minecraftlodmod.core.SuperVoxel;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HierarchicalReducerTest {
@@ -136,5 +137,18 @@ class HierarchicalReducerTest {
         // Pasto: A, A, B → promedio (80+80+100)/3 = 86; con la piedra hubiera dado 96.
         assertEquals(86, r.r() & 0xFF, "La piedra no ensucia el color del pasto");
         assertEquals((160 + 160 + 180) / 3, r.g() & 0xFF, "El degradé de tinte sí se promedia");
+    }
+
+    @Test
+    void laNieveSigueSiCubreAlMenosLaMitadDeLaSuperficie() {
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        java.util.Arrays.fill(entrada, voxel(80, SuperVoxel.Material.SOLIDO));
+        // Índice (x*2 + y)*2 + z (ver HierarchicalReducer.indice): arriba es y=1.
+        entrada[2] = entrada[2].conNevado(true);  // x=0 z=0
+        entrada[6] = entrada[6].conNevado(true);  // x=1 z=0
+        assertTrue(HierarchicalReducer.reducir(entrada, 2)[0].nevado(), "2 de 4 columnas nevadas");
+
+        entrada[6] = entrada[6].conNevado(false);
+        assertFalse(HierarchicalReducer.reducir(entrada, 2)[0].nevado(), "1 de 4 columnas nevadas");
     }
 }

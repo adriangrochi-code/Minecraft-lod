@@ -6,6 +6,21 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.14.0 — Noche, nieve y arreglos con VulkanMod
+- **De noche el LOD se oscurece** como el resto del mundo: sigue la hora
+  del día, la lluvia, las tormentas, la visión nocturna y el brillo de la
+  configuración (antes quedaba iluminado como de día).
+- **Nieve:** una capa de nieve ya no convierte el bloque de abajo en un cubo
+  blanco. Las hojas, el pasto o la piedra conservan sus costados y solo la
+  cara de arriba se ve nevada. Se regenera el LOD guardado.
+- **VulkanMod:** se arreglaron los triángulos estirados ("espigas") del LOD
+  lejano. Era un problema de VulkanMod con buffers de más de 65 536 vértices;
+  con VulkanMod el LOD ahora parte esas mallas.
+- **Escalado:** el menú solo muestra los modos que tu placa puede usar
+  (DLSS solo con NVIDIA RTX; XeSS con Intel Arc/Xe, NVIDIA desde la serie
+  10 y AMD RX 5000 en adelante; ninguno fuera de Windows). Si la config
+  pedía uno que no se puede, se usa el Temporal.
+
 ## 0.13.0 — Texturas del LOD con VulkanMod
 - Con VulkanMod, el terreno LOD ahora se ve con texturas (igual que sin
   VulkanMod) en vez de colores planos. Usa una variante del shader que el

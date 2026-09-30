@@ -130,6 +130,22 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   Verificado en Xvfb con lavapipe (se ven las texturas). Pista B: verlo en la GTX 1060.
   FSR/escalado con VulkanMod: se podrían portar igual (constructor con String + reglas del
   conversor), pero leen y escriben framebuffers de GL: pendiente.
+- **Espigas con VulkanMod (0.14.0, visto en video en la GTX 1060):** el `AutoIndexBuffer` de
+  quads de VulkanMod es compartido y arranca en 65536 vértices; si un VBO más grande lo hace
+  crecer, libera el viejo y los VBO ya subidos siguen apuntando a él (índices basura). También
+  crece solo x2 por vez. Con VulkanMod el LOD parte las mallas en piezas de <= 65536 vértices
+  (`RenderLod.MAX_VERTICES_VULKANMOD`); en lavapipe, 0 "Reallocating AutoIndexBuffer" en el log.
+- **Luz según la hora (0.14.0):** el color del LOD se multiplica por el píxel (bloque 0,
+  cielo 15) del lightmap de vanilla (`RenderLod.colorLuzCielo`, `AccesoLightTexture`),
+  normalizado al mediodía. Verificado en Xvfb con OpenGL y VulkanMod (mediodía #FFFFFF,
+  medianoche #51517F). Limitación: la luz horneada no separa cielo y bloque, así que de noche
+  también se oscurece lo iluminado por antorchas. Con shaderpack (Iris) no aplica: el pack
+  ilumina con el lightmap.
+- **Nieve (0.14.0):** bit 1 de `SuperVoxel.flags` = nevado; `GreedyMesher` dibuja solo la cara
+  de arriba con color/estado de la capa de nieve (lo fija `PaletaTexturas` en el cliente);
+  el reductor lo conserva si cubre >= la mitad de las columnas. Tests con bloques reales.
+  Pista B: verlo en el juego (en Xvfb la zona nevada a la vista era del generador aproximado,
+  que pone bloques de nieve enteros en biomas fríos). Alfombras: siguen pintando el bloque entero.
 - **Shaders (0.11.0):** con Iris el LOD pasa por el gbuffers_terrain del pack. Probado solo
   con un pack mínimo propio (Complementary en software es pura niebla). Falta ver en
   hardware real con Complementary/BSL: niebla de borde (tapa el LOD pasada la distancia

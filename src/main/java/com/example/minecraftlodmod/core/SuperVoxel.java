@@ -10,9 +10,10 @@ package com.example.minecraftlodmod.core;
  * en el pipeline de generation/ y no se mutan después — cualquier cambio
  * (por ejemplo al recalcular un nivel LOD, o al hornear la luz) crea uno nuevo.
  *
- * Uso de {@code flags}: bit 0 = colapsado por homogeneidad, bits 4-7 =
- * luz horneada (0-15, ver {@link #luzHorneada()}). Los bits 1-3 quedan
- * libres para futuros flags sin romper compatibilidad de formato.
+ * Uso de {@code flags}: bit 0 = colapsado por homogeneidad, bit 1 = nevado
+ * (ver {@link #nevado()}), bits 4-7 = luz horneada (0-15, ver
+ * {@link #luzHorneada()}). Los bits 2-3 quedan libres para futuros flags
+ * sin romper compatibilidad de formato.
  */
 public record SuperVoxel(
         byte r, byte g, byte b,
@@ -73,6 +74,22 @@ public record SuperVoxel(
     /** Bit 0 de flags: si el supervóxel proviene de un colapso por homogeneidad. */
     public boolean esHomogeneo() {
         return (flags & 0b0000_0001) != 0;
+    }
+
+    /**
+     * Bit 1 de flags: tiene una capa de nieve encima. El vóxel conserva su
+     * color y estado (los costados se ven como el bloque: hojas, pasto,
+     * piedra) y solo su cara de arriba se dibuja como nieve
+     * ({@code GreedyMesher}), en vez de un cubo blanco entero.
+     */
+    public boolean nevado() {
+        return (flags & 0b0000_0010) != 0;
+    }
+
+    /** Copia con el bit de nevado puesto o sacado. */
+    public SuperVoxel conNevado(boolean nevado) {
+        byte nuevosFlags = (byte) (nevado ? flags | 0b0000_0010 : flags & ~0b0000_0010);
+        return new SuperVoxel(r, g, b, alturaLocal, material, nuevosFlags, estado);
     }
 
     /**

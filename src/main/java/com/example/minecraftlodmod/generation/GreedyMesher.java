@@ -94,6 +94,27 @@ public final class GreedyMesher {
         return v != null && v.material() == SuperVoxel.Material.AGUA;
     }
 
+    /** Color y estado de bloque de la cara de arriba de un vóxel nevado; los fija el cliente. */
+    private static volatile int rgbNieve = 0xF4FBFB;
+    private static volatile short estadoNieve = SuperVoxel.SIN_ESTADO;
+
+    /**
+     * Lo llama el cliente al cargar recursos: color promedio y estado de la
+     * capa de nieve (para dibujar su textura). Sin llamarlo, la nieve va con
+     * un blanco fijo y sin textura.
+     */
+    public static void definirNieve(int rgb, int estado) {
+        rgbNieve = rgb;
+        estadoNieve = estado < 0 || estado > 0xFFFF ? SuperVoxel.SIN_ESTADO : (short) estado;
+    }
+
+    /** La cara de arriba de un vóxel nevado: nieve, con la luz y el material del vóxel. */
+    static SuperVoxel superficieNevada(SuperVoxel v) {
+        int rgb = rgbNieve;
+        return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, v.alturaLocal(), v.material(),
+                v.flags(), estadoNieve);
+    }
+
     private static boolean esAire(SuperVoxel v) {
         return v == null || v.material() == SuperVoxel.Material.AIRE;
     }
@@ -133,7 +154,8 @@ public final class GreedyMesher {
                     // a través del agua; sin esto, mirando a ras del agua quedaban huecos).
                     boolean bajoAgua = esAgua(vecino) && !esAgua(actual);
                     if (esAire(vecino) || bajoAgua) {
-                        mascara[u][v] = actual;
+                        mascara[u][v] = eje == Quad.Eje.Y && positivo && actual.nevado()
+                                ? superficieNevada(actual) : actual;
                         oclusion[u][v] = (conOclusion
                                 ? oclusionCara(grid, lado, eje, capaVecina, u, v, vecinos) : Quad.SIN_OCLUSION)
                                 | (bajoAgua ? Quad.BAJO_AGUA : 0);

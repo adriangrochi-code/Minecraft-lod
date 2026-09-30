@@ -2,6 +2,7 @@ package com.example.minecraftlodmod.render;
 
 import com.example.minecraftlodmod.generation.ColorTextura;
 import com.example.minecraftlodmod.generation.ColoresBloque;
+import com.example.minecraftlodmod.generation.GreedyMesher;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
@@ -17,6 +18,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.FoliageColor;
 import net.minecraft.world.level.GrassColor;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
@@ -95,6 +97,8 @@ public final class PaletaTexturas {
         long inicio = System.nanoTime();
         ColoresBloque.Paleta paleta = calcular();
         ColoresBloque.publicar(paleta);
+        BlockState nieve = Blocks.SNOW.defaultBlockState();
+        GreedyMesher.definirNieve(ColoresBloque.rgb(nieve, null, 0, 0), Block.getId(nieve));
         RenderLod.texturasCambiaron();
         long conColor = Arrays.stream(paleta.rgbBase()).filter(c -> c >= 0).count();
         LOG.info("LOD: paleta de texturas lista ({} estados con color) en {} ms", conColor,

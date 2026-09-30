@@ -586,6 +586,15 @@ uso y tipo, sin mirar la cantidad) y una variante del shader
 `drawWithShader`). Se crea con el constructor de `ShaderInstance` que recibe
 String, el único que VulkanMod intercepta. Pendiente: FSR con VulkanMod.
 
+Buffer de índices de VulkanMod (0.14.0): su `AutoIndexBuffer` de quads es
+compartido (65536 vértices al arrancar) y al crecer libera el anterior aunque
+otros VBO lo sigan usando → índices basura ("espigas"). Con VulkanMod el LOD
+parte las mallas en piezas de hasta 65536 vértices, así nunca lo hace crecer.
+
+Escalado según la GPU (0.14.0): `config/CompatibilidadEscalado` decide qué
+modos se ofrecen (DLSS solo RTX, XeSS con DP4a o Intel Xe, ambos solo en
+Windows; con VulkanMod, ninguno) y el menú muestra solo esos.
+
 **2. Shaders (Iris) — implementado el paso (a).** Con un shaderpack activo
 (`render/ShadersIris`, API de Iris por reflexión, Iris opcional):
 - El LOD se arma en el formato de bloque extendido de Iris

@@ -187,4 +187,25 @@ class GreedyMesherTest {
                 .findFirst().orElseThrow();
         assertTrue(!superficie.bajoAgua(), "La superficie del agua da contra aire");
     }
+
+    @Test
+    void unVoxelNevadoTieneNieveSoloArriba() {
+        GreedyMesher.definirNieve(0xF0F8F8, 1234);
+        SuperVoxel hoja = new SuperVoxel((byte) 20, (byte) 90, (byte) 20, (byte) 0,
+                SuperVoxel.Material.VEGETACION, (byte) 0).conEstado(77).conNevado(true);
+
+        List<Quad> quads = GreedyMesher.mallar(new SuperVoxel[] {hoja}, 1);
+
+        assertEquals(6, quads.size());
+        for (Quad q : quads) {
+            SuperVoxel cara = q.voxelRepresentativo();
+            if (q.eje() == Quad.Eje.Y && q.positivo()) {
+                assertEquals(1234, cara.idEstado(), "arriba: la textura de la nieve");
+                assertEquals((byte) 0xF0, cara.r());
+            } else {
+                assertEquals(77, cara.idEstado(), "costados y abajo: el bloque de siempre");
+                assertEquals((byte) 20, cara.r());
+            }
+        }
+    }
 }

@@ -6,6 +6,7 @@ import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
 import me.shedaniel.clothconfig2.gui.entries.EnumListEntry;
 import me.shedaniel.clothconfig2.gui.entries.TextListEntry;
 import com.example.minecraftlodmod.benchmark.SesionCalibracion;
+import com.example.minecraftlodmod.render.Escalado;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -116,9 +117,12 @@ final class PantallaCloth {
                 .setTooltip(texto("logDepuracion.tooltip"))
                 .setSaveConsumer(c.logDepuracion::set)
                 .build());
-        experimental.addEntry(e.startEnumSelector(texto("escalado"), ModoEscalado.class, c.escalado.get())
-                .setDefaultValue(c.escalado.getDefault())
-                .setEnumNameProvider(valor -> Component.translatable(
+        // Solo los modos que esta GPU puede usar (a la 1060 no se le ofrece DLSS).
+        ModoEscalado[] modos = Escalado.modosDisponibles().toArray(ModoEscalado[]::new);
+        experimental.addEntry(e.startSelector(texto("escalado"), modos,
+                        CompatibilidadEscalado.efectivo(c.escalado.get(), List.of(modos)))
+                .setDefaultValue(ModoEscalado.APAGADO)
+                .setNameProvider(valor -> Component.translatable(
                         CLAVE + "escalado." + valor.name().toLowerCase(Locale.ROOT)))
                 .setTooltip(texto("escalado.tooltip"))
                 .setSaveConsumer(c.escalado::set)
