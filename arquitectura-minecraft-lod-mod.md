@@ -135,7 +135,15 @@ sujetos a elección manual o a la calibración real por benchmark (sección 9).
 - Si el servidor no tiene el mod: modo de compatibilidad, LOD generado localmente solo de zonas ya visitadas como chunks reales (igual que singleplayer sin companion).
 - Invalidación de cache server-side ante cambios de bloques (evento → marcar sucio → regenerar en próxima pasada del thread pool).
 
-## 11. Configuración (Cloth Config)
+## 11. Configuración (pantalla propia estilo Sodium desde 0.17.0; antes Cloth Config)
+
+Desde la 0.17.0 la pantalla es propia (`config/PantallaLod` + `config/OpcionesLod`),
+con el estilo de las opciones de Sodium: pestañas General / Calidad /
+Generación / Depuración-Experimental, filas con nombre y control (casilla,
+ciclo, deslizador o botón), panel con la descripción e impacto en el
+rendimiento, y Deshacer / Aplicar / Hecho. Se abre desde la lista de mods y
+desde un botón "LOD" en Opciones > Video. Cloth Config dejó de usarse (una
+dependencia menos). El árbol original:
 
 ```
 Config general
@@ -155,7 +163,7 @@ storage/       - serialización compartida, cache en disco, invalidación
 render/        - buffers GPU por región, hook de render, blend/dithering
 network/       - protocolo cliente-servidor, payloads
 benchmark/     - dimensión custom, lógica de calibración
-config/        - Cloth Config, presets, persistencia
+config/        - pantalla de opciones (estilo Sodium), presets, persistencia
 ```
 
 ## 13. Orden de implementación sugerido

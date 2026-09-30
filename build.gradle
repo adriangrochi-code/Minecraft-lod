@@ -24,7 +24,6 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
     mavenCentral()
-    maven { url = 'https://maven.shedaniel.me/' } // Cloth Config
     maven { url = 'https://maven.su5ed.dev/releases' } // Forgified Fabric API (VulkanMod integrado)
 }
 
@@ -159,11 +158,6 @@ processResources {
 }
 
 dependencies {
-    // Cloth Config — pantalla in-game de config/, dependencia OPCIONAL:
-    // solo se compila contra ella; sin Cloth instalado se usa la pantalla
-    // automática de NeoForge. runtimeOnly la suma a runClient para verla.
-    compileOnly "me.shedaniel.cloth:cloth-config-neoforge:${cloth_config_version}"
-    runtimeOnly "me.shedaniel.cloth:cloth-config-neoforge:${cloth_config_version}"
 
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'

@@ -6,6 +6,17 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.17.0 — Opciones con el estilo de Sodium
+- **Pantalla de opciones nueva**, con el estilo de las de Sodium: pestañas
+  (General, Calidad, Generación, Depuración / Experimental), filas prolijas
+  con el nombre a la izquierda y el control a la derecha, y un panel que
+  explica cada opción y cuánto pesa en el rendimiento.
+- Los cambios quedan en amarillo hasta aplicarlos. Deshacer / Aplicar / Hecho
+  abajo a la derecha (Ctrl+Z y Ctrl+S también). Al cerrar se aplican solos.
+- Botón **"LOD"** arriba a la derecha de Opciones > Video, además del botón
+  Config de la lista de mods.
+- Ya no hace falta Cloth Config.
+
 ## 0.16.0 — Auto-ajuste según el procesador y la placa de video
 - **"Auto-ajuste dinámico" ahora funciona** (la opción existía pero no estaba
   conectada al juego). Cada segundo mide cuánto tarda el cuadro y cuánto

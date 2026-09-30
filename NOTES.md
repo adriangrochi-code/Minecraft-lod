@@ -485,3 +485,15 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   repitió: observar en la PC real si el LOD queda muy recortado en el piso.
 - Pista B: ver en la 1060 y en la 3500U/A275 qué diagnostica y si los tirones bajan.
 
+## Pantalla de opciones estilo Sodium (0.17.0)
+
+- `config/PantallaLod` (dibujo, pestañas, desplazamiento, teclas) + `config/OpcionesLod` (modelo
+  con valor pendiente: Interruptor, Ciclo, Deslizador en enteros con escala para decimales,
+  Accion inmediata). Reemplaza a `PantallaCloth`; Cloth Config fuera del build y del mods.toml.
+- Deslizadores: el pendiente arranca con el valor guardado tal cual (redondearlo al paso marcaba
+  cambios sin tocar nada, ej. 500 MB con paso 32).
+- Nombres que no entran al lado del control se cortan con "…" (el completo va en el panel).
+- Verificado en Xvfb (960x540, escala auto): las 4 pestañas, panel de descripción, opciones
+  deshabilitadas sin preset Personalizado y botón "LOD" en Opciones > Video. Con Sodium/Embeddium
+  o VulkanMod la pantalla de video es otra y el botón no aparece (queda la lista de mods).
+

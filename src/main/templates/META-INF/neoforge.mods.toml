@@ -37,9 +37,3 @@ file = "META-INF/accesstransformer.cfg"
 
 # Cloth Config: pantalla de config más completa si está instalado; sin él
 # se usa la pantalla automática de NeoForge (ver config/PantallaConfig).
-[[dependencies.${mod_id}]]
-    modId = "cloth_config"
-    type = "optional"
-    versionRange = "[15,)"
-    ordering = "NONE"
-    side = "CLIENT"
