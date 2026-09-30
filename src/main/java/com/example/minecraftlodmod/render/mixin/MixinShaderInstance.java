@@ -1,6 +1,6 @@
 package com.example.minecraftlodmod.render.mixin;
 
-import com.example.minecraftlodmod.render.EscaladoFsr;
+import com.example.minecraftlodmod.render.Escalado;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.vertex.VertexFormat;
@@ -23,7 +23,7 @@ public abstract class MixinShaderInstance {
     @Inject(method = "setDefaultUniforms", at = @At("TAIL"), require = 0)
     private void minecraftlodmod$tamanoDelFramebuffer(VertexFormat.Mode modo, Matrix4f vista, Matrix4f proyeccion,
                                                      Window ventana, CallbackInfo ci) {
-        RenderTarget escalado = EscaladoFsr.objetivoActivo();
+        RenderTarget escalado = Escalado.objetivoActivo();
         ShaderInstance shader = (ShaderInstance) (Object) this;
         if (escalado != null && shader.SCREEN_SIZE != null) {
             shader.SCREEN_SIZE.set((float) escalado.width, (float) escalado.height);

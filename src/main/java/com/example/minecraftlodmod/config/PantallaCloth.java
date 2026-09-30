@@ -116,10 +116,12 @@ final class PantallaCloth {
                 .setTooltip(texto("logDepuracion.tooltip"))
                 .setSaveConsumer(c.logDepuracion::set)
                 .build());
-        experimental.addEntry(e.startBooleanToggle(texto("fsrActivo"), c.fsrActivo.get())
-                .setDefaultValue(c.fsrActivo.getDefault())
-                .setTooltip(texto("fsrActivo.tooltip"))
-                .setSaveConsumer(c.fsrActivo::set)
+        experimental.addEntry(e.startEnumSelector(texto("escalado"), ModoEscalado.class, c.escalado.get())
+                .setDefaultValue(c.escalado.getDefault())
+                .setEnumNameProvider(valor -> Component.translatable(
+                        CLAVE + "escalado." + valor.name().toLowerCase(Locale.ROOT)))
+                .setTooltip(texto("escalado.tooltip"))
+                .setSaveConsumer(c.escalado::set)
                 .build());
         experimental.addEntry(e.startIntSlider(texto("fsrEscalaPorcentaje"), c.fsrEscalaPorcentaje.get(), 50, 99)
                 .setDefaultValue(c.fsrEscalaPorcentaje.getDefault())
@@ -132,6 +134,11 @@ final class PantallaCloth {
                 .setDefaultValue(c.fsrNitidez.getDefault())
                 .setTooltip(texto("fsrNitidez.tooltip"))
                 .setSaveConsumer(c.fsrNitidez::set)
+                .build());
+        experimental.addEntry(e.startBooleanToggle(texto("invertirJitter"), c.invertirJitter.get())
+                .setDefaultValue(c.invertirJitter.getDefault())
+                .setTooltip(texto("invertirJitter.tooltip"))
+                .setSaveConsumer(c.invertirJitter::set)
                 .build());
         experimental.addEntry(new BotonVulkan());
 

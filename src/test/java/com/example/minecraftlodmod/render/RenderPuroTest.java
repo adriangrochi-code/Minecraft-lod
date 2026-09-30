@@ -453,10 +453,10 @@ class RenderPuroTest {
 
     @Test
     void elFramebufferDeFsrEsLaFraccionDeLaPantallaSinPasarseNiQuedarEnCero() {
-        assertEquals(1478, EscaladoFsr.tamanoEscalado(1920, 0.77));
-        assertEquals(540, EscaladoFsr.tamanoEscalado(1080, 0.5));
-        assertEquals(1920, EscaladoFsr.tamanoEscalado(1920, 1.2), "Nunca más grande que la pantalla");
-        assertEquals(1, EscaladoFsr.tamanoEscalado(1, 0.5), "Nunca cero");
+        assertEquals(1478, Escalado.tamanoEscalado(1920, 0.77));
+        assertEquals(540, Escalado.tamanoEscalado(1080, 0.5));
+        assertEquals(1920, Escalado.tamanoEscalado(1920, 1.2), "Nunca más grande que la pantalla");
+        assertEquals(1, Escalado.tamanoEscalado(1, 0.5), "Nunca cero");
     }
 
     @Test

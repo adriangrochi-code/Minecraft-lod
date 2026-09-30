@@ -1,6 +1,6 @@
 package com.example.minecraftlodmod.render.mixin;
 
-import com.example.minecraftlodmod.render.EscaladoFsr;
+import com.example.minecraftlodmod.render.Escalado;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -18,6 +18,6 @@ public abstract class MixinRenderTarget {
 
     @ModifyVariable(method = "bindWrite", at = @At("HEAD"), argsOnly = true)
     private boolean minecraftlodmod$viewportDelEscalado(boolean fijarViewport) {
-        return fijarViewport || EscaladoFsr.objetivoActivo() == (Object) this;
+        return fijarViewport || Escalado.objetivoActivo() == (Object) this;
     }
 }

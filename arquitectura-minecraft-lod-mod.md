@@ -632,3 +632,36 @@ profundidad y máscara reactiva (agua, partículas). Por hardware:
 - **DLSS (NVIDIA):** solo RTX (Turing o más nuevas): ninguno de los equipos
   de referencia lo puede usar. Mismo interop que XeSS; la DLL de NVIDIA no
   se redistribuye, la aporta el usuario. Última prioridad.
+
+**4. Implementado (0.12.0) — base temporal, puente Vulkan, XeSS y DLSS.**
+- `config/ModoEscalado` reemplaza el on/off de FSR: APAGADO, FSR1, TEMPORAL
+  (propio), XESS, DLSS. Los tres últimos comparten la base temporal de
+  `render/Escalado`:
+  - Jitter de Halton 2/3 (`SecuenciaJitter`, fases como FSR 2) aplicado en
+    `GameRenderer#getProjectionMatrix` (mixin): mundo, mano y frustum
+    coherentes.
+  - Profundidad de la escena y matrices capturadas en `AFTER_LEVEL`, antes
+    de que la mano limpie la profundidad; los píxeles de la mano llevan
+    movimiento cero.
+  - Vectores de movimiento reconstruidos desde la profundidad
+    (`MovimientoCamara`, shader `escalado_movimiento`), solo cámara: las
+    entidades que se mueven quedan con el de la cámara (estelas posibles).
+  - TEMPORAL: acumulación con historial RGBA16F, recorte por varianza en
+    YCoCg, velocidad del vecino más cercano (`escalado_temporal`) + RCAS.
+- `render/InteropVulkan`: dispositivo Vulkan propio en la misma GPU (UUID
+  de `GL_EXT_memory_object`), imágenes con memoria exportable importadas en
+  OpenGL (fd en Linux, handles en Windows), sincronización glFinish + fence.
+  lwjgl-vulkan va reubicado dentro del mod (`com.example.minecraftlodmod.lwjglvk`,
+  plugin Shadow) para no chocar con el de VulkanMod. Verificado en Xvfb con
+  llvmpipe + lavapipe y el escalador de prueba `EscaladorBlit`
+  (-Dminecraftlodmod.pruebaVulkan=true).
+- `render/EscaladorXess`: libxess.dll del usuario en
+  `.minecraft/minecraftlodmod/`, API C de xess_vk.h por JNI de LWJGL
+  (structs en `XessParametros`, headers MIT).
+- `render/EscaladorDlss`: Streamline 2.14 (MIT) en
+  `.minecraft/minecraftlodmod/streamline/`, hookeo manual + slSetVulkanInfo,
+  structs en `StreamlineParametros`, llamadas de 5 argumentos por libffi.
+- XeSS y DLSS no se pueden probar acá (DLL solo Windows, GPU real): falta
+  Pista B. Si fallan al cargar o al ejecutar, el escalado cae solo al
+  TEMPORAL y lo dice en el log. `invertirJitter` (experimental) por si la
+  convención del signo del jitter resulta la contraria.

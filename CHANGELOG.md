@@ -6,6 +6,22 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.12.0 — Escalado temporal, XeSS y DLSS (experimentales)
+- La opción "Escalado" (Depuración / Experimental) elige: Apagado, AMD FSR 1,
+  Temporal (propio), Intel XeSS o NVIDIA DLSS.
+- **Temporal (propio):** junta varios cuadros con un desplazamiento
+  sub-píxel distinto y vectores de movimiento reconstruidos desde la
+  profundidad. Anda en cualquier GPU; quieto queda casi igual que la
+  resolución nativa.
+- **XeSS / DLSS:** el mod levanta un Vulkan propio en la misma GPU y comparte
+  las imágenes con OpenGL. Las DLL no vienen con el mod:
+  - XeSS: `libxess.dll` (SDK de Intel XeSS) en `.minecraft/minecraftlodmod/`.
+  - DLSS (solo RTX): `sl.interposer.dll`, `sl.common.dll`, `sl.dlss.dll` y
+    `nvngx_dlss.dll` (SDK de NVIDIA Streamline) en
+    `.minecraft/minecraftlodmod/streamline/`.
+  Si falta algo o falla, el escalado sigue con el Temporal y lo avisa en el log.
+- Opción "Invertir jitter (XeSS/DLSS)" por si la imagen tiembla con esos dos.
+
 ## 0.11.0 — Vulkan, shaders y más
 - **VulkanMod:** el LOD ya no cuelga el juego y se dibuja con colores planos
   (los shaders propios del LOD y FSR no funcionan bajo VulkanMod).

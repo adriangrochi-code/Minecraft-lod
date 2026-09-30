@@ -10,6 +10,7 @@ plugins {
     id 'java-library'
     id 'idea'
     id 'net.neoforged.moddev' version '2.0.148'
+    id 'com.gradleup.shadow' version '8.3.6' apply false
 }
 
 version = mod_version
@@ -57,6 +58,36 @@ neoForge {
         enable()
         testedMod = mods."${mod_id}"
     }
+}
+
+// Vulkan para XeSS/DLSS (render/InteropVulkan): los bindings de LWJGL van
+// REUBICADOS dentro del mod. VulkanMod carga su propio lwjgl-vulkan como módulo
+// org.lwjgl.vulkan; con el paquete original, los dos mods juntos no arrancan.
+configurations {
+    vulkanReubicado { transitive = false }
+}
+
+dependencies {
+    vulkanReubicado "org.lwjgl:lwjgl-vulkan:3.3.3"
+}
+
+var reubicarVulkan = tasks.register('reubicarVulkan', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    configurations = [project.configurations.vulkanReubicado]
+    archiveBaseName = 'lwjgl-vulkan-reubicado'
+    destinationDirectory = layout.buildDirectory.dir('reubicado')
+    relocate 'org.lwjgl.vulkan', 'com.example.minecraftlodmod.lwjglvk'
+    exclude 'module-info.class', 'META-INF/**'
+}
+
+dependencies {
+    compileOnly files(reubicarVulkan)
+    testImplementation files(reubicarVulkan)
+}
+
+// Las clases reubicadas viajan como recursos del mod: así también las ve runClient.
+processResources {
+    dependsOn reubicarVulkan
+    from(zipTree(reubicarVulkan.flatMap { it.archiveFile }))
 }
 
 dependencies {

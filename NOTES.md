@@ -129,6 +129,16 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 - **FSR con transparentes, mobs y contorno de bloque (0.10.0):** `ScreenSize` ahora toma el
   tamaño del framebuffer chico (`MixinShaderInstance`). Confirmar en hardware real.
 
+- **Escalado temporal / XeSS / DLSS (0.12.0):** probar en hardware real.
+  - TEMPORAL: estelas al moverse (sobre todo mobs, que no tienen vectores propios) y
+    nitidez quieto. En Xvfb (1 FPS) solo se pudo ver quieto: queda igual que nativo.
+  - XeSS: libxess.dll en `.minecraft/minecraftlodmod/`. Mirar el log: "XeSS x.y.z
+    cargado", "Vulkan listo en <GPU>", "XeSS listo". Si la imagen tiembla o queda borrosa
+    quieta, probar "Invertir jitter".
+  - DLSS: DLL de Streamline en `.minecraft/minecraftlodmod/streamline/` (solo RTX). El
+    log de Streamline queda en esa misma carpeta.
+  - Todavía sin semáforos compartidos (glFinish + fence): medir cuánto cuesta.
+
 ## Errores recurrentes / bloqueos
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~

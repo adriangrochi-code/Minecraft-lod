@@ -6,7 +6,7 @@ import com.example.minecraftlodmod.generation.GeneradorLocal;
 import com.example.minecraftlodmod.network.ProtocoloLod;
 import com.example.minecraftlodmod.render.PaletaTexturas;
 import com.example.minecraftlodmod.render.RenderLod;
-import com.example.minecraftlodmod.render.EscaladoFsr;
+import com.example.minecraftlodmod.render.Escalado;
 import com.example.minecraftlodmod.render.MonitorRendimiento;
 import com.example.minecraftlodmod.benchmark.SesionCalibracion;
 import net.neoforged.api.distmarker.Dist;
@@ -49,7 +49,8 @@ public class MinecraftLodMod {
             PaletaTexturas paleta = new PaletaTexturas();
             modEventBus.addListener(paleta::alCoserAtlas);
             modEventBus.addListener(RenderLod::registrarShaders);
-            modEventBus.addListener(EscaladoFsr::registrarShaders);
+            modEventBus.addListener(Escalado::registrarShaders);
+            NeoForge.EVENT_BUS.addListener(Escalado::alEtapa);
             NeoForge.EVENT_BUS.addListener(paleta::alTerminarTick);
             RenderLod render = new RenderLod(generador);
             NeoForge.EVENT_BUS.register(render);

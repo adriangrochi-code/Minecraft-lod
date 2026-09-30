@@ -41,9 +41,10 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue hudRendimiento;
         public final ModConfigSpec.BooleanValue logDepuracion;
         public final ModConfigSpec.BooleanValue ocultarTapado;
-        public final ModConfigSpec.BooleanValue fsrActivo;
+        public final ModConfigSpec.EnumValue<ModoEscalado> escalado;
         public final ModConfigSpec.IntValue fsrEscalaPorcentaje;
         public final ModConfigSpec.DoubleValue fsrNitidez;
+        public final ModConfigSpec.BooleanValue invertirJitter;
         public final ModConfigSpec.BooleanValue pregenerar;
         public final ModConfigSpec.BooleanValue generacionAproximada;
         public final ModConfigSpec.IntValue radioPregeneracion;
@@ -88,14 +89,19 @@ public final class ConfigLod {
                     .define("oclusionAmbiental", true);
 
             b.comment("Depuración y funciones experimentales.").push("experimental");
-            fsrActivo = b.comment("EXPERIMENTAL: dibujar el mundo a menor resolución y escalarlo con AMD FSR 1.",
-                            "Ayuda cuando la GPU es el límite. Se desactiva solo con gráficos Fabulous o con Iris.")
-                    .define("fsrActivo", false);
-            fsrEscalaPorcentaje = b.comment("Resolución del mundo con FSR, en % de la pantalla (77 = 'Calidad' de AMD,",
+            escalado = b.comment("EXPERIMENTAL: dibujar el mundo a menor resolución y llevarlo a la pantalla con un",
+                            "escalador. FSR1 = espacial (cualquier GPU); TEMPORAL = propio, junta varios cuadros (cualquier",
+                            "GPU); XESS = Intel XeSS (Windows, libxess.dll); DLSS = NVIDIA DLSS (Windows, RTX).",
+                            "Se desactiva solo con gráficos Fabulous, Iris o VulkanMod.")
+                    .defineEnum("escalado", ModoEscalado.APAGADO);
+            fsrEscalaPorcentaje = b.comment("Resolución del mundo al escalar, en % de la pantalla (77 = 'Calidad' de AMD,",
                             "67 = 'Equilibrado', 59 = 'Rendimiento', 50 = 'Rendimiento máximo').")
                     .defineInRange("fsrEscalaPorcentaje", 77, 50, 99);
-            fsrNitidez = b.comment("Nitidez de FSR (RCAS): 0 = máxima; cada unidad la reduce a la mitad.")
+            fsrNitidez = b.comment("Nitidez final (RCAS, en FSR1 y TEMPORAL): 0 = máxima; cada unidad la reduce a la mitad.")
                     .defineInRange("fsrNitidez", 0.25, 0.0, 2.0);
+            invertirJitter = b.comment("XeSS/DLSS: pasar el desplazamiento sub-píxel con el signo contrario. Probar si la imagen",
+                            "tiembla o queda borrosa quieta con XeSS o DLSS (depende de la convención de cada uno).")
+                    .define("invertirJitter", false);
             hudRendimiento = b.comment("Mostrar arriba de la pantalla FPS, tiempos de cuadro, CPU, RAM y el trabajo del LOD.")
                     .define("hudRendimiento", true);
             logDepuracion = b.comment("Escribir logs/minecraftlodmod-depuracion.log: una línea por segundo con el",
