@@ -147,6 +147,58 @@ class RenderPuroTest {
     }
 
     @Test
+    void elFormatoDeBloqueEsElDeVanillaConNormalYLuzEnElLightmap() {
+        assertEquals(net.minecraft.client.renderer.RenderType.solid().format().getVertexSize(), GeometriaLod.BYTES_BLOQUE,
+                "Mismo tamaño que DefaultVertexFormat.BLOCK");
+        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) 0,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(9);
+        GeometriaLod g = new GeometriaLod();
+        g.usarOclusionAmbiental(false);
+        g.agregarSeccion(new SuperVoxel[]{piedra}, 1, 32, -64, 48, 16);
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(g.vertices() * GeometriaLod.BYTES_BLOQUE);
+        g.escribirBloque(b, -1);
+        assertEquals(b.capacity(), b.position());
+        b.flip().order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < g.vertices(); i++) {
+            assertEquals(g.x(i), b.getFloat());
+            assertEquals(g.y(i), b.getFloat());
+            assertEquals(g.z(i), b.getFloat());
+            assertEquals(100, b.get() & 0xFF, "Color sin sombra por cara ni luz: el shaderpack ilumina");
+            assertEquals(110, b.get() & 0xFF);
+            assertEquals(120, b.get() & 0xFF);
+            assertEquals(255, b.get() & 0xFF);
+            b.getFloat();
+            b.getFloat();
+            assertEquals(0, b.getShort(), "Luz de bloque");
+            assertEquals(9 * 16, b.getShort(), "La luz horneada va como luz de cielo");
+            int cara = g.cara(i), eje = cara >> 1, signo = (cara & 1) == 1 ? 127 : -127;
+            assertEquals(eje == 0 ? signo : 0, b.get());
+            assertEquals(eje == 1 ? signo : 0, b.get());
+            assertEquals(eje == 2 ? signo : 0, b.get());
+            b.get();
+        }
+    }
+
+    @Test
+    void elFormatoExtendidoDeIrisAgregaVeinteBytesDetrasDelDeVanilla() {
+        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) 0,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(9);
+        GeometriaLod g = new GeometriaLod();
+        g.agregarSeccion(new SuperVoxel[]{piedra}, 1, 32, -64, 48, 16);
+        java.nio.ByteBuffer vanilla = java.nio.ByteBuffer.allocate(g.vertices() * GeometriaLod.BYTES_BLOQUE);
+        java.nio.ByteBuffer iris = java.nio.ByteBuffer.allocate(g.vertices() * GeometriaLod.BYTES_BLOQUE_IRIS);
+        g.escribirBloque(vanilla, -1, false);
+        g.escribirBloque(iris, -1, true);
+        assertEquals(iris.capacity(), iris.position(), "52 bytes por vértice");
+        for (int i = 0; i < g.vertices(); i++) {
+            for (int k = 0; k < GeometriaLod.BYTES_BLOQUE; k++) {
+                assertEquals(vanilla.get(i * GeometriaLod.BYTES_BLOQUE + k), iris.get(i * GeometriaLod.BYTES_BLOQUE_IRIS + k),
+                        "Los primeros 32 bytes son el formato de vanilla");
+            }
+        }
+    }
+
+    @Test
     void elFormatoCompactoOcupaDoceBytesPorVerticeYConservaTodo() {
         SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) 0,
                 SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(15);
@@ -349,6 +401,20 @@ class RenderPuroTest {
         org.joml.Matrix4f lod = PlanCeldas.conPlanosDeProfundidad(new org.joml.Matrix4f(vanilla), 16f, 5000f);
 
         assertTrue(lod.equals(esperada, 1e-4f), "Misma matriz que armarla con el balanceo incluido:\n" + lod + esperada);
+    }
+
+    @Test
+    void conVulkanModLaProyeccionDelLodSigueEnProfundidadCeroAUno() {
+        float fov = (float) Math.toRadians(70), aspecto = 16f / 9f;
+        org.joml.Matrix4f balanceo = new org.joml.Matrix4f().rotateZ(0.03f).translate(0.01f, -0.02f, 0f);
+        org.joml.Matrix4f vanilla = new org.joml.Matrix4f().perspective(fov, aspecto, 0.05f, 512f, true).mul(balanceo);
+        org.joml.Matrix4f esperada = new org.joml.Matrix4f().perspective(fov, aspecto, 16f, 5000f, true).mul(balanceo);
+
+        org.joml.Matrix4f lod = PlanCeldas.conPlanosDeProfundidad(new org.joml.Matrix4f(vanilla), 16f, 5000f);
+
+        assertTrue(lod.equals(esperada, 1e-4f), "Vulkan (0..1) se mantiene en 0..1:\n" + lod + esperada);
+        assertFalse(PlanCeldas.profundidadCeroAUno(
+                new org.joml.Matrix4f().perspective(fov, aspecto, 0.05f, 512f).mul(balanceo)), "OpenGL se detecta como -1..1");
     }
 
     @Test

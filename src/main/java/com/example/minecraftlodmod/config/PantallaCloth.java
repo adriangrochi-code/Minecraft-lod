@@ -133,6 +133,7 @@ final class PantallaCloth {
                 .setTooltip(texto("fsrNitidez.tooltip"))
                 .setSaveConsumer(c.fsrNitidez::set)
                 .build());
+        experimental.addEntry(new BotonVulkan());
 
         ConfigCategory personalizado = builder.getOrCreateCategory(Component.translatable(CLAVE + "personalizado"));
         personalizado.addEntry(e.startTextDescription(texto("personalizado.descripcion")).build());
@@ -215,6 +216,51 @@ final class PantallaCloth {
             boton.setMessage(texto(enCurso ? "calibrar.cancelar" : "calibrar.boton"));
             boton.setTooltip(Tooltip.create(texto(enCurso ? "calibrar.cancelar.tooltip"
                     : disponible ? "calibrar.tooltip" : "calibrar.enMundo")));
+            graficos.drawString(Minecraft.getInstance().font, getFieldName(), x, y + 6, 0xFFFFFF);
+            boton.setX(x + ancho - ANCHO);
+            boton.setY(y);
+            boton.render(graficos, mouseX, mouseY, delta);
+        }
+
+        @Override
+        public int getItemHeight() {
+            return 24;
+        }
+
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int boton) {
+            return this.boton.mouseClicked(mouseX, mouseY, boton);
+        }
+
+        @Override
+        public List<? extends GuiEventListener> children() {
+            return List.of(boton);
+        }
+
+        @Override
+        public List<? extends NarratableEntry> narratables() {
+            return List.of(boton);
+        }
+    }
+
+    /** Prende/apaga VulkanMod para el próximo arranque (ver {@link ConmutadorVulkan}). */
+    private static final class BotonVulkan extends TextListEntry {
+        private static final int ANCHO = 150;
+        private final Button boton;
+
+        BotonVulkan() {
+            super(texto("vulkan"), Component.empty());
+            boton = Button.builder(Component.empty(), b -> ConmutadorVulkan.alternar()).size(ANCHO, 20).build();
+        }
+
+        @Override
+        public void render(GuiGraphics graficos, int indice, int y, int x, int ancho, int alto,
+                           int mouseX, int mouseY, boolean resaltado, float delta) {
+            ConmutadorVulkan.Estado estado = ConmutadorVulkan.estado();
+            String clave = "vulkan." + estado.name().toLowerCase(Locale.ROOT);
+            boton.active = estado != ConmutadorVulkan.Estado.NO_INSTALADO;
+            boton.setMessage(texto(clave));
+            boton.setTooltip(Tooltip.create(texto(clave + ".tooltip")));
             graficos.drawString(Minecraft.getInstance().font, getFieldName(), x, y + 6, 0xFFFFFF);
             boton.setX(x + ancho - ANCHO);
             boton.setY(y);

@@ -8,6 +8,7 @@ import com.example.minecraftlodmod.core.SuperVoxel;
 import com.example.minecraftlodmod.generation.SectionExtractor;
 import com.example.minecraftlodmod.storage.OctreeNodeCodec;
 import com.example.minecraftlodmod.storage.RegionFileStore;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
@@ -23,6 +24,7 @@ import com.example.minecraftlodmod.generation.GreedyMesher;
 import com.example.minecraftlodmod.generation.PrioridadVista;
 import com.example.minecraftlodmod.generation.TerrenoAproximado;
 import com.example.minecraftlodmod.generation.GeneradorAproximado;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
@@ -45,6 +47,7 @@ import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -124,6 +127,13 @@ public final class RenderLod {
             .add("Color", VertexFormatElement.COLOR)
             .build();
 
+    /**
+     * Cómo está armada una malla: colores planos ({@code POSITION_COLOR}),
+     * formato compacto con texturas ({@link #FORMATO_TEXTURA}) o formato de
+     * bloque vanilla para shaderpacks ({@link GeometriaLod#escribirBloque}).
+     */
+    enum TipoMalla { PLANA, TEXTURA, BLOQUE }
+
     /** Shader texturizado, registrado como cualquier ShaderInstance del juego; null si no cargó. */
     private static volatile ShaderInstance shaderTextura;
     /** Sube cada vez que cambian las texturas (resource pack, F3+T): hay que rearmar todo. */
@@ -131,6 +141,17 @@ public final class RenderLod {
     private int versionTexturasVista = -1;
     private boolean texturasEnUso;
     private boolean oclusionEnUso;
+    private boolean shadersEnUso;
+    /**
+     * Con un shaderpack el LOD usa la proyección de vanilla (la que conoce el
+     * pack): este es el far que necesita, en bloques; 0 sin shaders. Lo lee el
+     * mixin de GameRenderer#getDepthFar.
+     */
+    private static volatile float farParaShaders;
+    /** Textura blanca 1×1: en modo shaders el color va en el vértice. */
+    private static final ResourceLocation TEXTURA_BLANCA =
+            ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, "lod_blanco");
+    private static boolean texturaBlancaLista;
 
     // Estadísticas para estimar el costo en cada hardware (log cada 10 s).
     static final long PERIODO_ESTADISTICAS_NANOS = 10_000_000_000L;
@@ -199,34 +220,23 @@ public final class RenderLod {
     }
 
     /**
-     * VulkanMod reemplaza ShaderInstance/VertexBuffer por su propio pipeline de Vulkan y
-     * el dibujo del LOD (formato de vértice propio, tabla de sprites con texelFetch) lo
-     * cuelga. Hasta tener un backend para Vulkan, con VulkanMod no se dibuja el LOD ni se
-     * escala con FSR: el juego sigue normal y la generación continúa.
+     * VulkanMod reemplaza ShaderInstance/VertexBuffer por su pipeline de Vulkan y no
+     * logra convertir los shaders propios (lod_textura, FSR): quedan sin pipeline y el
+     * primer dibujo tira NullPointerException. Con VulkanMod no se registran, así el LOD
+     * usa el camino de shaders vanilla (colores planos) que VulkanMod sí trae portado.
      */
-    public static boolean rendererIncompatible() {
+    public static boolean conVulkanMod() {
         return ModList.get().isLoaded("vulkanmod");
     }
 
-    private static boolean avisoIncompatible;
-
     private static boolean dibujoPermitido() {
-        if (!ConfigLod.CLIENTE.lodActivo.get()) {
-            return false;
-        }
-        if (rendererIncompatible()) {
-            if (!avisoIncompatible) {
-                avisoIncompatible = true;
-                LOG.warn("LOD: VulkanMod instalado; el dibujo del LOD queda desactivado (la generación sigue)");
-            }
-            return false;
-        }
-        return true;
+        return ConfigLod.CLIENTE.lodActivo.get();
     }
 
     /** Bus del mod, solo cliente. */
     public static void registrarShaders(RegisterShadersEvent evento) {
-        if (rendererIncompatible()) {
+        if (conVulkanMod()) {
+            LOG.info("LOD: VulkanMod instalado; el LOD se dibuja con colores planos (shaders vanilla)");
             return;
         }
         try {
@@ -324,7 +334,7 @@ public final class RenderLod {
         /** Escondida detrás del relieve en el último plan: ni se arma ni se dibuja (la malla se conserva). */
         boolean oculta;
         int chunksConDatos;
-        boolean texturizada;
+        TipoMalla tipo = TipoMalla.PLANA;
         long construidaNanos;
     }
 
@@ -333,7 +343,7 @@ public final class RenderLod {
      * vacías). {@code mallas} y {@code memoria} null = nada que dibujar.
      */
     private record MallaLista(long clave, PlanCeldas.Celda celda, MeshData[] mallas, float[] planos,
-                              ByteBufferBuilder memoria, int chunksConDatos, boolean texturizada) {
+                              ByteBufferBuilder memoria, int chunksConDatos, TipoMalla tipo) {
     }
 
     public RenderLod(GeneradorLocal generador) {
@@ -385,7 +395,11 @@ public final class RenderLod {
     @SubscribeEvent
     public void alRenderizar(RenderLevelStageEvent evento) {
         // Apagado desde la config: ni dibujo ni niebla (las mallas se conservan para volver rápido).
-        if (evento.getStage() != RenderLevelStageEvent.Stage.AFTER_SKY || !dibujoPermitido()) {
+        if (evento.getStage() != RenderLevelStageEvent.Stage.AFTER_SKY) {
+            return;
+        }
+        if (!dibujoPermitido()) {
+            farParaShaders = 0;
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -405,11 +419,17 @@ public final class RenderLod {
         boolean usarTexturas = shaderTextura != null && PaletaTexturas.tabla() != null
                 && ConfigLod.CLIENTE.texturasLod.get();
         boolean usarOclusion = ConfigLod.CLIENTE.oclusionAmbiental.get();
+        boolean usarShaders = ShadersIris.enUso();
         if (versionTexturas != versionTexturasVista || usarTexturas != texturasEnUso
-                || usarOclusion != oclusionEnUso) {
+                || usarOclusion != oclusionEnUso || usarShaders != shadersEnUso) {
             versionTexturasVista = versionTexturas;
             texturasEnUso = usarTexturas;
             oclusionEnUso = usarOclusion;
+            if (usarShaders != shadersEnUso) {
+                LOG.info("LOD: shaderpack {}; el LOD se dibuja {}", usarShaders ? "activo" : "apagado",
+                        usarShaders ? "con el terreno del pack" : "con sus propios shaders");
+            }
+            shadersEnUso = usarShaders;
             LOG.info("LOD: texturas {} (shader {}, tabla {}, opción {})", usarTexturas ? "activas" : "apagadas",
                     shaderTextura != null ? "ok" : "sin cargar", PaletaTexturas.tabla() != null ? "ok" : "sin calcular",
                     ConfigLod.CLIENTE.texturasLod.get());
@@ -448,6 +468,15 @@ public final class RenderLod {
                         }
                         continue;
                     }
+                    VertexBuffer anterior = estado.buffers[cara];
+                    if (anterior != null && anterior.getFormat() != null
+                            && !anterior.getFormat().equals(malla.drawState().format())) {
+                        // Otro formato (se prendió o apagó un shaderpack, o las texturas): VAO
+                        // nuevo. Re-subir al mismo dejaba atributos del formato viejo (con Iris,
+                        // las celdas cercanas salían a medio dibujar).
+                        anterior.close();
+                        estado.buffers[cara] = null;
+                    }
                     if (estado.buffers[cara] == null) {
                         estado.buffers[cara] = new VertexBuffer(VertexBuffer.Usage.STATIC);
                     }
@@ -465,7 +494,7 @@ public final class RenderLod {
             }
             estado.construidaCon = lista.celda();
             estado.chunksConDatos = lista.chunksConDatos();
-            estado.texturizada = lista.texturizada();
+            estado.tipo = lista.tipo();
             estado.construidaNanos = System.nanoTime();
             estado.enConstruccion = false;
         }
@@ -499,15 +528,20 @@ public final class RenderLod {
         // Chunks que vanilla YA tiene cargados dentro de su distancia: solo esos se le
         // dejan; el resto lo sigue dibujando el LOD hasta que llegue (sin huecos).
         Set<Long> deVanilla = new HashSet<>();
+        Set<Long> consultados = new HashSet<>();
         long vanilla2 = (long) distanciaVanilla * distanciaVanilla;
         for (int dx = -distanciaVanilla; dx <= distanciaVanilla; dx++) {
             for (int dz = -distanciaVanilla; dz <= distanciaVanilla; dz++) {
-                if ((long) dx * dx + (long) dz * dz < vanilla2
-                        && vanillaLoDibujo(mc, chunkX + dx, chunkZ + dz)) {
-                    deVanilla.add(PlanCeldas.claveChunk(chunkX + dx, chunkZ + dz));
+                if ((long) dx * dx + (long) dz * dz < vanilla2) {
+                    long claveChunk = PlanCeldas.claveChunk(chunkX + dx, chunkZ + dz);
+                    consultados.add(claveChunk);
+                    if (vanillaLoDibujo(mc, chunkX + dx, chunkZ + dz)) {
+                        deVanilla.add(claveChunk);
+                    }
                 }
             }
         }
+        cargadoDesde.keySet().retainAll(consultados);
         Set<Long> cubiertos = Set.copyOf(deVanilla);
         // Con zoom, el detalle extra solo para lo que entra en el cono de la vista (+ margen).
         double aspecto = (double) mc.getWindow().getWidth() / Math.max(1, mc.getWindow().getHeight());
@@ -525,7 +559,10 @@ public final class RenderLod {
         Set<Long> vigentes = new HashSet<>();
         ordenDibujo.clear();
         int encoladas = 0;
-        GeometriaLod.Texturas texturas = texturasEnUso ? PaletaTexturas.tabla() : null;
+        boolean bloque = shadersEnUso;
+        TipoMalla tipoEsperado = bloque ? TipoMalla.BLOQUE : texturasEnUso ? TipoMalla.TEXTURA : TipoMalla.PLANA;
+        // Con shaders las texturas no se dibujan, pero dan el color promedio de cada cara.
+        GeometriaLod.Texturas texturas = texturasEnUso || bloque ? PaletaTexturas.tabla() : null;
         boolean oclusion = oclusionEnUso;
         int minSeccion = mc.level.getMinSection();
         int maxSeccion = mc.level.getMaxSection();
@@ -540,19 +577,23 @@ public final class RenderLod {
             if (estado.oculta) {
                 continue; // tapada por el relieve: no gastar en armarla; si ya tenía malla, queda guardada
             }
-            boolean cambio = !celda.equals(estado.construidaCon);
+            // Una malla de otro tipo (terminó de armarse con el modo anterior después de
+            // cambiar shaders o texturas) no se dibuja en ninguna pasada: se rearma.
+            boolean cambio = !celda.equals(estado.construidaCon)
+                    || (estado.tieneMalla && estado.tipo != tipoEsperado);
             boolean incompleta = estado.construidaCon != null
                     && estado.chunksConDatos < chunksDibujables(celda)
                     && ahora - estado.construidaNanos > RECONSTRUIR_INCOMPLETA_NANOS;
             double mitad = celda.ladoEnBloques() / 2.0;
-            boolean unBuffer = celda.esGrande() || Math.hypot(celda.origenX() + mitad - camara.x,
+            // Con shaderpack cada llamada pasa por el apply() de Iris: un buffer por celda.
+            boolean unBuffer = bloque || celda.esGrande() || Math.hypot(celda.origenX() + mitad - camara.x,
                     celda.origenZ() + mitad - camara.z) > UN_BUFFER_DESDE;
             if (!estado.enConstruccion && (cambio || incompleta) && encoladas < ENCOLADAS_POR_PLAN) {
                 estado.enConstruccion = true;
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(prioridad(celda, camara, miraX, miraZ), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                cubiertos, texturas, oclusion, unBuffer)));
+                                cubiertos, texturas, oclusion, unBuffer, bloque)));
             }
         }
         celdas.entrySet().removeIf(e -> {
@@ -567,7 +608,7 @@ public final class RenderLod {
     /** Hilo de mallas: lee los nodos del nivel elegido y arma los vértices de la celda. */
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
                        int minSeccion, int maxSeccion, Set<Long> deVanilla,
-                       GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer) {
+                       GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer, boolean bloque) {
         long inicioArmado = System.nanoTime();
         try {
             GeometriaLod geometria = new GeometriaLod();
@@ -578,11 +619,17 @@ public final class RenderLod {
                     ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion)
                     : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion, deVanilla);
             if (geometria.vertices() == 0) {
-                listas.add(new MallaLista(clave, celda, null, null, null, conDatos, false));
+                listas.add(new MallaLista(clave, celda, null, null, null, conDatos, TipoMalla.PLANA));
                 return;
             }
-            boolean texturizada = texturas != null;
-            VertexFormat formato = texturizada ? FORMATO_TEXTURA : DefaultVertexFormat.POSITION_COLOR;
+            TipoMalla tipo = bloque ? TipoMalla.BLOQUE : texturas != null ? TipoMalla.TEXTURA : TipoMalla.PLANA;
+            VertexFormat formato = switch (tipo) {
+                case PLANA -> DefaultVertexFormat.POSITION_COLOR;
+                case TEXTURA -> FORMATO_TEXTURA;
+                // Solo hay mallas BLOQUE con un pack de Iris activo: su formato extendido.
+                case BLOQUE -> ShadersIris.formatoTerreno() != null ? ShadersIris.formatoTerreno()
+                        : DefaultVertexFormat.BLOCK;
+            };
             // Toda la memoria de una vez: las 6 mallas salen del mismo bloque, sin realocar.
             ByteBufferBuilder memoria = new ByteBufferBuilder(geometria.vertices() * formato.getVertexSize());
             MeshData[] mallas = new MeshData[GeometriaLod.CARAS];
@@ -590,10 +637,10 @@ public final class RenderLod {
             if (unBuffer) {
                 // Lejos (teselas y celdas pasando UN_BUFFER_DESDE): un solo buffer con todas las caras.
                 // Se ven chicas y la GPU ya descarta las de espaldas; separarlas triplicaba las llamadas.
-                mallas[0] = malla(geometria, -1, geometria.vertices(), formato, memoria, texturizada);
+                mallas[0] = malla(geometria, -1, geometria.vertices(), formato, memoria, tipo);
                 planos[0] = Float.NEGATIVE_INFINITY;
                 planos[1] = Float.POSITIVE_INFINITY;
-                listas.add(new MallaLista(clave, celda, mallas, planos, memoria, conDatos, texturizada));
+                listas.add(new MallaLista(clave, celda, mallas, planos, memoria, conDatos, tipo));
                 nanosArmado.add(System.nanoTime() - inicioArmado);
                 mallasArmadas.increment();
                 return;
@@ -603,26 +650,31 @@ public final class RenderLod {
                 planos[2 * cara + 1] = geometria.planoMax(cara);
                 int n = geometria.verticesDeCara(cara);
                 if (n > 0) {
-                    mallas[cara] = malla(geometria, cara, n, formato, memoria, texturizada);
+                    mallas[cara] = malla(geometria, cara, n, formato, memoria, tipo);
                 }
             }
-            listas.add(new MallaLista(clave, celda, mallas, planos, memoria, conDatos, texturizada));
+            listas.add(new MallaLista(clave, celda, mallas, planos, memoria, conDatos, tipo));
             nanosArmado.add(System.nanoTime() - inicioArmado);
             mallasArmadas.increment();
         } catch (RuntimeException e) {
             LOG.error("LOD: no se pudo armar la celda {},{}", celda.celdaX(), celda.celdaZ(), e);
-            listas.add(new MallaLista(clave, celda, null, null, null, 0, false));
+            listas.add(new MallaLista(clave, celda, null, null, null, 0, TipoMalla.PLANA));
         }
     }
 
     /** @param cara 0-5, o -1 para todas las caras en una sola malla */
     private static MeshData malla(GeometriaLod geometria, int cara, int n, VertexFormat formato,
-                                  ByteBufferBuilder memoria, boolean texturizada) {
-        if (texturizada) {
-            // Formato propio: BufferBuilder exige POSITION en float, así que los
-            // bytes se escriben directo y se envuelven en un MeshData como el suyo.
-            int bytes = n * GeometriaLod.BYTES_COMPACTO;
-            geometria.escribirCompacto(MemoryUtil.memByteBuffer(memoria.reserve(bytes), bytes), cara);
+                                  ByteBufferBuilder memoria, TipoMalla tipo) {
+        if (tipo != TipoMalla.PLANA) {
+            // Bytes escritos directo y envueltos en un MeshData como el de BufferBuilder
+            // (que exige POSITION en float y no conoce el formato compacto).
+            int bytes = n * formato.getVertexSize();
+            ByteBuffer destino = MemoryUtil.memByteBuffer(memoria.reserve(bytes), bytes);
+            if (tipo == TipoMalla.TEXTURA) {
+                geometria.escribirCompacto(destino, cara);
+            } else {
+                geometria.escribirBloque(destino, cara, formato.getVertexSize() == GeometriaLod.BYTES_BLOQUE_IRIS);
+            }
             return new MeshData(memoria.build(), new MeshData.DrawState(formato, n,
                     VertexFormat.Mode.QUADS.indexCount(n), VertexFormat.Mode.QUADS, VertexFormat.IndexType.least(n)));
         }
@@ -772,6 +824,11 @@ public final class RenderLod {
         llamadasUltimoFrame = 0;
         verticesUltimoFrame = 0;
         alcanceLodBloques = alcance(camara);
+        if (shadersEnUso) {
+            dibujarConShaderpack(mc, evento, camara);
+            return;
+        }
+        farParaShaders = 0;
         ParametrosCalidad c = calidad;
         float far = Math.max(NEAR_LOD * 2, c.radioLodChunks() * 16f * 1.5f);
         // La de vanilla (con balanceo de cámara, zoom y FOV reales) con near/far del LOD.
@@ -783,14 +840,14 @@ public final class RenderLod {
         RenderSystem.disableBlend();
         // Todas las caras son antihorarias vistas desde afuera (GeometriaLod): culling normal.
         RenderSystem.enableCull();
-        dibujarPasada(evento, camara, proyeccion, false, GameRenderer.getPositionColorShader());
+        dibujarPasada(evento, camara, proyeccion, TipoMalla.PLANA, GameRenderer.getPositionColorShader());
         ShaderInstance conTextura = shaderTextura;
         if (conTextura != null) {
             // Atlas de bloques activo, con mipmaps: la textura se simplifica sola con la distancia.
             mc.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).setFilter(false, true);
             RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
             RenderSystem.setShaderTexture(1, PaletaTexturas.TABLA_SPRITES);
-            dibujarPasada(evento, camara, proyeccion, true, conTextura);
+            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura);
         }
         VertexBuffer.unbind();
         RenderSystem.enableCull();
@@ -799,7 +856,48 @@ public final class RenderLod {
     }
 
     /**
-     * Una pasada (plana o texturizada). Con el shader propio se hace como el
+     * Con shaderpack: el shader de terreno sólido de vanilla (Iris lo cambia por el
+     * gbuffers_terrain del pack) y la proyección de vanilla sin tocar, porque el pack
+     * reconstruye posiciones desde la profundidad con ella. Para que el LOD entre, el
+     * far de vanilla se estira hasta el alcance del LOD (mixin de getDepthFar). Sin
+     * limpiar la profundidad después: el pack la necesita, y vanilla tapa igual al LOD
+     * en su zona porque el LOD no dibuja los chunks que vanilla ya tiene.
+     */
+    private void dibujarConShaderpack(Minecraft mc, RenderLevelStageEvent evento, Vec3 camara) {
+        farParaShaders = alcanceLodBloques * 1.1f;
+        if (ShadersIris.pasadaDeSombras()) {
+            return;
+        }
+        asegurarTexturaBlanca(mc);
+        RenderSystem.enableDepthTest();
+        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
+        RenderSystem.enableCull();
+        RenderSystem.setShaderTexture(0, TEXTURA_BLANCA);
+        mc.gameRenderer.lightTexture().turnOnLightLayer();
+        dibujarPasada(evento, camara, new Matrix4f(evento.getProjectionMatrix()), TipoMalla.BLOQUE,
+                GameRenderer.getRendertypeSolidShader());
+        mc.gameRenderer.lightTexture().turnOffLightLayer();
+        VertexBuffer.unbind();
+    }
+
+    private static void asegurarTexturaBlanca(Minecraft mc) {
+        if (texturaBlancaLista) {
+            return;
+        }
+        NativeImage blanca = new NativeImage(1, 1, false);
+        blanca.setPixelRGBA(0, 0, 0xFFFFFFFF);
+        mc.getTextureManager().register(TEXTURA_BLANCA, new DynamicTexture(blanca));
+        texturaBlancaLista = true;
+    }
+
+    /** Far de la proyección de vanilla que necesita el LOD con shaderpack (0 = no tocarlo). */
+    public static float farParaShaders() {
+        return farParaShaders;
+    }
+
+    /**
+     * Una pasada (plana, texturizada o de bloque para shaderpacks). Con el shader propio se hace como el
      * terreno vanilla: uniforms y shader una sola vez, y por buffer solo el
      * desplazamiento de la celda ({@code ChunkOffset}) y el draw; así los
      * buffers por dirección no multiplican el costo de CPU. El shader
@@ -807,19 +905,20 @@ public final class RenderLod {
      * drawWithShader con la matriz desplazada.
      */
     private void dibujarPasada(RenderLevelStageEvent evento, Vec3 camara, Matrix4f proyeccion,
-                               boolean texturizadas, ShaderInstance shader) {
+                               TipoMalla tipo, ShaderInstance shader) {
         if (shader == null) {
             return;
         }
         RenderSystem.setShader(() -> shader);
-        Uniform desplazamiento = shader.CHUNK_OFFSET;
+        // Con shaderpack, Iris cambia el shader por el del pack: siempre drawWithShader.
+        Uniform desplazamiento = tipo == TipoMalla.BLOQUE ? null : shader.CHUNK_OFFSET;
         if (desplazamiento != null) {
             shader.setDefaultUniforms(VertexFormat.Mode.QUADS, evento.getModelViewMatrix(), proyeccion,
                     Minecraft.getInstance().getWindow());
             shader.apply();
         }
         for (EstadoCelda estado : ordenDibujo) {
-            if (!estado.tieneMalla || estado.construidaCon == null || estado.texturizada != texturizadas
+            if (!estado.tieneMalla || estado.construidaCon == null || estado.tipo != tipo
                     || estado.oculta) {
                 continue;
             }
@@ -1103,9 +1202,25 @@ public final class RenderLod {
      * fondo, y a través del agua translúcida se veía el cielo. Mientras
      * vanilla no lo termina, el LOD lo sigue dibujando por debajo.
      */
-    private static boolean vanillaLoDibujo(Minecraft mc, int chunkX, int chunkZ) {
+    /**
+     * Sodium/Embeddium reemplazan el renderer de chunks y su isSectionCompiled no
+     * refleja lo que dibujan (da false aun para secciones a la vista): ahí se cede
+     * el chunk cuando lleva {@link #ESPERA_MALLADO_NANOS} cargado en el cliente.
+     */
+    private static final boolean RENDERER_DE_CHUNKS_PROPIO =
+            ModList.get().isLoaded("sodium") || ModList.get().isLoaded("embeddium");
+    static final long ESPERA_MALLADO_NANOS = 2_000_000_000L;
+    private final Map<Long, Long> cargadoDesde = new HashMap<>();
+
+    private boolean vanillaLoDibujo(Minecraft mc, int chunkX, int chunkZ) {
         if (!mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
+            cargadoDesde.remove(PlanCeldas.claveChunk(chunkX, chunkZ));
             return false;
+        }
+        if (RENDERER_DE_CHUNKS_PROPIO) {
+            long ahora = System.nanoTime();
+            long desde = cargadoDesde.computeIfAbsent(PlanCeldas.claveChunk(chunkX, chunkZ), k -> ahora);
+            return ahora - desde >= ESPERA_MALLADO_NANOS;
         }
         int x = chunkX * 16 + 8, z = chunkZ * 16 + 8;
         int superficie = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z) - 1;
@@ -1164,6 +1279,7 @@ public final class RenderLod {
     }
 
     private void liberarTodo() {
+        cargadoDesde.clear();
         celdas.values().forEach(RenderLod::cerrarBuffer);
         celdas.clear();
         ordenDibujo.clear();

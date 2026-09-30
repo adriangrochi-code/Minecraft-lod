@@ -6,6 +6,20 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.11.0 — Vulkan, shaders y más
+- **VulkanMod:** el LOD ya no cuelga el juego y se dibuja con colores planos
+  (los shaders propios del LOD y FSR no funcionan bajo VulkanMod).
+- **Interruptor de Vulkan** en "Depuración / Experimental": activa o
+  desactiva VulkanMod para el próximo arranque (renombra el jar a
+  `.disabled`, como Modrinth; si está cargado, al cerrar el juego).
+- **Shaders (Iris):** con un shaderpack el LOD se dibuja con el terreno del
+  pack, que lo ilumina. Los packs con niebla de borde lo tapan pasada la
+  distancia vanilla (se puede apagar en las opciones del pack).
+- Con Sodium/Embeddium, el LOD ya no se dibuja debajo del terreno vanilla
+  cercano.
+- Arreglo: al prender/apagar texturas o shaders, algunas celdas cercanas
+  quedaban armadas con el modo anterior y no se dibujaban.
+
 ## 0.10.0 — Menú de depuración, arreglos de FSR y VulkanMod
 - Nueva sección del menú "Depuración / Experimental": HUD de rendimiento, log
   de depuración y FSR (activo, escala y nitidez).

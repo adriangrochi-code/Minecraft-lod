@@ -54,8 +54,8 @@ public final class EscaladoFsr {
 
     /** Bus del mod, solo cliente. */
     public static void registrarShaders(RegisterShadersEvent evento) {
-        if (RenderLod.rendererIncompatible()) {
-            return; // VulkanMod: ver RenderLod.rendererIncompatible
+        if (RenderLod.conVulkanMod()) {
+            return; // VulkanMod no convierte estos shaders: ver RenderLod.conVulkanMod
         }
         try {
             evento.registerShader(new ShaderInstance(evento.getResourceProvider(),

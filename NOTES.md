@@ -116,13 +116,16 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 - Almacenamiento ya es por sección cúbica 16×16×16 (vacías no se guardan,
   uniformes = un vóxel). Con niveles grandes: ~27 KB por chunk.
 
-- **VulkanMod (0.10.0):** con NeoVulkanMod 0.5.5 la 0.9.0 crasheó en el mundo (i5 + GTX 1060).
-  El log recibido no traía la causa (solo los `jdk.attach` propios de VulkanMod). Medida
-  provisoria: con `vulkanmod` cargado no se registran los shaders ni se dibuja el LOD, y
-  FSR queda apagado (`RenderLod.rendererIncompatible`); la generación sigue. Pendiente:
-  el stack trace del crash-report para ver qué pieza falla (sospecha: formato de vértice
-  propio con UV entera + texelFetch en `lod_textura`, o `VertexBuffer` por dirección) y
-  un camino de dibujo compatible con Vulkan.
+- **VulkanMod (0.11.0):** reproducido con lavapipe en Xvfb: los shaders propios no pasan
+  el conversor de VulkanMod (NPE "has no initialized pipeline"). Con VulkanMod el LOD usa
+  colores planos con shaders vanilla y FSR queda apagado. Falta ver en la PC real (i5 +
+  GTX 1060) que dibuje bien y cuánto cuesta; en lavapipe VulkanMod no dibuja el terreno
+  vanilla ni sin el LOD (problema del entorno). Pendiente: texturas con VulkanMod.
+- **Shaders (0.11.0):** con Iris el LOD pasa por el gbuffers_terrain del pack. Probado solo
+  con un pack mínimo propio (Complementary en software es pura niebla). Falta ver en
+  hardware real con Complementary/BSL: niebla de borde (tapa el LOD pasada la distancia
+  vanilla), sombras (el LOD no entra en la pasada de sombras), agua (el LOD la dibuja
+  opaca con el resto del terreno) y costo por llamada de Iris.
 - **FSR con transparentes, mobs y contorno de bloque (0.10.0):** `ScreenSize` ahora toma el
   tamaño del framebuffer chico (`MixinShaderInstance`). Confirmar en hardware real.
 

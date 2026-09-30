@@ -303,12 +303,42 @@ public final class PlanCeldas {
      * fila 3 de P × B es -(fila 2 de B): alcanza con reescribir la fila 2
      * del producto con los coeficientes de profundidad nuevos, sin conocer B.
      *
+     * Respeta la convención de profundidad de la matriz que llega: OpenGL
+     * (-1..1) o Vulkan (0..1, la que arma VulkanMod cuando reescribe JOML).
+     *
      * @param proyeccion proyección de vanilla (se modifica y se devuelve)
      */
     public static Matrix4f conPlanosDeProfundidad(Matrix4f proyeccion, float near, float far) {
-        float a = -(far + near) / (far - near);
-        float b = -2f * far * near / (far - near);
+        boolean ceroAUno = profundidadCeroAUno(proyeccion);
+        float a = ceroAUno ? -far / (far - near) : -(far + near) / (far - near);
+        float b = ceroAUno ? -far * near / (far - near) : -2f * far * near / (far - near);
         Matrix4f m = proyeccion;
         return m.m02(-a * m.m03()).m12(-a * m.m13()).m22(-a * m.m23()).m32(-a * m.m33() + b);
+    }
+
+    /** Plano cercano de vanilla (GameRenderer.PROJECTION_Z_NEAR). */
+    static final double NEAR_VANILLA = 0.05;
+
+    /**
+     * Si la proyección lleva la profundidad a 0..1 (Vulkan) en vez de -1..1 (OpenGL).
+     * Con el mismo far, las dos convenciones solo difieren en el near implícito
+     * (el de OpenGL da la mitad): gana la que lo deja más cerca del de vanilla.
+     */
+    static boolean profundidadCeroAUno(Matrix4f p) {
+        double x = p.m03(), y = p.m13(), z = p.m23();
+        double largo = x * x + y * y + z * z;
+        if (largo < 1e-12) {
+            return false;
+        }
+        // Fila 2 = -A × fila 3 + (0, 0, 0, B), como en conPlanosDeProfundidad.
+        double k = (p.m02() * x + p.m12() * y + p.m22() * z) / largo;
+        double coefB = p.m32() - k * p.m33();
+        double coefA = -k;
+        double nearOpenGl = coefB / (coefA - 1);
+        double nearVulkan = coefB / coefA;
+        if (!(nearOpenGl > 0) || !(nearVulkan > 0)) {
+            return false;
+        }
+        return Math.abs(Math.log(nearVulkan / NEAR_VANILLA)) < Math.abs(Math.log(nearOpenGl / NEAR_VANILLA));
     }
 }

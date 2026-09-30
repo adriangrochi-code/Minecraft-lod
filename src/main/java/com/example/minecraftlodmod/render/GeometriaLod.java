@@ -46,6 +46,18 @@ public final class GeometriaLod {
 
     /** Bytes por vértice del formato compacto: 3 shorts de posición + short de sprite + RGBA. */
     public static final int BYTES_COMPACTO = 12;
+    /**
+     * Bytes por vértice del formato de bloque vanilla ({@code DefaultVertexFormat.BLOCK}):
+     * posición (3 float), RGBA, UV (2 float), lightmap (2 short), normal (3 byte + relleno).
+     * Es el que usan los shaderpacks (Iris lo dibuja con su gbuffers_terrain).
+     */
+    public static final int BYTES_BLOQUE = 32;
+    /**
+     * El formato de bloque extendido que Iris usa con un shaderpack activo
+     * ({@code IrisVertexFormats.TERRAIN}): el de vanilla más mc_Entity (2 short),
+     * mc_midTexCoord (2 float), at_tangent (4 byte) y at_midBlock (3 byte + relleno).
+     */
+    public static final int BYTES_BLOQUE_IRIS = 52;
     /** Texeles RGBA8 por sprite en la tabla que lee el shader. */
     public static final int TEXELES_POR_SPRITE = 3;
     /** Sprites por fila de la tabla (textura de 768 texeles de ancho). */
@@ -83,6 +95,10 @@ public final class GeometriaLod {
 
     private float[] posiciones = new float[3 * 1024];
     private int[] colores = new int[1024];
+    /** Color sin luz horneada ni sombra por cara (para shaders, que iluminan solos). */
+    private int[] coloresBase = new int[1024];
+    /** Luz horneada 0-15 por vértice (va al lightmap en el formato de bloque). */
+    private byte[] luces = new byte[1024];
     /** Por cara: cantidad de vértices y planos extremos (coordenada sobre su eje, en bloques de la celda). */
     private final int[] verticesPorCara = new int[CARAS];
     private final float[] planoMin = new float[CARAS];
@@ -258,6 +274,8 @@ public final class GeometriaLod {
         posiciones[i + 1] = oy + y * escala;
         posiciones[i + 2] = oz + z * escala;
         colores[vertices] = color(rgbBase, sombra * brilloOclusion, luz);
+        coloresBase[vertices] = color(rgbBase, brilloOclusion, 15);
+        luces[vertices] = (byte) luz;
         sprites[vertices] = cara == null ? 0 : cara.sprite();
         int indiceCara = eje.ordinal() * 2 + (q.positivo() ? 1 : 0);
         caras[vertices] = (byte) indiceCara;
@@ -291,6 +309,8 @@ public final class GeometriaLod {
     private void asegurarCapacidad() {
         if (vertices == colores.length) {
             colores = Arrays.copyOf(colores, colores.length * 2);
+            coloresBase = Arrays.copyOf(coloresBase, coloresBase.length * 2);
+            luces = Arrays.copyOf(luces, luces.length * 2);
             posiciones = Arrays.copyOf(posiciones, posiciones.length * 2);
             sprites = Arrays.copyOf(sprites, sprites.length * 2);
             caras = Arrays.copyOf(caras, caras.length * 2);
@@ -360,6 +380,46 @@ public final class GeometriaLod {
             b.putShort((short) sprites[i]);
             int c = colores[i];
             b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c).put(caras[i]);
+        }
+    }
+
+    /**
+     * Escribe los vértices (de una cara 0-5, o todos con -1) en el formato de
+     * bloque vanilla ({@link #BYTES_BLOQUE} bytes c/u, little-endian). El color
+     * va sin luz ni sombra por cara (el shaderpack ilumina con la normal y el
+     * lightmap); la UV es fija (se dibuja con una textura blanca: el color ya
+     * trae el promedio de la textura del bloque).
+     */
+    public void escribirBloque(ByteBuffer destino, int soloCara) {
+        escribirBloque(destino, soloCara, false);
+    }
+
+    /** @param extendidoIris true: {@link #BYTES_BLOQUE_IRIS} bytes por vértice (formato de Iris) */
+    public void escribirBloque(ByteBuffer destino, int soloCara, boolean extendidoIris) {
+        ByteBuffer b = destino.order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < vertices; i++) {
+            if (soloCara >= 0 && caras[i] != soloCara) {
+                continue;
+            }
+            b.putFloat(posiciones[i * 3]).putFloat(posiciones[i * 3 + 1]).putFloat(posiciones[i * 3 + 2]);
+            int c = coloresBase[i];
+            b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c).put((byte) 0xFF);
+            b.putFloat(0.5f).putFloat(0.5f);
+            // Lightmap como vanilla: (luz de bloque × 16, luz de cielo × 16); la horneada va como cielo.
+            b.putShort((short) 0).putShort((short) (luces[i] * 16));
+            int cara = caras[i];
+            int signo = (cara & 1) == 1 ? 127 : -127;
+            int eje = cara >> 1;
+            b.put((byte) (eje == 0 ? signo : 0)).put((byte) (eje == 1 ? signo : 0)).put((byte) (eje == 2 ? signo : 0))
+                    .put((byte) 0);
+            if (extendidoIris) {
+                // mc_Entity -1: ningún bloque especial del block.properties del pack.
+                b.putShort((short) -1).putShort((short) -1);
+                b.putFloat(0.5f).putFloat(0.5f);
+                // Tangente sobre el plano de la cara (X para caras Y/Z, Z para caras X).
+                b.put((byte) (eje == 0 ? 0 : 127)).put((byte) 0).put((byte) (eje == 0 ? 127 : 0)).put((byte) 127);
+                b.put((byte) 0).put((byte) 0).put((byte) 0).put((byte) 0);
+            }
         }
     }
 

@@ -548,3 +548,87 @@ del tamaño de la ventana) e Iris/Oculus (reemplazan este tramo). Con
 Embeddium debería convivir: falta probarlo en hardware real (Pista B), igual
 que la ganancia de FPS y la calidad visual.
 
+
+## 27. Vulkan, shaders y escaladores temporales (FSR 2 / XeSS / DLSS) — 2026-09-30
+
+Pedido: poder usar Vulkan (con interruptor), compatibilidad con shaders, y
+como objetivos XeSS (segunda prioridad) y DLSS (si se puede).
+
+**1. Vulkan = VulkanModNeoForge, no un renderer propio.**
+El que usa el jugador es VulkanModNeoForge 0.5.5-dev+3.1 (yiyuyan, fork de
+VulkanMod de xCollateral, LGPL-3.0). Reemplaza el renderer entero al
+arrancar: no se puede prender/apagar en caliente, y meterlo como jar-in-jar
+lo dejaría siempre prendido. Decisión: no se incluye; el LOD se adapta si
+está y el interruptor del menú (`config/ConmutadorVulkan`) lo activa o
+desactiva para el próximo arranque renombrando el jar (`.jar.disabled`, la
+convención de Modrinth). Apagarlo mientras corre el juego lo hace un
+proceso aparte cuando el juego cierra (en Windows un jar cargado no se
+puede renombrar).
+
+Qué rompía con VulkanMod (reproducido con lavapipe en Xvfb):
+- Shaders propios (`lod_textura`, FSR): su conversor GLSL→SPIR-V no los
+  toma y quedan sin pipeline → NullPointerException al primer dibujo (el
+  crash de la 0.9.0). Con VulkanMod no se registran; el LOD usa el camino
+  de colores planos con el shader vanilla `position_color`, que VulkanMod
+  trae portado. FSR 1 queda apagado.
+- `VertexBuffer.draw()` no vuelve a subir uniforms: el truco de un shader
+  por pasada + `ChunkOffset` por buffer no sirve ahí (sí `drawWithShader`).
+- Profundidad: si su "depthFix" (necesita `jdk.attach`, que el Java de
+  Modrinth no trae) funciona, las proyecciones salen en 0..1; si no, en
+  -1..1. `PlanCeldas.conPlanosDeProfundidad` detecta la convención de la
+  matriz que llega y la respeta.
+
+Pendiente: texturas con VulkanMod (formato de vértice vanilla con UV de
+atlas en vez del compacto) y FSR con VulkanMod.
+
+**2. Shaders (Iris) — implementado el paso (a).** Con un shaderpack activo
+(`render/ShadersIris`, API de Iris por reflexión, Iris opcional):
+- El LOD se arma en el formato de bloque extendido de Iris
+  (`IrisVertexFormats.TERRAIN`, 52 B: el `BLOCK` de vanilla + mc_Entity,
+  mc_midTexCoord, at_tangent, at_midBlock; `GeometriaLod.escribirBloque`) y se
+  dibuja con `GameRenderer.getRendertypeSolidShader()`, que Iris cambia por el
+  `gbuffers_terrain` del pack: el pack lo ilumina como al resto del terreno.
+  Con el `BLOCK` de 32 B Iris lee los vértices corridos (espigas).
+- Color sin luz ni sombra por cara, luz horneada en el lightmap, normal por
+  cara, textura blanca 1×1 (el color ya es el promedio de la textura).
+- Proyección de vanilla sin tocar (el pack reconstruye posiciones con ella),
+  con el far estirado hasta el alcance del LOD (mixin de
+  `GameRenderer#getDepthFar`) y sin limpiar la profundidad.
+- Límite conocido: el uniform `far` de Iris sale de la distancia de render
+  vanilla, así que la "niebla de borde" de muchos packs tapa el LOD más allá
+  de esa distancia (en Complementary se puede apagar esa niebla).
+- Verificado en Xvfb con un shaderpack mínimo propio; Complementary en render
+  por software sale todo niebla, no se pudo juzgar (Pista B).
+
+Los shaderpacks ya definen contratos para mods de LOD, que serían el paso (b):
+- Distant Horizons: programas `dh_terrain`/`dh_water`/`dh_shadow`,
+  `dhDepthTex0/1` y matrices `dhProjection`; Iris los alimenta desde la API
+  de DH (específico de DH).
+- Voxy: `voxy.json` + `voxy_opaque.glsl`/`voxy_translucent.glsl` en el pack
+  (Complementary r5.9 los trae): el pack aporta el código de fragmento y la
+  lista de uniforms/samplers; el mod de LOD lo compila con su propia entrada
+  de vértices y le da `vx*` (proyección, profundidad propia). Implementarlo
+  (solo leyendo archivos del pack, sin código de Voxy) daría el LOD sin la
+  niebla de borde y con iluminación completa en los packs que ya soportan
+  Voxy. Requiere acceso a los render targets y uniforms de Iris.
+
+Con Sodium/Embeddium, `LevelRenderer#isSectionCompiled` da false aun para
+secciones a la vista: ahí el LOD le cede un chunk a vanilla cuando lleva 2 s
+cargado en el cliente (`RenderLod.vanillaLoDibujo`).
+
+**3. Escaladores temporales.** FSR 2/3, XeSS y DLSS necesitan lo mismo, y es
+~80% del trabajo (según el proyecto de referencia minecraft-dlss, MIT):
+proyección con jitter por cuadro, vectores de movimiento (Minecraft no los
+genera: reproyección de cámara desde la profundidad + entidades aparte),
+profundidad y máscara reactiva (agua, partículas). Por hardware:
+- **FSR 2/3 (AMD, MIT):** corre en todo (GTX 1060, Vega 8, R7 de la A275).
+  Es el primero a implementar: se puede portar a shaders de cómputo GL sin
+  Vulkan.
+- **XeSS (Intel, licencia propia, DLL solo Windows):** tiene backend Vulkan,
+  no OpenGL. En GPUs no Intel necesita DP4a/SM 6.4: GTX 1060 sí; Vega 8 y
+  R7 (A275) probablemente no (a verificar). Camino: dispositivo Vulkan
+  interno + interop GL↔Vulkan (`GL_EXT_memory_object_win32` y semáforos),
+  llamando a `libxess.dll` desde Java con LWJGL (sin C++).
+- **DLSS (NVIDIA):** solo RTX (Turing o más nuevas): ninguno de los equipos
+  de referencia lo puede usar. Mismo interop que XeSS; la DLL de NVIDIA no
+  se redistribuye, la aporta el usuario. Última prioridad.
