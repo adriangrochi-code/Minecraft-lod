@@ -51,6 +51,11 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue texturasLod;
         public final ModConfigSpec.BooleanValue descartarCuevas;
         public final ModConfigSpec.BooleanValue oclusionAmbiental;
+        public final ModConfigSpec.BooleanValue texturasComoTerreno;
+        public final ModConfigSpec.BooleanValue nubesLejanas;
+        public final ModConfigSpec.BooleanValue curvatura;
+        public final ModConfigSpec.IntValue radioCurvaturaKm;
+        public final ModConfigSpec.BooleanValue horizonteReal;
 
         Cliente(ModConfigSpec.Builder b) {
             ParametrosCalidad medio = ParametrosCalidad.de(QualityPreset.MEDIO);
@@ -87,6 +92,20 @@ public final class ConfigLod {
             oclusionAmbiental = b.comment("Oscurecer rincones y bases de paredes del LOD (oclusión ambiental por vértice).",
                             "Sin costo en la GPU, pero fusiona menos caras: algo más de geometría.")
                     .define("oclusionAmbiental", true);
+            texturasComoTerreno = b.comment("Vóxeles grandes (lejos): el costado de pasto, nieve, micelio, etc. lleva su franja",
+                            "solo en la fila de arriba y abajo la textura de la tierra, como un corte del terreno. Apagado:",
+                            "la textura del costado se repite en cada bloque del vóxel (una línea de pasto por bloque).")
+                    .define("texturasComoTerreno", true);
+            nubesLejanas = b.comment("Seguir dibujando las nubes más allá de donde las corta vanilla, hasta el alcance del LOD.")
+                    .define("nubesLejanas", true);
+            curvatura = b.comment("Curvar el terreno LOD con la distancia como la superficie de un planeta: lo lejano baja",
+                            "y se esconde detrás del horizonte.")
+                    .define("curvatura", false);
+            radioCurvaturaKm = b.comment("Radio del planeta para la curvatura, en km (1 bloque = 1 m). 6371 = la Tierra 1:1.")
+                    .defineInRange("radioCurvaturaKm", 6371, 1, 100_000);
+            horizonteReal = b.comment("Con curvatura: el radio del LOD sale de la altura de los ojos y el radio del planeta",
+                            "(hasta dónde se vería el horizonte de verdad) en vez del radio del preset. Tope: " + ParametrosCalidad.RADIO_MAX + " chunks.")
+                    .define("horizonteReal", false);
 
             b.comment("Depuración y funciones experimentales.").push("experimental");
             escalado = b.comment("EXPERIMENTAL: dibujar el mundo a menor resolución y llevarlo a la pantalla con un",

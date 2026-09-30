@@ -11,6 +11,7 @@ import com.example.minecraftlodmod.render.RenderLod;
 import com.example.minecraftlodmod.render.BalanceCpuGpu;
 import com.example.minecraftlodmod.render.Escalado;
 import com.example.minecraftlodmod.render.MonitorRendimiento;
+import com.example.minecraftlodmod.render.NubesLejanas;
 import com.example.minecraftlodmod.benchmark.SesionCalibracion;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -56,6 +57,7 @@ public class MinecraftLodMod {
             PaletaTexturas paleta = new PaletaTexturas();
             modEventBus.addListener(paleta::alCoserAtlas);
             modEventBus.addListener(RenderLod::registrarShaders);
+            modEventBus.addListener(NubesLejanas::registrarShader);
             modEventBus.addListener(Escalado::registrarShaders);
             NeoForge.EVENT_BUS.addListener(Escalado::alEtapa);
             NeoForge.EVENT_BUS.addListener(paleta::alTerminarTick);

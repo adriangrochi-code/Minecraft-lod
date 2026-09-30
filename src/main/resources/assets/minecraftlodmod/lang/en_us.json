@@ -146,5 +146,18 @@
   "minecraftlodmod.video.shaders": "Shader packs",
   "minecraftlodmod.video.shaders.tooltip": "Opens the Iris shader pack screen. The LOD is drawn with the pack's terrain.",
   "minecraftlodmod.video.original": "Original video settings",
-  "minecraftlodmod.video.original.tooltip": "Opens Minecraft's unchanged video settings screen, in case another mod adds something there this one does not show. Leaving it comes back here."
+  "minecraftlodmod.video.original.tooltip": "Opens Minecraft's unchanged video settings screen, in case another mod adds something there this one does not show. Leaving it comes back here.",
+  "minecraftlodmod.configuration.texturasComoTerreno": "Large voxels as terrain",
+  "minecraftlodmod.configuration.texturasComoTerreno.tooltip": "Far terrain voxels span several blocks. On: grass (and snowy grass, mycelium, podzol) sides get the green band only on their top row and dirt below, like a terrain cut. Off: the texture repeats every block, showing a grass line per block.",
+  "minecraftlodmod.configuration.nubesLejanas": "Distant clouds",
+  "minecraftlodmod.configuration.nubesLejanas.tooltip": "Minecraft cuts clouds off a few hundred blocks away. On: they continue with the same shape and motion as far as the LOD reaches, blending into the sky at the horizon. Not available with Vulkan or shader packs (they draw their own clouds).",
+  "minecraftlodmod.configuration.curvatura": "Horizon curvature",
+  "minecraftlodmod.configuration.curvatura.tooltip": "Curves the distant terrain like a planet's surface: far terrain drops and hides behind the horizon. It starts where normal terrain ends, so there is no step.",
+  "minecraftlodmod.configuration.radioCurvaturaKm": "Planet radius",
+  "minecraftlodmod.configuration.radioCurvaturaKm.tooltip": "Planet size (1 block = 1 meter). Earth 1:1 gives a realistic, subtle curve; a small planet makes it very visible.",
+  "minecraftlodmod.configuration.radioCurvaturaKm.tierra": "Earth (%s km)",
+  "minecraftlodmod.configuration.radioCurvaturaKm.marte": "Mars (%s km)",
+  "minecraftlodmod.configuration.radioCurvaturaKm.luna": "Moon (%s km)",
+  "minecraftlodmod.configuration.horizonteReal": "Real horizon",
+  "minecraftlodmod.configuration.horizonteReal.tooltip": "The LOD radius no longer comes from the preset: it is computed from eye height above sea level and the planet radius, as far as the real horizon would be (plus a hill behind it). Higher means farther. Earth 1:1 can ask for thousands of blocks: approximate generation helps. Auto-tuning still trims it if performance falls short."
 }

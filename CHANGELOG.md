@@ -6,6 +6,22 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.19.0 — Terreno lejano más natural, nubes y curvatura
+- **Vóxeles grandes como terreno:** a lo lejos, el costado de los bloques de
+  pasto (y nieve, micelio, podzol) ya no muestra una línea de pasto por cada
+  bloque: la franja va solo arriba y abajo se ve tierra, como un corte del
+  terreno. Opción "Vóxeles grandes como terreno" (Calidad LOD).
+- **Nubes lejanas:** las nubes siguen, con la misma forma y movimiento, hasta
+  donde llega el LOD, y se funden con el cielo en el horizonte (antes se
+  cortaban a unos cientos de bloques). Opción "Nubes lejanas".
+- **Curvatura del horizonte** (apagada por defecto): el terreno lejano y las
+  nubes bajan como sobre un planeta. Radio configurable: Tierra 1:1 (por
+  defecto), Marte, Luna o planetas más chicos para un efecto más notorio.
+- **Horizonte real:** con la curvatura, el radio del LOD sale de la altura de
+  los ojos y el tamaño del planeta (hasta dónde se vería el horizonte de
+  verdad) en vez del radio del preset. El auto-ajuste lo sigue recortando si
+  falta rendimiento.
+
 ## 0.18.0 — Todo en Opciones > Video
 - **Opciones > Video ahora es la pantalla estilo Sodium**, con las opciones de
   video de Minecraft y las del LOD juntas: pestañas Video, Gráficos, LOD,

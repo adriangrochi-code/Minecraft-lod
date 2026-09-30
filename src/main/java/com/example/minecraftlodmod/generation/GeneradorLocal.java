@@ -274,6 +274,12 @@ public final class GeneradorLocal {
         }
     }
 
+    /**
+     * Radio pedido por el render con "horizonte real" (curvatura), en chunks;
+     * 0 = el del preset. El horizonte aproximado genera hasta ahí.
+     */
+    public static volatile int radioHorizonteCliente;
+
     private boolean pregeneradorRoto;
     private boolean aproximadoRoto;
 
@@ -283,7 +289,8 @@ public final class GeneradorLocal {
             return;
         }
         try {
-            aproximado.tick(servidor, ConfigLod.CLIENTE.generacionAproximada.get(), calidad.radioLodChunks());
+            int radio = radioHorizonteCliente > 0 ? radioHorizonteCliente : calidad.radioLodChunks();
+            aproximado.tick(servidor, ConfigLod.CLIENTE.generacionAproximada.get(), radio);
         } catch (RuntimeException e) {
             aproximadoRoto = true;
             LOG.error("LOD: la generación aproximada falló y se apaga hasta reiniciar el mundo", e);

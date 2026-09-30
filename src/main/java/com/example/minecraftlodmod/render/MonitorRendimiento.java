@@ -233,9 +233,9 @@ public final class MonitorRendimiento {
         }
         if (m.lod() != null) {
             RenderLod.Resumen l = m.lod();
-            s.append(String.format(Locale.ROOT, " lod=%s dibujo=%.2fms llamadas=%d vertDibujados=%d piezas=%d vert=%d vram=%dMB ocultas=%d mallasEnCola=%d",
+            s.append(String.format(Locale.ROOT, " lod=%s dibujo=%.2fms llamadas=%d vertDibujados=%d piezas=%d vert=%d vram=%dMB ocultas=%d mallasEnCola=%d radio=%d",
                     l.activo() ? "on" : "off", l.msDibujo(), l.llamadas(), l.verticesDibujados(), l.piezas(),
-                    l.vertices(), l.vramMb(), l.ocultas(), l.mallasEnCola()));
+                    l.vertices(), l.vramMb(), l.ocultas(), l.mallasEnCola(), l.radioChunks()));
         }
         s.append(String.format(Locale.ROOT, " extraidos=%.0f/s pendientes=%d aproximados=%.0f/s pregen=%s",
                 m.extraidosPorSegundo(), m.pendientes(), m.aproximadosPorSegundo(), pregeneracion(m.pregeneracion())));

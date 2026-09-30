@@ -5,6 +5,7 @@ import com.example.minecraftlodmod.config.ConmutadorVulkan;
 import com.example.minecraftlodmod.config.ParametrosCalidad;
 import com.example.minecraftlodmod.generation.GeneradorLocal;
 import com.example.minecraftlodmod.generation.NivelesGrandes;
+import com.example.minecraftlodmod.core.HorizonteCurvo;
 import com.example.minecraftlodmod.core.SuperVoxel;
 import com.example.minecraftlodmod.generation.SectionExtractor;
 import com.example.minecraftlodmod.storage.OctreeNodeCodec;
@@ -186,6 +187,8 @@ public final class RenderLod {
     private int llamadasUltimoFrame;
     /** Distancia horizontal a la cámara del borde más lejano de LOD dibujado en el último frame. */
     private volatile float alcanceLodBloques;
+    /** Radio del último plan, en chunks (el del preset, el del auto-ajuste o el del horizonte real). */
+    private int radioEnUso;
     private long verticesUltimoFrame;
 
     private void registrarEstadisticas(Minecraft mc) {
@@ -222,7 +225,7 @@ public final class RenderLod {
 
     /** Lo que muestra el HUD de rendimiento y escribe el log de depuración. */
     public record Resumen(boolean activo, int piezas, long vertices, long verticesDibujados, int llamadas,
-                          double msDibujo, long vramMb, int ocultas, int mallasEnCola) {
+                          double msDibujo, long vramMb, int ocultas, int mallasEnCola, int radioChunks) {
     }
 
     /** Hilo de render (recorre las celdas: llamarlo como mucho una vez por segundo). */
@@ -238,7 +241,7 @@ public final class RenderLod {
         }
         int enCola = hiloMallas instanceof ThreadPoolExecutor t ? t.getQueue().size() : 0;
         return new Resumen(dibujoPermitido() && calidad != null, piezas, vertices, verticesUltimoFrame,
-                llamadasUltimoFrame, nanosDibujoUltimoFrame / 1e6, bytes >> 20, piezasOcultas, enCola);
+                llamadasUltimoFrame, nanosDibujoUltimoFrame / 1e6, bytes >> 20, piezasOcultas, enCola, radioEnUso);
     }
 
     /**
@@ -559,6 +562,18 @@ public final class RenderLod {
         ultimoPlanNanos = ahora;
         // Detalle y radio del auto-ajuste (los del preset si está apagado).
         int radioChunks = balance.radioChunks(c);
+        int distanciaVanillaChunks = mc.options.getEffectiveRenderDistance();
+        if (ConfigLod.CLIENTE.curvatura.get() && ConfigLod.CLIENTE.horizonteReal.get()) {
+            // Horizonte real: hasta dónde se ve la superficie curva desde los ojos, en vez del radio del
+            // preset; el auto-ajuste lo sigue recortando en la misma proporción que al del preset.
+            int horizonte = HorizonteCurvo.radioChunks(camara.y - mc.level.getSeaLevel(), radioCurvatura(),
+                    distanciaVanillaChunks + 2, ParametrosCalidad.RADIO_MAX);
+            radioChunks = (int) Math.round(horizonte * (double) radioChunks / Math.max(1, c.radioLodChunks()));
+            GeneradorLocal.radioHorizonteCliente = horizonte;
+        } else {
+            GeneradorLocal.radioHorizonteCliente = 0;
+        }
+        radioEnUso = radioChunks;
         double umbralPx = balance.umbralPx(c);
         double distanciaUnBuffer = balance.distanciaUnBuffer();
         // Vanilla dibuja hasta su distancia de render; se deja un chunk de
@@ -910,7 +925,7 @@ public final class RenderLod {
         }
         farParaShaders = 0;
         ParametrosCalidad c = calidad;
-        float far = Math.max(NEAR_LOD * 2, c.radioLodChunks() * 16f * 1.5f);
+        float far = Math.max(NEAR_LOD * 2, Math.max(c.radioLodChunks(), radioEnUso) * 16f * 1.5f);
         // La de vanilla (con balanceo de cámara, zoom y FOV reales) con near/far del LOD.
         Matrix4f proyeccion = PlanCeldas.conPlanosDeProfundidad(new Matrix4f(evento.getProjectionMatrix()),
                 NEAR_LOD, far);
@@ -934,6 +949,12 @@ public final class RenderLod {
             dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura);
         }
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        if (ConfigLod.CLIENTE.nubesLejanas.get()) {
+            NubesLejanas.dibujar(mc, evento.getModelViewMatrix(), proyeccion, camara,
+                    evento.getPartialTick().getGameTimeDeltaPartialTick(false), alcanceLodBloques,
+                    ConfigLod.CLIENTE.curvatura.get() ? radioCurvatura() : 0,
+                    mc.options.getEffectiveRenderDistance() * 16.0);
+        }
         VertexBuffer.unbind();
         RenderSystem.enableCull();
         // GL_DEPTH_BUFFER_BIT: el terreno vanilla se dibuja después, siempre delante del LOD.
@@ -1004,6 +1025,11 @@ public final class RenderLod {
         texturaBlancaLista = true;
     }
 
+    /** Radio del planeta de la curvatura, en bloques. */
+    static double radioCurvatura() {
+        return ConfigLod.CLIENTE.radioCurvaturaKm.get() * 1000.0;
+    }
+
     /** Far de la proyección de vanilla que necesita el LOD con shaderpack (0 = no tocarlo). */
     public static float farParaShaders() {
         return farParaShaders;
@@ -1025,9 +1051,18 @@ public final class RenderLod {
         RenderSystem.setShader(() -> shader);
         // Con shaderpack, Iris cambia el shader por el del pack: siempre drawWithShader.
         Uniform desplazamiento = tipo == TipoMalla.BLOQUE ? null : shader.CHUNK_OFFSET;
+        // Curvatura: por vértice en el shader propio; si no lo tiene (colores planos, VulkanMod,
+        // shaderpack), cada celda baja entera lo que corresponde a su centro.
+        double radioPlaneta = ConfigLod.CLIENTE.curvatura.get() ? radioCurvatura() : 0;
+        double inicioCurva = Minecraft.getInstance().options.getEffectiveRenderDistance() * 16.0;
+        Uniform curvatura = desplazamiento != null ? shader.getUniform("Curvatura") : null;
+        boolean curvaPorCelda = radioPlaneta > 0 && curvatura == null;
         if (desplazamiento != null) {
             shader.setDefaultUniforms(VertexFormat.Mode.QUADS, evento.getModelViewMatrix(), proyeccion,
                     Minecraft.getInstance().getWindow());
+            if (curvatura != null) {
+                curvatura.set(radioPlaneta > 0 ? HorizonteCurvo.coeficiente(radioPlaneta) : 0f, (float) inicioCurva);
+            }
             shader.apply();
         }
         for (EstadoCelda estado : ordenDibujo) {
@@ -1038,12 +1073,17 @@ public final class RenderLod {
             double origenX = estado.construidaCon.origenX(), origenZ = estado.construidaCon.origenZ();
             float ox = (float) (origenX - camara.x);
             float oz = (float) (origenZ - camara.z);
+            float oy = (float) -camara.y;
+            if (curvaPorCelda) {
+                double mitad = estado.construidaCon.ladoEnBloques() / 2.0;
+                oy -= (float) HorizonteCurvo.bajada(Math.hypot(ox + mitad, oz + mitad), inicioCurva, radioPlaneta);
+            }
             Matrix4f vista = null;
             if (desplazamiento != null) {
-                desplazamiento.set(ox, (float) -camara.y, oz);
+                desplazamiento.set(ox, oy, oz);
                 desplazamiento.upload();
             } else {
-                vista = new Matrix4f(evento.getModelViewMatrix()).translate(ox, (float) -camara.y, oz);
+                vista = new Matrix4f(evento.getModelViewMatrix()).translate(ox, oy, oz);
             }
             for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
                 VertexBuffer[] piezas = estado.buffers[cara];

@@ -734,3 +734,37 @@ compatibilidad, secciones 6/15/20). Sí hay perillas que cambian CPU por GPU:
 Reemplaza en la práctica a `PerformanceAutoTuner` (secciones 7, 21, 23),
 que nunca llegó a conectarse al juego.
 
+
+## 29. Vóxeles grandes como terreno, nubes lejanas y curvatura — 2026-09-30
+
+**Texturas de vóxeles grandes.** La textura se repite una vez por bloque
+(misma escala que vanilla), así que el costado de un vóxel de pasto de 16
+bloques mostraba 16 líneas de pasto. Ahora el vértice compacto lleva el
+tamaño del vóxel (log2, bits 3-7 del byte de alfa, junto a la cara) y la
+tabla de sprites un cuarto texel con el sprite "de abajo": en los costados
+con franja (`ColorTextura.tieneFranja`: el cuarto de arriba distinto de la
+mitad de abajo, y esa mitad parecida a la cara de abajo del bloque — pasto,
+nieve, micelio, podzol), el shader pone la franja solo en la fila de arriba
+de cada vóxel y la textura de abajo (tierra) en el resto. El resto de los
+bloques (piedra, troncos) sigue repitiéndose por bloque, como el terreno
+cercano. Opción `texturasComoTerreno`.
+
+**Nubes lejanas (`render/NubesLejanas`).** Vanilla arma sus nubes en un
+cuadrado de ~700 bloques y las corta con su plano lejano (4× la distancia de
+render). Capa plana propia en la pasada del LOD (shader `lod_nubes`): misma
+textura, altura y desplazamiento que vanilla (ticks del LevelRenderer por AT),
+hueco donde vanilla dibuja, 4 muestras por píxel y paso a la cobertura media
+cuando los texeles son más chicos que un píxel (sin mipmaps titilaría), y
+fundido al color de niebla hacia el alcance del LOD. Sin VulkanMod ni
+shaderpacks (tienen sus nubes).
+
+**Curvatura (`core/HorizonteCurvo`).** El LOD baja `(d - d0)² / 2R` con d0 = borde
+de vanilla (vanilla no se curva; la pendiente arranca en cero, sin escalón) y
+R configurable (Tierra 1:1 = 6371 km por defecto; Marte, Luna y planetas de
+juguete). Por vértice en `lod_textura` y en las nubes; por celda entera donde
+el shader no es nuestro (colores planos, VulkanMod, shaderpacks).
+**Horizonte real:** el radio del LOD sale de
+`sqrt(2Rh) + sqrt(2R·32)` (horizonte desde los ojos, h sobre el nivel del mar,
+más una colina de 32 bloques detrás), con tope `RADIO_MAX`; el auto-ajuste lo
+recorta en la misma proporción que al radio del preset, y la generación
+aproximada genera hasta ahí (`GeneradorLocal.radioHorizonteCliente`).

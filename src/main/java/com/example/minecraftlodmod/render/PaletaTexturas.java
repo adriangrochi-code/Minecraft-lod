@@ -59,6 +59,8 @@ public final class PaletaTexturas {
             ResourceLocation.fromNamespaceAndPath(com.example.minecraftlodmod.MinecraftLodMod.MOD_ID, "tabla_sprites");
 
     private volatile boolean pendiente = true;
+    /** Valor de "texturas como terreno" con que se armó la tabla: si cambia, se rearma. */
+    private boolean comoTerrenoCalculado;
 
     /** Texturas por estado de bloque para el render (null hasta la primera carga). */
     private static volatile TablaTexturas tabla;
@@ -90,12 +92,17 @@ public final class PaletaTexturas {
 
     /** Bus de NeoForge. */
     public void alTerminarTick(ClientTickEvent.Post evento) {
+        boolean comoTerreno = com.example.minecraftlodmod.config.ConfigLod.CLIENTE.texturasComoTerreno.get();
+        if (comoTerreno != comoTerrenoCalculado) {
+            pendiente = true;
+        }
         if (!pendiente || Minecraft.getInstance().getOverlay() != null) {
             return; // durante la pantalla de carga los recursos todavía no están listos
         }
         pendiente = false;
+        comoTerrenoCalculado = comoTerreno;
         long inicio = System.nanoTime();
-        ColoresBloque.Paleta paleta = calcular();
+        ColoresBloque.Paleta paleta = calcular(comoTerreno);
         ColoresBloque.publicar(paleta);
         BlockState nieve = Blocks.SNOW.defaultBlockState();
         GreedyMesher.definirNieve(ColoresBloque.rgb(nieve, null, 0, 0), Block.getId(nieve));
@@ -105,7 +112,12 @@ public final class PaletaTexturas {
                 (System.nanoTime() - inicio) / 1_000_000);
     }
 
-    private static ColoresBloque.Paleta calcular() {
+    /**
+     * @param comoTerreno buscar los costados con franja (pasto, nieve) y su
+     *                    textura de abajo, para los vóxeles grandes (ver
+     *                    {@link ColorTextura#tieneFranja})
+     */
+    private static ColoresBloque.Paleta calcular(boolean comoTerreno) {
         Minecraft mc = Minecraft.getInstance();
         BlockColors colores = mc.getBlockColors();
         int total = Block.BLOCK_STATE_REGISTRY.size();
@@ -117,6 +129,8 @@ public final class PaletaTexturas {
         GeometriaLod.Cara[] carasCostado = new GeometriaLod.Cara[total];
         Map<TextureAtlasSprite, Integer> promedios = new HashMap<>();
         Map<TextureAtlasSprite, Integer> indices = new HashMap<>();
+        Map<TextureAtlasSprite, TextureAtlasSprite> abajoDe = new HashMap<>();
+        Map<TextureAtlasSprite, Boolean> revisados = new HashMap<>();
         List<TextureAtlasSprite> sprites = new ArrayList<>();
         sprites.add(null); // el índice 0 es "sin textura"
         RandomSource azar = RandomSource.create(42);
@@ -145,6 +159,18 @@ public final class PaletaTexturas {
                 boolean costadoUsaColor = spriteCostado == sprite || (quadCostado != null && quadCostado.isTinted());
                 carasCostado[id] = promedioCostado < 0 ? carasArriba[id]
                         : cara(indice(spriteCostado, indices, sprites), promedioCostado, costadoUsaColor);
+                if (comoTerreno && promedioCostado >= 0 && !revisados.containsKey(spriteCostado)) {
+                    BakedQuad quadAbajo = quadDe(modelo, estado, azar, Direction.DOWN);
+                    TextureAtlasSprite spriteAbajo = quadAbajo != null ? quadAbajo.getSprite() : null;
+                    boolean franja = spriteAbajo != null && spriteAbajo != spriteCostado
+                            && ColorTextura.tieneFranja(pixeles(spriteCostado), spriteCostado.contents().width(),
+                            spriteCostado.contents().height(), promedios.computeIfAbsent(spriteAbajo, PaletaTexturas::promedio));
+                    revisados.put(spriteCostado, franja);
+                    if (franja) {
+                        abajoDe.put(spriteCostado, spriteAbajo);
+                        indice(spriteAbajo, indices, sprites);
+                    }
+                }
                 // Por tipo de fluido y no por tag: en el menú principal los tags
                 // todavía no están cargados (llegan al entrar a un mundo).
                 boolean esAgua = estado.getBlock() instanceof LiquidBlock
@@ -165,7 +191,10 @@ public final class PaletaTexturas {
                 base[id] = -1;
             }
         }
-        subirTablaSprites(mc, sprites, promedios);
+        subirTablaSprites(mc, sprites, promedios, abajoDe, indices);
+        if (comoTerreno) {
+            LOG.info("LOD: {} texturas de costado con franja (pasto, nieve...)", abajoDe.size());
+        }
         tabla = new TablaTexturas(carasArriba, carasCostado);
         return new ColoresBloque.Paleta(base, tinte, fijo);
     }
@@ -185,15 +214,19 @@ public final class PaletaTexturas {
 
     /** Hilo de render: reemplaza la textura de la tabla (el TextureManager cierra la anterior). */
     private static void subirTablaSprites(Minecraft mc, List<TextureAtlasSprite> sprites,
-                                          Map<TextureAtlasSprite, Integer> promedios) {
+                                          Map<TextureAtlasSprite, Integer> promedios,
+                                          Map<TextureAtlasSprite, TextureAtlasSprite> abajoDe,
+                                          Map<TextureAtlasSprite, Integer> indices) {
         int cantidad = Math.min(sprites.size(), 0x10000);
         int ancho = GeometriaLod.SPRITES_POR_FILA * GeometriaLod.TEXELES_POR_SPRITE;
         int filas = Math.max(1, (cantidad + GeometriaLod.SPRITES_POR_FILA - 1) / GeometriaLod.SPRITES_POR_FILA);
         NativeImage imagen = new NativeImage(ancho, filas, true);
         for (int i = 1; i < cantidad; i++) {
             TextureAtlasSprite s = sprites.get(i);
+            TextureAtlasSprite abajo = abajoDe.get(s);
+            int indiceAbajo = abajo == null ? 0 : indices.getOrDefault(abajo, 0);
             int[] texeles = GeometriaLod.texelesSprite(s.getX(), s.getY(), s.contents().width(),
-                    s.contents().height(), promedios.getOrDefault(s, 0));
+                    s.contents().height(), promedios.getOrDefault(s, 0), indiceAbajo < cantidad ? indiceAbajo : 0);
             int x = (i % GeometriaLod.SPRITES_POR_FILA) * GeometriaLod.TEXELES_POR_SPRITE;
             for (int t = 0; t < texeles.length; t++) {
                 imagen.setPixelRGBA(x + t, i / GeometriaLod.SPRITES_POR_FILA, texeles[t]);
@@ -203,9 +236,13 @@ public final class PaletaTexturas {
     }
 
     private static BakedQuad quadCostado(BakedModel modelo, BlockState estado, RandomSource azar) {
+        return quadDe(modelo, estado, azar, Direction.NORTH);
+    }
+
+    private static BakedQuad quadDe(BakedModel modelo, BlockState estado, RandomSource azar, Direction lado) {
         azar.setSeed(42);
-        List<BakedQuad> norte = modelo.getQuads(estado, Direction.NORTH, azar);
-        return norte.isEmpty() ? null : norte.get(0);
+        List<BakedQuad> quads = modelo.getQuads(estado, lado, azar);
+        return quads.isEmpty() ? null : quads.get(0);
     }
 
     private static BakedQuad primerQuad(BakedModel modelo, BlockState estado, RandomSource azar) {
@@ -229,6 +266,10 @@ public final class PaletaTexturas {
     }
 
     private static int promedio(TextureAtlasSprite sprite) {
+        return ColorTextura.promedio(pixeles(sprite));
+    }
+
+    private static int[] pixeles(TextureAtlasSprite sprite) {
         NativeImage imagen = sprite.contents().getOriginalImage();
         // Solo el primer cuadro de las texturas animadas (agua, lava, fuego).
         int ancho = sprite.contents().width();
@@ -239,6 +280,6 @@ public final class PaletaTexturas {
                 pixeles[y * ancho + x] = imagen.getPixelRGBA(x, y);
             }
         }
-        return ColorTextura.promedio(pixeles);
+        return pixeles;
     }
 }

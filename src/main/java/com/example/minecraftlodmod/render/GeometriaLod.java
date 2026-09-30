@@ -59,8 +59,8 @@ public final class GeometriaLod {
      */
     public static final int BYTES_BLOQUE_IRIS = 52;
     /** Texeles RGBA8 por sprite en la tabla que lee el shader. */
-    public static final int TEXELES_POR_SPRITE = 3;
-    /** Sprites por fila de la tabla (textura de 768 texeles de ancho). */
+    public static final int TEXELES_POR_SPRITE = 4;
+    /** Sprites por fila de la tabla (textura de 1024 texeles de ancho). */
     public static final int SPRITES_POR_FILA = 256;
 
     /**
@@ -113,6 +113,8 @@ public final class GeometriaLod {
     private int[] sprites = new int[1024];
     /** Cara por vértice: 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z. */
     private byte[] caras = new byte[1024];
+    /** log2 de los bloques por lado del vóxel de cada vértice (0 = bloque, 4 = sección entera). */
+    private byte[] niveles = new byte[1024];
     private int vertices;
     private Texturas fuenteTexturas;
     private boolean descartarSinLuz;
@@ -279,11 +281,23 @@ public final class GeometriaLod {
         sprites[vertices] = cara == null ? 0 : cara.sprite();
         int indiceCara = eje.ordinal() * 2 + (q.positivo() ? 1 : 0);
         caras[vertices] = (byte) indiceCara;
+        niveles[vertices] = (byte) nivelDeEscala(escala);
         float coordenadaPlano = posiciones[i + eje.ordinal()];
         verticesPorCara[indiceCara]++;
         planoMin[indiceCara] = Math.min(planoMin[indiceCara], coordenadaPlano);
         planoMax[indiceCara] = Math.max(planoMax[indiceCara], coordenadaPlano);
         vertices++;
+    }
+
+    /** log2 de una escala potencia de 2 (bloques por vóxel), entre 0 y 31; otras escalas cuentan como 0. */
+    static int nivelDeEscala(float escala) {
+        int e = Math.round(escala);
+        return e > 0 && e == escala && Integer.bitCount(e) == 1 ? Integer.numberOfTrailingZeros(e) : 0;
+    }
+
+    /** log2 del tamaño del vóxel del vértice i, en bloques. */
+    public int nivel(int i) {
+        return niveles[i];
     }
 
     static float sombraDeCara(Quad.Eje eje, boolean positivo) {
@@ -314,6 +328,7 @@ public final class GeometriaLod {
             posiciones = Arrays.copyOf(posiciones, posiciones.length * 2);
             sprites = Arrays.copyOf(sprites, sprites.length * 2);
             caras = Arrays.copyOf(caras, caras.length * 2);
+            niveles = Arrays.copyOf(niveles, niveles.length * 2);
         }
     }
 
@@ -356,7 +371,9 @@ public final class GeometriaLod {
      * Escribe todos los vértices en el formato compacto
      * ({@link #BYTES_COMPACTO} bytes c/u, little-endian como espera la GPU):
      * x, y, z (short, bloques relativos a la celda), sprite (short sin signo),
-     * R, G, B (ya sombreados) y la cara en el byte de alfa.
+     * R, G, B (ya sombreados) y en el byte de alfa la cara (bits 0-2) y el
+     * log2 del tamaño del vóxel (bits 3-7: el shader repite la franja de
+     * pasto una vez por vóxel, no una por bloque).
      *
      * @throws IllegalStateException si una posición no es entera o no entra en un short
      */
@@ -379,7 +396,7 @@ public final class GeometriaLod {
             b.putShort(aShort(posiciones[i * 3 + 2]));
             b.putShort((short) sprites[i]);
             int c = colores[i];
-            b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c).put(caras[i]);
+            b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c).put((byte) (caras[i] | niveles[i] << 3));
         }
     }
 
@@ -460,13 +477,17 @@ public final class GeometriaLod {
      * Los {@link #TEXELES_POR_SPRITE} texeles RGBA8 de un sprite en la tabla
      * del shader, como enteros con R en el byte bajo (el orden de
      * {@code NativeImage#setPixelRGBA}): (x, y) y (ancho, alto) en píxeles
-     * del atlas, 16 bits cada uno, y el color promedio de la textura.
+     * del atlas, 16 bits cada uno, el color promedio de la textura y el
+     * índice del sprite "de abajo" (0 = ninguno): en los costados con franja
+     * (pasto, nieve) la textura que va debajo de la fila de arriba en un vóxel
+     * grande.
      */
-    public static int[] texelesSprite(int x, int y, int ancho, int alto, int promedioRgb) {
+    public static int[] texelesSprite(int x, int y, int ancho, int alto, int promedioRgb, int spriteAbajo) {
         return new int[] {
                 (x & 0xFFFF) | (y & 0xFFFF) << 16,
                 (ancho & 0xFFFF) | (alto & 0xFFFF) << 16,
-                ((promedioRgb >> 16) & 0xFF) | (promedioRgb & 0xFF00) | (promedioRgb & 0xFF) << 16 | 0xFF000000
+                ((promedioRgb >> 16) & 0xFF) | (promedioRgb & 0xFF00) | (promedioRgb & 0xFF) << 16 | 0xFF000000,
+                (spriteAbajo & 0xFFFF) | 0xFF000000
         };
     }
 }

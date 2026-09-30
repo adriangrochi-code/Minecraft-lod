@@ -35,4 +35,29 @@ class ColorTexturaTest {
         assertEquals(0x546D33, ColorTextura.tenir(grisDelPasto, verdeLlanura));
         assertEquals(0x123456, ColorTextura.tenir(0x123456, 0xFFFFFF), "Tinte blanco no cambia nada");
     }
+
+    /** Textura de 4×8: las filas de arriba de un color y el resto de otro. */
+    private static int[] costado(int filasArriba, int arriba, int resto) {
+        int[] p = new int[4 * 8];
+        for (int i = 0; i < p.length; i++) {
+            int c = i / 4 < filasArriba ? arriba : resto;
+            p[i] = abgr((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, 255);
+        }
+        return p;
+    }
+
+    @Test
+    void elCostadoDelPastoTieneFranja() {
+        int pasto = 0x5A8C32, tierra = 0x866043;
+        assertEquals(true, ColorTextura.tieneFranja(costado(2, pasto, tierra), 4, 8, tierra));
+    }
+
+    @Test
+    void unTroncoOUnaPiedraNoTienenFranja() {
+        int corteza = 0x6B5132;
+        assertEquals(false, ColorTextura.tieneFranja(costado(0, corteza, corteza), 4, 8, 0xA08050),
+                "Sin diferencia entre arriba y abajo");
+        assertEquals(false, ColorTextura.tieneFranja(costado(2, 0xFFFFFF, corteza), 4, 8, 0x303030),
+                "El resto no se parece a la cara de abajo");
+    }
 }

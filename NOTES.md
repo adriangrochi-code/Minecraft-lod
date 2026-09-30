@@ -519,3 +519,18 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
 - Verificado en Xvfb: Opciones > Video abre la pantalla nueva; distancia de render, actualización
   de chunks, mipmaps y escala de GUI se aplican y quedan en options.txt; ida y vuelta a la
   pantalla vanilla.
+
+## Vóxeles como terreno, nubes lejanas y curvatura (0.19.0)
+
+- Franja de pasto por vóxel: 21 texturas de costado detectadas con franja en vanilla. Verificado
+  que compila y carga; el efecto visual en vóxeles grandes queda para Pista B (en Xvfb el mundo de
+  prueba casi no tiene LOD lejano con costados a la vista).
+- Nubes lejanas: verificadas en Xvfb (siguen el dibujo de vanilla más allá de su borde). Pendiente
+  de Pista B: brillo relativo a las de vanilla (hoy 0.8 del color de nubes) y el borde del hueco
+  cuando el plano lejano de vanilla corta antes que su cuadrado (distancia de render < 8).
+- Curvatura: verificada con R = 1 km (terreno y nubes se curvan). Con R real el efecto recién se
+  nota a varios km. Por celda (VulkanMod, shaderpacks, colores planos) puede dejar escalones entre
+  celdas con radios chicos. El recorte por relieve (OclusionRelieve) no conoce la curvatura: es
+  conservador (lo que baja sigue tapado).
+- Horizonte real: verificado en el log (radio=66 = 264 del horizonte × el piso del auto-ajuste).
+- Pendiente: nubes con VulkanMod (necesitaría variante del shader).

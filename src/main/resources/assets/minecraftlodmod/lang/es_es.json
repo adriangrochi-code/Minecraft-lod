@@ -146,5 +146,18 @@
   "minecraftlodmod.video.shaders": "Paquetes de shaders",
   "minecraftlodmod.video.shaders.tooltip": "Abre la pantalla de shaders de Iris. El LOD se dibuja con el terreno del shaderpack.",
   "minecraftlodmod.video.original": "Opciones de video originales",
-  "minecraftlodmod.video.original.tooltip": "Abre la pantalla de video de Minecraft sin cambios, por si otro mod agrega ahí algo que esta no muestra. Al salir se vuelve acá."
+  "minecraftlodmod.video.original.tooltip": "Abre la pantalla de video de Minecraft sin cambios, por si otro mod agrega ahí algo que esta no muestra. Al salir se vuelve acá.",
+  "minecraftlodmod.configuration.texturasComoTerreno": "Vóxeles grandes como terreno",
+  "minecraftlodmod.configuration.texturasComoTerreno.tooltip": "En el terreno lejano cada vóxel abarca varios bloques. Prendido: el costado del pasto (y de la nieve, el micelio, el podzol) lleva la franja verde solo en su fila de arriba y tierra debajo, como un corte del terreno. Apagado: la textura se repite en cada bloque y se ve una línea de pasto por bloque.",
+  "minecraftlodmod.configuration.nubesLejanas": "Nubes lejanas",
+  "minecraftlodmod.configuration.nubesLejanas.tooltip": "Minecraft corta las nubes a unos cientos de bloques. Prendido: siguen con la misma forma y movimiento hasta donde llega el LOD, y se funden con el cielo en el horizonte. No disponible con Vulkan ni con shaderpacks (dibujan sus propias nubes).",
+  "minecraftlodmod.configuration.curvatura": "Curvatura del horizonte",
+  "minecraftlodmod.configuration.curvatura.tooltip": "Curva el terreno lejano como la superficie de un planeta: lo lejano baja y se esconde detrás del horizonte. Empieza donde termina el terreno normal, así no queda un escalón.",
+  "minecraftlodmod.configuration.radioCurvaturaKm": "Radio del planeta",
+  "minecraftlodmod.configuration.radioCurvaturaKm.tooltip": "Tamaño del planeta (1 bloque = 1 metro). La Tierra 1:1 da una curvatura realista y sutil; un planeta chico la hace muy notoria.",
+  "minecraftlodmod.configuration.radioCurvaturaKm.tierra": "Tierra (%s km)",
+  "minecraftlodmod.configuration.radioCurvaturaKm.marte": "Marte (%s km)",
+  "minecraftlodmod.configuration.radioCurvaturaKm.luna": "Luna (%s km)",
+  "minecraftlodmod.configuration.horizonteReal": "Horizonte real",
+  "minecraftlodmod.configuration.horizonteReal.tooltip": "El radio del LOD deja de salir del preset: se calcula con la altura de los ojos sobre el nivel del mar y el radio del planeta, hasta donde se vería el horizonte de verdad (más una colina detrás). Más alto, más lejos. Con la Tierra 1:1 puede pedir miles de bloques: conviene la generación aproximada. El auto-ajuste lo sigue recortando si falta rendimiento."
 }

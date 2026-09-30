@@ -217,7 +217,7 @@ class RenderPuroTest {
             assertEquals((g.color(i) >> 16) & 0xFF, b.get() & 0xFF);
             assertEquals((g.color(i) >> 8) & 0xFF, b.get() & 0xFF);
             assertEquals(g.color(i) & 0xFF, b.get() & 0xFF);
-            assertEquals(g.cara(i), b.get());
+            assertEquals(g.cara(i) | 4 << 3, b.get(), "La cara y el vóxel de 16 bloques (2^4) en el alfa");
         }
     }
 
@@ -231,7 +231,7 @@ class RenderPuroTest {
 
     @Test
     void losTexelesDelSpriteEmpaquetanRectanguloYPromedio() {
-        int[] t = GeometriaLod.texelesSprite(1024, 3, 16, 32, 0x112233);
+        int[] t = GeometriaLod.texelesSprite(1024, 3, 16, 32, 0x112233, 700);
         assertEquals(1024, t[0] & 0xFFFF);
         assertEquals(3, t[0] >>> 16);
         assertEquals(16, t[1] & 0xFFFF);
@@ -239,6 +239,16 @@ class RenderPuroTest {
         assertEquals(0x11, t[2] & 0xFF, "R en el byte bajo, como NativeImage");
         assertEquals(0x22, (t[2] >> 8) & 0xFF);
         assertEquals(0x33, (t[2] >> 16) & 0xFF);
+        assertEquals(700, t[3] & 0xFFFF, "Sprite de abajo");
+    }
+
+    @Test
+    void elNivelDelVoxelSaleDeSuEscala() {
+        assertEquals(0, GeometriaLod.nivelDeEscala(1));
+        assertEquals(4, GeometriaLod.nivelDeEscala(16));
+        assertEquals(9, GeometriaLod.nivelDeEscala(512));
+        assertEquals(0, GeometriaLod.nivelDeEscala(3), "Escalas que no son potencia de 2 no cuentan");
+        assertEquals(0, GeometriaLod.nivelDeEscala(0.5f));
     }
 
     @Test
@@ -334,7 +344,7 @@ class RenderPuroTest {
         java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(4 * GeometriaLod.BYTES_COMPACTO);
         g.escribirCompacto(b, 3);
         assertEquals(b.capacity(), b.position(), "Solo los 4 vértices de arriba");
-        assertEquals(3, b.get(GeometriaLod.BYTES_COMPACTO - 1), "Y todos son de la cara +Y");
+        assertEquals(3 | 3 << 3, b.get(GeometriaLod.BYTES_COMPACTO - 1), "Y todos son de la cara +Y, vóxel de 8");
     }
 
     @Test

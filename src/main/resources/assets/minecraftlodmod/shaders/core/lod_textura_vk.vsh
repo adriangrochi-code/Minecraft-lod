@@ -25,6 +25,9 @@ out vec4 vertexColor;
 out vec2 uvOrigen;
 out vec2 uvTamano;
 out vec3 promedio;
+out vec2 uvOrigenAbajo;
+out vec2 uvTamanoAbajo;
+out float tamanoVoxel;
 out float cara;
 
 const int SPRITES_POR_FILA = 256;
@@ -38,13 +41,18 @@ void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(pos, 1.0);
     posLocal = pos;
     vertexColor = vec4(Color.rgb, 1.0);
-    cara = floor(Color.a * 255.0 + 0.5);
+    float alfa = floor(Color.a * 255.0 + 0.5);
+    float nivel = floor(alfa / 8.0);
+    cara = alfa - nivel * 8.0;
+    tamanoVoxel = exp2(nivel);
     int sprite = PosZSprite.y & 0xFFFF;
     uvOrigen = vec2(0.0);
     uvTamano = vec2(0.0);
+    uvOrigenAbajo = vec2(0.0);
+    uvTamanoAbajo = vec2(0.0);
     promedio = vec3(1.0);
     if (sprite != 0) {
-        int columna = (sprite & (SPRITES_POR_FILA - 1)) * 3;
+        int columna = (sprite & (SPRITES_POR_FILA - 1)) * 4;
         int fila = sprite / SPRITES_POR_FILA;
         ivec4 origen = texel(columna, fila);
         ivec4 tamano = texel(columna + 1, fila);
@@ -52,5 +60,15 @@ void main() {
         uvOrigen = vec2(origen.r | (origen.g << 8), origen.b | (origen.a << 8)) / atlas;
         uvTamano = vec2(tamano.r | (tamano.g << 8), tamano.b | (tamano.a << 8)) / atlas;
         promedio = texelFetch(Sampler1, ivec2(columna + 2, fila), 0).rgb;
+        ivec4 abajo = texel(columna + 3, fila);
+        int spriteAbajo = abajo.r | (abajo.g << 8);
+        if (spriteAbajo != 0) {
+            int columnaAbajo = (spriteAbajo & (SPRITES_POR_FILA - 1)) * 4;
+            int filaAbajo = spriteAbajo / SPRITES_POR_FILA;
+            ivec4 origenAbajo = texel(columnaAbajo, filaAbajo);
+            ivec4 tamanoAbajo = texel(columnaAbajo + 1, filaAbajo);
+            uvOrigenAbajo = vec2(origenAbajo.r | (origenAbajo.g << 8), origenAbajo.b | (origenAbajo.a << 8)) / atlas;
+            uvTamanoAbajo = vec2(tamanoAbajo.r | (tamanoAbajo.g << 8), tamanoAbajo.b | (tamanoAbajo.a << 8)) / atlas;
+        }
     }
 }

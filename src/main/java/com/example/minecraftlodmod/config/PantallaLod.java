@@ -100,9 +100,21 @@ public final class PantallaLod extends Screen {
                                 : Minecraft.getInstance().level == null ? "calibrar.tooltip" : "calibrar.enMundo"))
                         .siempreQue(() -> SesionCalibracion.enCurso() || Minecraft.getInstance().level == null)))));
 
+        Interruptor texturas = interruptor("texturasLod", Impacto.BAJO, c.texturasLod);
+        Interruptor curvatura = interruptor("curvatura", Impacto.NINGUNO, c.curvatura);
         paginas.add(new Pagina(pestana("calidad"), List.of(
-                List.of(interruptor("texturasLod", Impacto.BAJO, c.texturasLod),
+                List.of(texturas,
+                        interruptor("texturasComoTerreno", Impacto.NINGUNO, c.texturasComoTerreno)
+                                .siempreQue(texturas::pendiente),
                         interruptor("oclusionAmbiental", Impacto.NINGUNO, c.oclusionAmbiental)),
+                List.of(interruptor("nubesLejanas", Impacto.BAJO, c.nubesLejanas)
+                                .siempreQue(() -> !com.example.minecraftlodmod.render.RenderLod.conVulkanMod()),
+                        curvatura,
+                        new Ciclo<>(texto("radioCurvaturaKm"), texto("radioCurvaturaKm.tooltip"), Impacto.NINGUNO,
+                                () -> RADIOS_PLANETA, c.radioCurvaturaKm::get, c.radioCurvaturaKm::set,
+                                PantallaLod::textoRadio).siempreQue(curvatura::pendiente),
+                        interruptor("horizonteReal", Impacto.VARIABLE, c.horizonteReal)
+                                .siempreQue(curvatura::pendiente)),
                 List.of(interruptor("descartarCuevas", Impacto.BAJO, c.descartarCuevas),
                         interruptor("ocultarTapado", Impacto.BAJO, c.ocultarTapado)),
                 List.of(entero("radioLodChunks", Impacto.ALTO, ParametrosCalidad.RADIO_MIN, ParametrosCalidad.RADIO_MAX,
@@ -154,6 +166,20 @@ public final class PantallaLod extends Screen {
         Minecraft mc = Minecraft.getInstance();
         mc.setScreen(new net.minecraft.client.gui.screens.options.VideoSettingsScreen(
                 new PantallaLod(anterior, paginaActual), mc, mc.options));
+    }
+
+    /** Radios de planeta para la curvatura, en km: la Tierra, Marte, la Luna y planetas de juguete. */
+    private static final List<Integer> RADIOS_PLANETA = List.of(6371, 3390, 1737, 1000, 500, 200, 100, 50, 20, 10);
+
+    private static Component textoRadio(int km) {
+        String nombre = switch (km) {
+            case 6371 -> "tierra";
+            case 3390 -> "marte";
+            case 1737 -> "luna";
+            default -> null;
+        };
+        return nombre == null ? Component.literal(km + " km")
+                : Component.translatable(CLAVE + "radioCurvaturaKm." + nombre, km);
     }
 
     private static Component texto(String clave) {

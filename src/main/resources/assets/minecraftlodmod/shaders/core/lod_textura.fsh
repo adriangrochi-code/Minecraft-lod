@@ -15,6 +15,9 @@ in vec4 vertexColor;
 in vec2 uvOrigen;
 in vec2 uvTamano;
 in vec3 promedio;
+in vec2 uvOrigenAbajo;
+in vec2 uvTamanoAbajo;
+in float tamanoVoxel;
 flat in int cara;
 
 out vec4 fragColor;
@@ -31,8 +34,19 @@ void main() {
         } else {
             repeticion = vec2(posLocal.x, -posLocal.y);
         }
-        vec2 uv = uvOrigen + fract(repeticion) * uvTamano;
-        vec4 tex = textureGrad(Sampler0, uv, dFdx(repeticion) * uvTamano, dFdy(repeticion) * uvTamano);
+        vec2 origen = uvOrigen;
+        vec2 tamano = uvTamano;
+        if (eje != 1 && uvTamanoAbajo.x > 0.0 && tamanoVoxel > 1.0) {
+            // Vóxel grande de pasto, nieve, micelio...: la franja solo en su fila de arriba y
+            // la textura de abajo (tierra) en el resto, como el corte de un terreno de verdad.
+            float desdeArriba = tamanoVoxel - (posLocal.y - floor(posLocal.y / tamanoVoxel) * tamanoVoxel);
+            if (desdeArriba > 1.0) {
+                origen = uvOrigenAbajo;
+                tamano = uvTamanoAbajo;
+            }
+        }
+        vec2 uv = origen + fract(repeticion) * tamano;
+        vec4 tex = textureGrad(Sampler0, uv, dFdx(repeticion) * tamano, dFdy(repeticion) * tamano);
         vec3 detalle = tex.rgb / max(promedio, vec3(1.0 / 255.0));
         // En los huecos transparentes (hojas) queda el color plano: nada de agujeros negros.
         color *= mix(vec3(1.0), detalle, tex.a);
