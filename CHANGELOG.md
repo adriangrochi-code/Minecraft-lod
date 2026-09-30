@@ -6,6 +6,20 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.22.0 — Texturas como Voxy: modelos horneados y hojas con volumen
+Primer paso de "que el LOD se vea como Voxy" (solo la idea, sin su código).
+- **Atlas propio del LOD:** las texturas del paquete activo se copian a un
+  atlas del LOD con teselas del mismo tamaño y sus propios mipmaps. Así la
+  textura repetida por bloque ya no se mezcla con la de al lado al alejarse.
+- **Modelos horneados:** lo que no es un cubo (escaleras, losas, cercos,
+  muros, cactus, faroles...) se dibuja por software desde arriba y desde un
+  costado con su modelo real. El LOD usa esa imagen: de lejos una escalera
+  o un cerco se ven como tales y no como un cubo con la textura de una cara.
+- **Hojas con volumen:** los huecos de las hojas ya no se rellenan con el
+  color plano: van oscurecidos, como el interior de un árbol. El bosque
+  lejano tiene textura y profundidad en vez de ser un bloque verde liso.
+  El color medio de lejos no cambia.
+
 ## 0.21.0 — Escalado que gana FPS (o se apaga solo)
 - **El LOD se arma para la resolución a la que se dibuja el mundo:** con
   escalado, el detalle se mide en píxeles de la resolución interna. Antes el

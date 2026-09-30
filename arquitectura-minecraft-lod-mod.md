@@ -528,9 +528,11 @@ Ideas adoptadas, en orden de implementación sugerido:
    horizonte de varios km: samplear `NoiseRouter.finalDensity` de
    1.21 a baja resolución para regiones nunca visitadas, sin generar
    chunks. Es lo que hace sostenible el preset Horizonte (secciones 17-18).
-8. **Texturas horneadas de modelos no cúbicos (Voxy).** Rasterizar por
-   software cada estado de bloque a 6 caras para escaleras/losas/etc.
-   Mejora de calidad, prioridad baja.
+8. **Texturas horneadas de modelos no cúbicos (Voxy) — implementado en
+   0.22.0: `render/AtlasLod` + `PaletaTexturas`.** Los modelos que no son
+   cubos simples se rasterizan por software (vista de arriba y de costado,
+   con prueba de profundidad y recorte por alfa) a teselas de un atlas propio
+   del LOD con mipmaps por tesela; los huecos del follaje van oscurecidos.
 
 **NO adoptado en el backend por defecto:** HiZ occlusion + recorrido
 jerárquico en GPU por compute + multidraw indirecto de Voxy (requiere GL

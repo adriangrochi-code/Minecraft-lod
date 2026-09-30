@@ -58,6 +58,14 @@ public final class PaletaTexturas {
     public static final ResourceLocation TABLA_SPRITES =
             ResourceLocation.fromNamespaceAndPath(com.example.minecraftlodmod.MinecraftLodMod.MOD_ID, "tabla_sprites");
 
+    /**
+     * Atlas propio del LOD ({@link AtlasLod}): las texturas en uso en teselas
+     * del mismo tamaño, con los huecos del follaje oscurecidos, más los
+     * modelos horneados. La tabla apunta a sus teselas, no al atlas de bloques.
+     */
+    public static final ResourceLocation ATLAS =
+            ResourceLocation.fromNamespaceAndPath(com.example.minecraftlodmod.MinecraftLodMod.MOD_ID, "atlas_lod");
+
     private volatile boolean pendiente = true;
     /** Valor de "texturas como terreno" con que se armó la tabla: si cambia, se rearma. */
     private boolean comoTerrenoCalculado;
@@ -134,6 +142,7 @@ public final class PaletaTexturas {
         List<TextureAtlasSprite> sprites = new ArrayList<>();
         sprites.add(null); // el índice 0 es "sin textura"
         RandomSource azar = RandomSource.create(42);
+        List<Horneo> aHornear = new ArrayList<>();
 
         for (BlockState estado : Block.BLOCK_STATE_REGISTRY) {
             int id = Block.BLOCK_STATE_REGISTRY.getId(estado);
@@ -142,6 +151,9 @@ public final class PaletaTexturas {
             }
             try {
                 BakedModel modelo = mc.getBlockRenderer().getBlockModel(estado);
+                if (!cuboSimple(modelo, estado, azar)) {
+                    aHornear.add(new Horneo(id, estado, modelo));
+                }
                 BakedQuad quad = primerQuad(modelo, estado, azar);
                 TextureAtlasSprite sprite = quad != null ? quad.getSprite() : modelo.getParticleIcon();
                 int promedio = promedios.computeIfAbsent(sprite, PaletaTexturas::promedio);
@@ -191,7 +203,13 @@ public final class PaletaTexturas {
                 base[id] = -1;
             }
         }
-        subirTablaSprites(mc, sprites, promedios, abajoDe, indices);
+        int tesela = AtlasLod.tamanoTesela(sprites.stream().skip(1)
+                .mapToInt(sp -> sp.contents().width()).max().orElse(16));
+        List<int[]> horneadas = new ArrayList<>();
+        List<Integer> promediosHorneadas = new ArrayList<>();
+        hornearModelos(aHornear, tesela, sprites.size(), horneadas, promediosHorneadas,
+                base, carasArriba, carasCostado);
+        subirAtlas(mc, tesela, sprites, promedios, abajoDe, indices, horneadas, promediosHorneadas);
         if (comoTerreno) {
             LOG.info("LOD: {} texturas de costado con franja (pasto, nieve...)", abajoDe.size());
             // La cara del costado también lleva la de abajo: con la superficie a la altura real,
@@ -226,27 +244,202 @@ public final class PaletaTexturas {
         });
     }
 
-    /** Hilo de render: reemplaza la textura de la tabla (el TextureManager cierra la anterior). */
-    private static void subirTablaSprites(Minecraft mc, List<TextureAtlasSprite> sprites,
-                                          Map<TextureAtlasSprite, Integer> promedios,
-                                          Map<TextureAtlasSprite, TextureAtlasSprite> abajoDe,
-                                          Map<TextureAtlasSprite, Integer> indices) {
-        int cantidad = Math.min(sprites.size(), 0x10000);
-        int ancho = GeometriaLod.SPRITES_POR_FILA * GeometriaLod.TEXELES_POR_SPRITE;
-        int filas = Math.max(1, (cantidad + GeometriaLod.SPRITES_POR_FILA - 1) / GeometriaLod.SPRITES_POR_FILA);
-        NativeImage imagen = new NativeImage(ancho, filas, true);
-        for (int i = 1; i < cantidad; i++) {
-            TextureAtlasSprite s = sprites.get(i);
-            TextureAtlasSprite abajo = abajoDe.get(s);
-            int indiceAbajo = abajo == null ? 0 : indices.getOrDefault(abajo, 0);
-            int[] texeles = GeometriaLod.texelesSprite(s.getX(), s.getY(), s.contents().width(),
-                    s.contents().height(), promedios.getOrDefault(s, 0), indiceAbajo < cantidad ? indiceAbajo : 0);
-            int x = (i % GeometriaLod.SPRITES_POR_FILA) * GeometriaLod.TEXELES_POR_SPRITE;
-            for (int t = 0; t < texeles.length; t++) {
-                imagen.setPixelRGBA(x + t, i / GeometriaLod.SPRITES_POR_FILA, texeles[t]);
+    /** Un estado de bloque cuyo modelo no es un cubo simple (ver {@link #cuboSimple}). */
+    private record Horneo(int id, BlockState estado, BakedModel modelo) {
+    }
+
+    /**
+     * ¿Seis caras enteras y nada más? Entonces su textura va tal cual (con la
+     * franja de pasto, el tinte por cara...). Si no, se hornea.
+     */
+    private static boolean cuboSimple(BakedModel modelo, BlockState estado, RandomSource azar) {
+        azar.setSeed(42);
+        if (!modelo.getQuads(estado, null, azar).isEmpty()) {
+            return false;
+        }
+        for (Direction lado : Direction.values()) {
+            BakedQuad q = quadDe(modelo, estado, azar, lado);
+            if (q == null || !AtlasLod.caraCompleta(posiciones(q), lado.getAxis().ordinal(),
+                    lado.getAxisDirection() == Direction.AxisDirection.POSITIVE)) {
+                return false;
             }
         }
-        mc.getTextureManager().register(TABLA_SPRITES, new DynamicTexture(imagen));
+        return true;
+    }
+
+    /**
+     * Hornea desde arriba y desde un costado los modelos que no son cubos
+     * (idea de Voxy, ver {@link AtlasLod}) y los pone en la tabla en lugar de
+     * la textura suelta de una cara. Teselas repetidas (mismo modelo en otra
+     * orientación que se ve igual) se comparten.
+     */
+    private static void hornearModelos(List<Horneo> aHornear, int tesela, int primerIndice,
+                                       List<int[]> horneadas, List<Integer> promediosHorneadas, int[] base,
+                                       GeometriaLod.Cara[] carasArriba, GeometriaLod.Cara[] carasCostado) {
+        RandomSource azar = RandomSource.create(42);
+        Map<java.nio.IntBuffer, Integer> repetidas = new HashMap<>();
+        Map<TextureAtlasSprite, int[]> pixelesPorSprite = new HashMap<>();
+        Map<BakedModel, GeometriaLod.Cara[]> porModelo = new HashMap<>();
+        for (Horneo h : aHornear) {
+            try {
+                GeometriaLod.Cara[] caras = porModelo.get(h.modelo());
+                if (caras == null) {
+                    List<AtlasLod.QuadModelo> quads = new ArrayList<>();
+                    boolean tenido = false;
+                    for (Direction lado : LADOS_Y_SUELTOS) {
+                        azar.setSeed(42);
+                        for (BakedQuad q : h.modelo().getQuads(h.estado(), lado, azar)) {
+                            quads.add(quadModelo(q, pixelesPorSprite));
+                            tenido |= q.isTinted();
+                        }
+                    }
+                    int[] arriba = AtlasLod.hornear(quads, AtlasLod.Vista.ARRIBA, tesela);
+                    int[] costado = AtlasLod.hornear(quads, AtlasLod.Vista.COSTADO, tesela);
+                    caras = new GeometriaLod.Cara[] {
+                            teselaHorneada(arriba, true, tesela, primerIndice, repetidas, horneadas, promediosHorneadas),
+                            teselaHorneada(costado, tenido, tesela, primerIndice, repetidas, horneadas, promediosHorneadas),
+                            null};
+                    if (!AtlasLod.vacia(arriba)) {
+                        caras[2] = new GeometriaLod.Cara(0, ColorTextura.promedio(arriba), true);
+                    }
+                    porModelo.put(h.modelo(), caras);
+                }
+                if (caras[0] != null && base[h.id()] >= 0) {
+                    carasArriba[h.id()] = caras[0];
+                    // El color del vóxel pasa a ser el de lo que se ve desde arriba (un cerco: el poste, no el aire).
+                    if (caras[2] != null) {
+                        base[h.id()] = caras[2].promedioRgb();
+                    }
+                }
+                if (caras[1] != null && base[h.id()] >= 0) {
+                    carasCostado[h.id()] = caras[1];
+                }
+            } catch (RuntimeException e) {
+                // Modelo de un mod que no se deja leer fuera del mundo: queda con la textura de su cara.
+            }
+        }
+        LOG.info("LOD: {} modelos horneados en {} teselas", porModelo.size(), horneadas.size());
+    }
+
+    private static final Direction[] LADOS_Y_SUELTOS = {
+            Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST, null};
+
+    private static GeometriaLod.Cara teselaHorneada(int[] cruda, boolean usaColorDelVoxel, int tesela, int primerIndice,
+                                                    Map<java.nio.IntBuffer, Integer> repetidas,
+                                                    List<int[]> horneadas, List<Integer> promediosHorneadas) {
+        if (AtlasLod.vacia(cruda)) {
+            return null;
+        }
+        int promedio = ColorTextura.promedio(cruda);
+        // Huecos con el color plano (no oscurecidos): el aire de un cerco o la mitad vacía de una losa no es sombra.
+        int[] opaca = AtlasLod.rellenarHuecos(cruda, promedio, false);
+        java.nio.IntBuffer clave = java.nio.IntBuffer.wrap(opaca);
+        Integer indice = repetidas.get(clave);
+        if (indice == null) {
+            indice = primerIndice + horneadas.size();
+            horneadas.add(opaca);
+            promediosHorneadas.add(AtlasLod.promedioTesela(opaca));
+            repetidas.put(clave, indice);
+        }
+        return cara(indice, promedio, usaColorDelVoxel);
+    }
+
+    private static AtlasLod.QuadModelo quadModelo(BakedQuad q, Map<TextureAtlasSprite, int[]> pixelesPorSprite) {
+        TextureAtlasSprite s = q.getSprite();
+        int[] v = q.getVertices();
+        int paso = v.length / 4;
+        float[] uv = new float[8];
+        float du = s.getU1() - s.getU0(), dv = s.getV1() - s.getV0();
+        for (int i = 0; i < 4; i++) {
+            uv[i * 2] = du == 0 ? 0 : (Float.intBitsToFloat(v[i * paso + 4]) - s.getU0()) / du;
+            uv[i * 2 + 1] = dv == 0 ? 0 : (Float.intBitsToFloat(v[i * paso + 5]) - s.getV0()) / dv;
+        }
+        return new AtlasLod.QuadModelo(posiciones(q), uv, pixelesPorSprite.computeIfAbsent(s, PaletaTexturas::pixeles),
+                s.contents().width(), s.contents().height());
+    }
+
+    /** x, y, z de los 4 vértices del quad (formato de bloque: posición en los 3 primeros enteros). */
+    private static float[] posiciones(BakedQuad q) {
+        int[] v = q.getVertices();
+        int paso = v.length / 4;
+        float[] pos = new float[12];
+        for (int i = 0; i < 4; i++) {
+            for (int c = 0; c < 3; c++) {
+                pos[i * 3 + c] = Float.intBitsToFloat(v[i * paso + c]);
+            }
+        }
+        return pos;
+    }
+
+    /**
+     * Hilo de render: arma el atlas propio del LOD (ver {@link AtlasLod}) con
+     * los sprites en uso y los modelos horneados, sus mipmaps, y la tabla que
+     * lee el shader con el rectángulo de cada tesela.
+     */
+    private static void subirAtlas(Minecraft mc, int tesela, List<TextureAtlasSprite> sprites,
+                                   Map<TextureAtlasSprite, Integer> promedios,
+                                   Map<TextureAtlasSprite, TextureAtlasSprite> abajoDe,
+                                   Map<TextureAtlasSprite, Integer> indices,
+                                   List<int[]> horneadas, List<Integer> promediosHorneadas) {
+        int cantidad = Math.min(sprites.size() + horneadas.size(), 0x10000);
+        int porFila = AtlasLod.teselasPorFila(cantidad);
+        int filasAtlas = Math.max(1, (cantidad + porFila - 1) / porFila);
+        NativeImage atlas = new NativeImage(porFila * tesela, filasAtlas * tesela, true);
+        int ancho = GeometriaLod.SPRITES_POR_FILA * GeometriaLod.TEXELES_POR_SPRITE;
+        int filas = Math.max(1, (cantidad + GeometriaLod.SPRITES_POR_FILA - 1) / GeometriaLod.SPRITES_POR_FILA);
+        NativeImage tablaImagen = new NativeImage(ancho, filas, true);
+        int follaje = 0;
+        for (int i = 1; i < cantidad; i++) {
+            int[] opaca;
+            int indiceAbajo = 0;
+            if (i < sprites.size()) {
+                TextureAtlasSprite s = sprites.get(i);
+                int[] cruda = AtlasLod.escalar(pixeles(s), s.contents().width(), s.contents().height(), tesela);
+                boolean esFollaje = AtlasLod.esFollaje(cruda);
+                follaje += esFollaje ? 1 : 0;
+                opaca = AtlasLod.rellenarHuecos(cruda, Math.max(0, promedios.getOrDefault(s, 0)), esFollaje);
+                TextureAtlasSprite abajo = abajoDe.get(s);
+                indiceAbajo = abajo == null ? 0 : indices.getOrDefault(abajo, 0);
+            } else {
+                opaca = horneadas.get(i - sprites.size());
+            }
+            int x0 = (i % porFila) * tesela, y0 = (i / porFila) * tesela;
+            for (int y = 0; y < tesela; y++) {
+                for (int x = 0; x < tesela; x++) {
+                    atlas.setPixelRGBA(x0 + x, y0 + y, opaca[y * tesela + x]);
+                }
+            }
+            // El promedio de la tesela ya rellena: de lejos (último mipmap) el color es el del vóxel.
+            int[] texeles = GeometriaLod.texelesSprite(x0, y0, tesela, tesela, AtlasLod.promedioTesela(opaca),
+                    indiceAbajo < cantidad ? indiceAbajo : 0);
+            int x = (i % GeometriaLod.SPRITES_POR_FILA) * GeometriaLod.TEXELES_POR_SPRITE;
+            for (int t = 0; t < texeles.length; t++) {
+                tablaImagen.setPixelRGBA(x + t, i / GeometriaLod.SPRITES_POR_FILA, texeles[t]);
+            }
+        }
+        LOG.info("LOD: atlas propio de {}x{} ({} teselas de {} px, {} con follaje)", atlas.getWidth(),
+                atlas.getHeight(), cantidad - 1, tesela, follaje);
+        mc.getTextureManager().register(ATLAS, new TexturaConMipmaps(atlas, AtlasLod.nivelesMipmap(tesela)));
+        mc.getTextureManager().register(TABLA_SPRITES, new DynamicTexture(tablaImagen));
+    }
+
+    /** Textura con mipmaps propios (DynamicTexture no los tiene). Hilo de render. */
+    private static final class TexturaConMipmaps extends net.minecraft.client.renderer.texture.AbstractTexture {
+        TexturaConMipmaps(NativeImage base, int niveles) {
+            NativeImage[] mips = net.minecraft.client.renderer.texture.MipmapGenerator.generateMipLevels(
+                    new NativeImage[] {base}, niveles);
+            com.mojang.blaze3d.platform.TextureUtil.prepareImage(getId(), niveles, base.getWidth(), base.getHeight());
+            for (int nivel = 0; nivel < mips.length; nivel++) {
+                mips[nivel].upload(nivel, 0, 0, false);
+                mips[nivel].close();
+            }
+            setFilter(false, true);
+        }
+
+        @Override
+        public void load(net.minecraft.server.packs.resources.ResourceManager recursos) {
+            // Ya subida en el constructor.
+        }
     }
 
     private static BakedQuad quadCostado(BakedModel modelo, BlockState estado, RandomSource azar) {

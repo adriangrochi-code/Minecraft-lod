@@ -3,7 +3,8 @@
 // La textura aporta solo DETALLE (textura / su promedio): el color medio de
 // la cara no cambia, así el pasto queda teñido por su bioma, los niveles
 // reducidos conservan el color medio de lo que representan y cualquier
-// paquete de texturas funciona igual. Se repite una vez por bloque (misma
+// paquete de texturas funciona igual (atlas propio del LOD: PaletaTexturas.ATLAS,
+// con los modelos que no son cubos horneados). Se repite una vez por bloque (misma
 // escala que el terreno vanilla); textureGrad con las derivadas de la
 // coordenada sin envolver evita costuras en los bordes de repetición, y los
 // mipmaps simplifican la textura sola a medida que se aleja.
@@ -48,7 +49,7 @@ void main() {
         vec2 uv = origen + fract(repeticion) * tamano;
         vec4 tex = textureGrad(Sampler0, uv, dFdx(repeticion) * tamano, dFdy(repeticion) * tamano);
         vec3 detalle = tex.rgb / max(promedio, vec3(1.0 / 255.0));
-        // En los huecos transparentes (hojas) queda el color plano: nada de agujeros negros.
+        // El atlas del LOD es opaco (AtlasLod: huecos rellenos, oscuros en el follaje); el alfa queda por las dudas.
         color *= mix(vec3(1.0), detalle, tex.a);
     }
     fragColor = vec4(color, 1.0) * ColorModulator;

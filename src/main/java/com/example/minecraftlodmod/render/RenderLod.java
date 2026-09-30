@@ -28,7 +28,6 @@ import com.example.minecraftlodmod.generation.PrioridadVista;
 import com.example.minecraftlodmod.generation.TerrenoAproximado;
 import com.example.minecraftlodmod.generation.GeneradorAproximado;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 import java.io.IOException;
@@ -960,9 +959,9 @@ public final class RenderLod {
         dibujarPasada(evento, camara, proyeccion, TipoMalla.PLANA, GameRenderer.getPositionColorShader());
         ShaderInstance conTextura = shaderTextura;
         if (conTextura != null) {
-            // Atlas de bloques activo, con mipmaps: la textura se simplifica sola con la distancia.
-            mc.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS).setFilter(false, true);
-            RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
+            // Atlas propio del LOD (texturas del pack activo + modelos horneados), con mipmaps:
+            // la textura se simplifica sola con la distancia.
+            RenderSystem.setShaderTexture(0, PaletaTexturas.ATLAS);
             RenderSystem.setShaderTexture(1, PaletaTexturas.TABLA_SPRITES);
             dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura);
         }

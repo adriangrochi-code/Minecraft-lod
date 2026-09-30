@@ -10,6 +10,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Atlas del LOD (0.22.0):** juzgar en monitor real el brillo de los huecos
+  del follaje (`AtlasLod.HUECO_FOLLAJE` = 0,45) y si los modelos horneados
+  (escaleras, cercos, losas) se ven bien en aldeas lejanas. El costado
+  horneado se mira desde el norte y se usa en los 4 costados: una escalera
+  de lado muestra el perfil del norte en todas sus caras.
 - `PresupuestoMemoria.BYTES_ESTIMADOS_POR_TAREA` (256 KB) es un estimado,
   no una medición: perfilar la RAM real por tarea de generación con el
   juego corriendo y ajustarlo.
