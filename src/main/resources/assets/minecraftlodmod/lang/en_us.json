@@ -66,5 +66,11 @@
   "minecraftlodmod.configuration.fsrEscalaPorcentaje": "FSR resolution (%)",
   "minecraftlodmod.configuration.fsrEscalaPorcentaje.tooltip": "77 = Quality, 67 = Balanced, 59 = Performance, 50 = Ultra performance (AMD modes).",
   "minecraftlodmod.configuration.fsrNitidez": "FSR sharpness",
-  "minecraftlodmod.configuration.fsrNitidez.tooltip": "0 = maximum; each unit halves it."
+  "minecraftlodmod.configuration.fsrNitidez.tooltip": "0 = maximum; each unit halves it.",
+  "minecraftlodmod.configuration.hudRendimiento": "Performance HUD",
+  "minecraftlodmod.configuration.hudRendimiento.tooltip": "Shows FPS, frame time (average, worst, 1% low), CPU, RAM, server tick and LOD work at the top of the screen. Hidden with F1 or F3.",
+  "minecraftlodmod.configuration.logDepuracion": "Debug log",
+  "minecraftlodmod.configuration.logDepuracion.tooltip": "Writes logs/minecraftlodmod-depuracion.log: one line per second with performance, position and LOD work, plus events (stutters, config changes, joining or leaving a world).",
+  "minecraftlodmod.hud.linea1": "FPS %s  ·  %s ms (worst %s, 1%% low %s FPS)  ·  CPU game %s%% / system %s%%  ·  RAM %s/%s MB  ·  server %s ms",
+  "minecraftlodmod.hud.linea2": "LOD %s ms · %s verts · %s pieces · %s MB · queue %s  ·  extraction %s/s (pend. %s)  ·  approx %s/s  ·  pregen %s"
 }

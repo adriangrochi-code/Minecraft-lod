@@ -7,6 +7,7 @@ import com.example.minecraftlodmod.network.ProtocoloLod;
 import com.example.minecraftlodmod.render.PaletaTexturas;
 import com.example.minecraftlodmod.render.RenderLod;
 import com.example.minecraftlodmod.render.EscaladoFsr;
+import com.example.minecraftlodmod.render.MonitorRendimiento;
 import com.example.minecraftlodmod.benchmark.SesionCalibracion;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -53,6 +54,10 @@ public class MinecraftLodMod {
             RenderLod render = new RenderLod(generador);
             NeoForge.EVENT_BUS.register(render);
             SesionCalibracion.asignarAplicador(render::aplicarCalidad);
+            MonitorRendimiento monitor = new MonitorRendimiento(render, generador);
+            NeoForge.EVENT_BUS.register(monitor);
+            modEventBus.addListener(monitor::registrarCapa);
+            modEventBus.addListener(monitor::alRecargarConfig);
         }
     }
 }

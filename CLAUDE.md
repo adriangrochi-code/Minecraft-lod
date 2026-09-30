@@ -96,6 +96,11 @@ Al terminar un hito completo (no una tarea chica):
 
 ## Convenciones ya establecidas (no las reinventes)
 
+- **Versiones:** cada jar que se le entrega al usuario sube `mod_version` en
+  `gradle.properties` (0.MENOR.PARCHE: MENOR si trae funciones nuevas,
+  PARCHE si son solo arreglos) y agrega su entrada en `CHANGELOG.md`. Nunca
+  entregar dos jars distintos con el mismo número.
+
 - Nombres de clases, métodos y comentarios en español, siguiendo el estilo
   ya usado en el código existente.
 - Cada clase de lógica pura (`core`, `generation` no-Minecraft, `config`)

@@ -99,6 +99,8 @@ public final class GeneradorLocal {
     // Estadísticas para estimar el costo en cada hardware (log cada 10 s si hubo trabajo).
     private final LongAdder nanosChunks = new LongAdder();
     private final LongAdder chunksHechos = new LongAdder();
+    /** Total desde que arrancó el juego (no se reinicia): el monitor de rendimiento saca el ritmo por diferencia. */
+    private final java.util.concurrent.atomic.AtomicLong chunksExtraidosTotal = new java.util.concurrent.atomic.AtomicLong();
     private final LongAdder nanosLotesGrandes = new LongAdder();
     private long nanosCapturaHiloServidor;
     private int ticksDesdeEstadistica;
@@ -289,7 +291,21 @@ public final class GeneradorLocal {
     }
 
     /** Chunks cargados que esperan lugar en la cola de extracción. */
-    int cantidadPendientes() {
+    /** Para el HUD y el log de depuración (cualquier hilo). */
+    public long chunksExtraidosTotal() {
+        return chunksExtraidosTotal.get();
+    }
+
+    public long chunksAproximadosTotal() {
+        return aproximado.hechosTotal();
+    }
+
+    public PregeneradorChunks.Estado estadoPregeneracion() {
+        return pregenerador.estado();
+    }
+
+    /** Chunks cargados que esperan lugar en la cola de extracción (el tamaño lo lee el HUD sin sincronizar: aproximado). */
+    public int cantidadPendientes() {
         return pendientes.size();
     }
 
@@ -439,6 +455,7 @@ public final class GeneradorLocal {
             destino.guardar(region, marca, MARCA);
             nanosChunks.add(System.nanoTime() - inicioTarea);
             chunksHechos.increment();
+            chunksExtraidosTotal.incrementAndGet();
             chunksSucios.computeIfAbsent(dimension, d -> ConcurrentHashMap.newKeySet()).add(chunkEmpaquetado);
             return null;
         });

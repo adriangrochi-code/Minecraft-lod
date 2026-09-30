@@ -367,3 +367,9 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   `PerformanceAutoTuner` (sección 23) para frenar la generación cuando cae
   el FPS. FSR bajó de 440 a 160 FPS en esa PC sin causa encontrada todavía
   (el shader solo no lo explica); en esa PC no tiene sentido usarlo.
+- **0.9.0: HUD de rendimiento + log de depuración (`MonitorRendimiento`,
+  `EstadisticaFrames`).** La GPU no se muestra: Minecraft solo la mide con F3
+  abierto. El evento de recarga de config llega en otro hilo: solo marca, y el
+  render escribe el evento (antes rompía con "Rendersystem called from wrong
+  thread"). El HUD se achica solo si las líneas no entran. Versiones: ver
+  `CHANGELOG.md` y la regla en CLAUDE.md.

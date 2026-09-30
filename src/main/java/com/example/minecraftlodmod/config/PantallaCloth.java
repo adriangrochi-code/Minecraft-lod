@@ -50,6 +50,16 @@ final class PantallaCloth {
                 .setTooltip(texto("preset.tooltip"))
                 .setSaveConsumer(c.seleccion::set)
                 .build();
+        general.addEntry(e.startBooleanToggle(texto("hudRendimiento"), c.hudRendimiento.get())
+                .setDefaultValue(c.hudRendimiento.getDefault())
+                .setTooltip(texto("hudRendimiento.tooltip"))
+                .setSaveConsumer(c.hudRendimiento::set)
+                .build());
+        general.addEntry(e.startBooleanToggle(texto("logDepuracion"), c.logDepuracion.get())
+                .setDefaultValue(c.logDepuracion.getDefault())
+                .setTooltip(texto("logDepuracion.tooltip"))
+                .setSaveConsumer(c.logDepuracion::set)
+                .build());
         general.addEntry(e.startBooleanToggle(texto("lodActivo"), c.lodActivo.get())
                 .setDefaultValue(c.lodActivo.getDefault())
                 .setTooltip(texto("lodActivo.tooltip"))

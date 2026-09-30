@@ -92,6 +92,7 @@ public final class GeneradorAproximado {
     private final Set<Long> enVuelo = ConcurrentHashMap.newKeySet();
     private boolean espiralAgotada, avisoCompleto;
     private final AtomicLong hechos = new AtomicLong();
+    private final AtomicLong hechosTotal = new AtomicLong();
     private final AtomicLong nanosCalculo = new AtomicLong();
     /** Tareas mandadas al pool y todavía no terminadas (se descuentan con {@link #terminadas} en el tick). */
     private int tareasEnVuelo;
@@ -188,6 +189,7 @@ public final class GeneradorAproximado {
                             generar(ctx, store, x, z, c[1] == 1);
                             nanosCalculo.addAndGet(System.nanoTime() - inicio);
                             hechos.incrementAndGet();
+                            hechosTotal.incrementAndGet();
                             generador.chunkAproximadoListo(ctx.dimension(), ctx.minSeccion(), ctx.maxSeccion(), x, z);
                         } catch (RuntimeException e) {
                             LOG.warn("LOD: no se pudo aproximar el chunk {}, {}", x, z, e);
@@ -378,6 +380,10 @@ public final class GeneradorAproximado {
         return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) 0, material, (byte) 0)
                 .conLuzHorneada(luz)
                 .conEstado(Block.getId(estado));
+    }
+
+    long hechosTotal() {
+        return hechosTotal.get();
     }
 
     void reiniciar() {

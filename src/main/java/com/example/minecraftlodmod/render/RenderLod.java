@@ -138,6 +138,7 @@ public final class RenderLod {
     private long ultimaEstadisticaNanos = System.nanoTime();
     private long framesDesdeEstadistica;
     private long nanosDibujo;
+    private volatile long nanosDibujoUltimoFrame;
     private int llamadasUltimoFrame;
     /** Distancia horizontal a la cámara del borde más lejano de LOD dibujado en el último frame. */
     private volatile float alcanceLodBloques;
@@ -173,6 +174,27 @@ public final class RenderLod {
         ultimaEstadisticaNanos = ahora;
         framesDesdeEstadistica = 0;
         nanosDibujo = 0;
+    }
+
+    /** Lo que muestra el HUD de rendimiento y escribe el log de depuración. */
+    public record Resumen(boolean activo, int piezas, long vertices, long verticesDibujados, int llamadas,
+                          double msDibujo, long vramMb, int ocultas, int mallasEnCola) {
+    }
+
+    /** Hilo de render (recorre las celdas: llamarlo como mucho una vez por segundo). */
+    public Resumen resumen() {
+        int piezas = 0;
+        long vertices = 0, bytes = 0;
+        for (EstadoCelda e : celdas.values()) {
+            if (e.tieneMalla) {
+                piezas++;
+                vertices += e.vertices;
+                bytes += (long) e.vertices * e.bytesVertice;
+            }
+        }
+        int enCola = hiloMallas instanceof ThreadPoolExecutor t ? t.getQueue().size() : 0;
+        return new Resumen(ConfigLod.CLIENTE.lodActivo.get() && calidad != null, piezas, vertices, verticesUltimoFrame,
+                llamadasUltimoFrame, nanosDibujoUltimoFrame / 1e6, bytes >> 20, piezasOcultas, enCola);
     }
 
     /** Bus del mod, solo cliente. */
@@ -703,7 +725,9 @@ public final class RenderLod {
         try {
             dibujarLod(mc, evento, camara);
         } finally {
-            nanosDibujo += System.nanoTime() - inicio;
+            long costo = System.nanoTime() - inicio;
+            nanosDibujo += costo;
+            nanosDibujoUltimoFrame = costo;
         }
     }
 

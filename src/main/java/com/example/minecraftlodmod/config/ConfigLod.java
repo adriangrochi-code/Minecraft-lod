@@ -38,6 +38,8 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue fpsObjetivo;
         public final ModConfigSpec.BooleanValue autoAjuste;
         public final ModConfigSpec.BooleanValue lodActivo;
+        public final ModConfigSpec.BooleanValue hudRendimiento;
+        public final ModConfigSpec.BooleanValue logDepuracion;
         public final ModConfigSpec.BooleanValue ocultarTapado;
         public final ModConfigSpec.BooleanValue fsrActivo;
         public final ModConfigSpec.IntValue fsrEscalaPorcentaje;
@@ -83,6 +85,11 @@ public final class ConfigLod {
                     .defineInRange("fsrEscalaPorcentaje", 77, 50, 99);
             fsrNitidez = b.comment("Nitidez de FSR (RCAS): 0 = máxima; cada unidad la reduce a la mitad.")
                     .defineInRange("fsrNitidez", 0.25, 0.0, 2.0);
+            hudRendimiento = b.comment("Mostrar arriba de la pantalla FPS, tiempos de cuadro, CPU, RAM y el trabajo del LOD.")
+                    .define("hudRendimiento", true);
+            logDepuracion = b.comment("Escribir logs/minecraftlodmod-depuracion.log: una línea por segundo con el",
+                            "rendimiento, la posición y lo que hace el mod, más eventos (tirones, cambios de config).")
+                    .define("logDepuracion", false);
             texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
                             "con la distancia). Apagado: colores planos, un poco más barato en GPU.")
                     .define("texturasLod", true);
