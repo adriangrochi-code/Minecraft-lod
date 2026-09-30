@@ -187,6 +187,8 @@ public final class RenderLod {
     private int llamadasUltimoFrame;
     /** Distancia horizontal a la cámara del borde más lejano de LOD dibujado en el último frame. */
     private volatile float alcanceLodBloques;
+    /** Alto en píxeles con que se midió el último plan (el del mundo escalado, si hay escalado). */
+    private int alturaPlan;
     /** Radio del último plan, en chunks (el del preset, el del auto-ajuste o el del horizonte real). */
     private int radioEnUso;
     private long verticesUltimoFrame;
@@ -555,12 +557,16 @@ public final class RenderLod {
         boolean giro = conZoom && angulo(miraX, miraZ, miraPlanX, miraPlanZ) > REPLANIFICAR_GIRO;
         ParametrosCalidad c = calidad;
         balance.usarBase(c);
+        // Con escalado, el detalle se mide en píxeles del mundo (la resolución interna), no de la pantalla.
+        int alturaDibujo = Escalado.alturaDelMundo(mc);
         if (chunkX == chunkPlanX && chunkZ == chunkPlanZ && Math.abs(fovGrados - fovPlan) < 1 && !giro
+                && alturaDibujo == alturaPlan
                 && Math.abs(camara.y - yPlan) < REPLANIFICAR_ALTURA && ahora - ultimoPlanNanos < REPLANIFICAR_NANOS
                 && balance.version() == versionBalancePlan) {
             return;
         }
         versionBalancePlan = balance.version();
+        alturaPlan = alturaDibujo;
         miraPlanX = miraX;
         miraPlanZ = miraZ;
         chunkPlanX = chunkX;
@@ -609,10 +615,12 @@ public final class RenderLod {
         double aspecto = (double) mc.getWindow().getWidth() / Math.max(1, mc.getWindow().getHeight());
         double mediaApertura = Math.atan(Math.tan(Math.toRadians(fovGrados) / 2) * aspecto) + MARGEN_ZOOM;
         PlanCeldas.Vista vista = new PlanCeldas.Vista(miraX, miraZ, Math.toRadians(fovNormal), mediaApertura);
-        PlanCeldas.configurar(ConfigLod.CLIENTE.pixelesMaximos.get(),
+        // El tope visual es en píxeles de PANTALLA: con escalado se pasa a píxeles del mundo.
+        double aPantalla = alturaDibujo / (double) Math.max(1, mc.getWindow().getHeight());
+        PlanCeldas.configurar(ConfigLod.CLIENTE.pixelesMaximos.get() * aPantalla,
                 TerrenoAproximado.CHUNKS_POR_REGION_DESDE * 16.0);
         List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, radioChunks,
-                distanciaVanilla, cubiertos::contains, vista, Math.toRadians(fovGrados), mc.getWindow().getHeight(),
+                distanciaVanilla, cubiertos::contains, vista, Math.toRadians(fovGrados), alturaDibujo,
                 umbralPx);
         // Primero lo que se mira, después el margen, al final lo de atrás.
         plan.sort(Comparator.comparingDouble(celda -> prioridad(celda, camara, miraX, miraZ)));

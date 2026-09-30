@@ -68,6 +68,8 @@ public final class Escalado {
 
     private static ShaderInstance easu, rcas, movimiento, temporal, profundidad;
     private static TextureTarget escalado, intermedio, profundidadEscena;
+    /** "Solo si gana": compara el tiempo de cuadro con y sin escalado ({@link PruebaEscalado}). */
+    private static final PruebaEscalado PRUEBA = new PruebaEscalado();
     private static ObjetivoFlotante velocidad;
     private static final ObjetivoFlotante[] historial = new ObjetivoFlotante[2];
     private static int historialActual;
@@ -88,6 +90,11 @@ public final class Escalado {
             String gpu = RenderLod.conVulkanMod() ? "VulkanMod" : GlUtil.getVendor() + " " + GlUtil.getRenderer();
             modos = CompatibilidadEscalado.disponibles(gpu, Util.getPlatform() == Util.OS.WINDOWS,
                     RenderLod.conVulkanMod());
+            if (Boolean.getBoolean("minecraftlodmod.pruebaVulkan") && !modos.contains(ModoEscalado.XESS)) {
+                // Prueba del puente Vulkan en cualquier PC (EscaladorBlit en lugar de XeSS).
+                modos = new java.util.ArrayList<>(modos);
+                modos.add(ModoEscalado.XESS);
+            }
             modosDisponibles = modos;
             LOG.info("LOD: escalado disponible en {}: {}", gpu, modos);
         }
@@ -137,6 +144,18 @@ public final class Escalado {
                 ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, nombre), DefaultVertexFormat.POSITION);
     }
 
+    /**
+     * Alto en píxeles con el que se dibuja el mundo: el del framebuffer chico
+     * si se está escalando, el de la ventana si no. El LOD elige su detalle
+     * con esto: a la mitad de resolución un vóxel ocupa la mitad de píxeles, y
+     * pedirle el detalle de la pantalla completa mandaba los mismos vértices
+     * que sin escalar (el costo real del LOD), así que el escalado no ganaba nada.
+     */
+    public static int alturaDelMundo(Minecraft mc) {
+        TextureTarget t = escalado;
+        return modo != ModoEscalado.APAGADO && t != null ? t.height : mc.getWindow().getHeight();
+    }
+
     /** Framebuffer que tiene que usar el mundo, o null si no se está escalando (mixin de Minecraft). */
     public static RenderTarget objetivoActivo() {
         return activo ? escalado : null;
@@ -166,6 +185,10 @@ public final class Escalado {
         if (pedido == ModoEscalado.APAGADO) {
             modo = ModoEscalado.APAGADO;
             return;
+        }
+        if (!PRUEBA.usar(pedido, System.nanoTime(), ConfigLod.CLIENTE.escaladoSoloSiGana.get())) {
+            modo = ModoEscalado.APAGADO;
+            return; // midiendo sin escalado, o no da ganancia en esta PC ahora
         }
         int ancho = mc.getWindow().getWidth(), alto = mc.getWindow().getHeight();
         // El auto-ajuste resta hasta 15 puntos cuando la GPU es el límite (nunca menos del 50%).

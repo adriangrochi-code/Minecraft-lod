@@ -584,3 +584,23 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
 - Aproximado: bosques (taiga, grove, etc.) antes que nieve, con `nevado`; cumbres nevadas con
   bloque de nieve; agua que se congela = vóxel de agua con estado de hielo.
 - `VERSION_ALGORITMO` 12.
+
+## Escalado que gana FPS (0.21.0)
+
+- Medición en Xvfb (llvmpipe, 960×540): FSR1 al 50% daba 5,0 fps igual que apagado (el costo lo
+  ponen la CPU y los vértices del LOD, no los píxeles). Con el plan del LOD medido en píxeles del
+  framebuffer chico (`Escalado.alturaDelMundo`, y el tope `pixelesMaximos` convertido a pantalla):
+  6,2 fps (+24%).
+- `InteropVulkan`: semáforos compartidos (`GL_EXT_semaphore[_fd|_win32]` +
+  `VK_KHR_external_semaphore[_fd|_win32]`): GL señala entradas (con layouts GENERAL de las
+  texturas compartidas) y hace glFlush, Vulkan espera/trabaja/señala salida, GL espera antes de
+  leer; la fence se espera al empezar el lote siguiente. llvmpipe no tiene GL_EXT_semaphore_fd:
+  en Xvfb solo se probó el respaldo con glFinish. **Pista B:** probar XeSS en la 1060 (el log dice
+  "sincronización por semáforos en la GPU"); si hay imagen rota o parpadeo,
+  `-Dminecraftlodmod.sinSemaforos=true` vuelve al glFinish.
+- `PruebaEscalado` (opción `escaladoSoloSiGana`): 3 s con, 3 s sin, cada 2 min; con escalado solo
+  si es ≥3% más rápido. Verificado en Xvfb (157 ms con vs 192 ms sin → queda prendido).
+- XeSS en GPUs que no son Intel usa el camino DP4a, que en Pascal (GTX 1060) es caro: aun sin la
+  espera de CPU puede no ganar; la medición automática lo va a apagar si es así.
+- `-Dminecraftlodmod.pruebaVulkan=true` ahora también ofrece XESS fuera de Windows (con el
+  escalador de prueba EscaladorBlit).

@@ -147,6 +147,7 @@ public final class PantallaLod extends Screen {
                         entero("fsrEscalaPorcentaje", Impacto.ALTO, 50, 99, 1, c.fsrEscalaPorcentaje,
                                 v -> Component.literal(v + "%")),
                         decimal("fsrNitidez", Impacto.NINGUNO, 0, 2, 0.05, c.fsrNitidez, ""),
+                        interruptor("escaladoSoloSiGana", Impacto.NINGUNO, c.escaladoSoloSiGana),
                         interruptor("invertirJitter", Impacto.NINGUNO, c.invertirJitter)),
                 List.of(new Accion(texto("vulkan"), Component.empty(), Impacto.VARIABLE,
                         () -> texto("vulkan." + ConmutadorVulkan.estado().name().toLowerCase(Locale.ROOT)),

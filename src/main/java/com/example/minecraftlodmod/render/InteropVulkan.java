@@ -10,6 +10,8 @@ import com.example.minecraftlodmod.lwjglvk.VkDevice;
 import com.example.minecraftlodmod.lwjglvk.VkDeviceCreateInfo;
 import com.example.minecraftlodmod.lwjglvk.VkDeviceQueueCreateInfo;
 import com.example.minecraftlodmod.lwjglvk.VkExportMemoryAllocateInfo;
+import com.example.minecraftlodmod.lwjglvk.VkExportSemaphoreCreateInfo;
+import com.example.minecraftlodmod.lwjglvk.VkExtensionProperties;
 import com.example.minecraftlodmod.lwjglvk.VkExternalMemoryImageCreateInfo;
 import com.example.minecraftlodmod.lwjglvk.VkFenceCreateInfo;
 import com.example.minecraftlodmod.lwjglvk.VkImageCreateInfo;
@@ -28,6 +30,9 @@ import com.example.minecraftlodmod.lwjglvk.VkPhysicalDeviceMemoryProperties;
 import com.example.minecraftlodmod.lwjglvk.VkPhysicalDeviceProperties2;
 import com.example.minecraftlodmod.lwjglvk.VkQueue;
 import com.example.minecraftlodmod.lwjglvk.VkQueueFamilyProperties;
+import com.example.minecraftlodmod.lwjglvk.VkSemaphoreCreateInfo;
+import com.example.minecraftlodmod.lwjglvk.VkSemaphoreGetFdInfoKHR;
+import com.example.minecraftlodmod.lwjglvk.VkSemaphoreGetWin32HandleInfoKHR;
 import com.example.minecraftlodmod.lwjglvk.VkSubmitInfo;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.logging.LogUtils;
@@ -35,6 +40,9 @@ import org.lwjgl.PointerBuffer;
 import org.lwjgl.opengl.EXTMemoryObject;
 import org.lwjgl.opengl.EXTMemoryObjectFD;
 import org.lwjgl.opengl.EXTMemoryObjectWin32;
+import org.lwjgl.opengl.EXTSemaphore;
+import org.lwjgl.opengl.EXTSemaphoreFD;
+import org.lwjgl.opengl.EXTSemaphoreWin32;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GLCapabilities;
@@ -57,6 +65,10 @@ import static com.example.minecraftlodmod.lwjglvk.KHRExternalMemoryFd.VK_KHR_EXT
 import static com.example.minecraftlodmod.lwjglvk.KHRExternalMemoryFd.vkGetMemoryFdKHR;
 import static com.example.minecraftlodmod.lwjglvk.KHRExternalMemoryWin32.VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME;
 import static com.example.minecraftlodmod.lwjglvk.KHRExternalMemoryWin32.vkGetMemoryWin32HandleKHR;
+import static com.example.minecraftlodmod.lwjglvk.KHRExternalSemaphoreFd.VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME;
+import static com.example.minecraftlodmod.lwjglvk.KHRExternalSemaphoreFd.vkGetSemaphoreFdKHR;
+import static com.example.minecraftlodmod.lwjglvk.KHRExternalSemaphoreWin32.VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME;
+import static com.example.minecraftlodmod.lwjglvk.KHRExternalSemaphoreWin32.vkGetSemaphoreWin32HandleKHR;
 import static com.example.minecraftlodmod.lwjglvk.VK10.*;
 import static com.example.minecraftlodmod.lwjglvk.VK11.*;
 
@@ -68,9 +80,13 @@ import static com.example.minecraftlodmod.lwjglvk.VK11.*;
  * importan en OpenGL como texturas ({@code GL_EXT_memory_object}): los dos
  * ven la misma memoria, sin copias por la CPU.
  *
- * Sincronización simple: glFinish antes de mandar el trabajo a Vulkan y
- * esperar su fence después (sin semáforos compartidos, que no todos los
- * drivers tienen). Todas las imágenes viven en layout GENERAL.
+ * Sincronización: con semáforos compartidos ({@code GL_EXT_semaphore} y
+ * {@code VK_KHR_external_semaphore}) todo queda del lado de la GPU: OpenGL
+ * señala "entradas listas", Vulkan espera eso, trabaja y señala "salida
+ * lista", y OpenGL la espera antes de leerla; la CPU sigue con el cuadro
+ * siguiente. Sin semáforos (drivers viejos), glFinish antes y esperar la
+ * fence después: correcto pero frena la CPU cada cuadro (el escalado
+ * perdía FPS en vez de ganar). Todas las imágenes viven en layout GENERAL.
  *
  * Es la única parte del mod con llamadas GL directas y Vulkan: se usa solo
  * con los modos XESS/DLSS del escalado (experimentales).
@@ -121,6 +137,11 @@ public final class InteropVulkan implements AutoCloseable {
     private final VkCommandBuffer buffer;
     private final long fence;
     private final String nombreGpu;
+    /** Semáforos compartidos (0 si el driver no los tiene): OpenGL → Vulkan y Vulkan → OpenGL. */
+    private long semEntradas, semSalida;
+    private int semEntradasGl, semSalidaGl;
+    /** Hay un lote enviado cuya fence todavía no se esperó (con semáforos, se espera al empezar el siguiente). */
+    private boolean loteEnVuelo;
     private final List<ImagenCompartida> imagenes = new ArrayList<>();
 
     private InteropVulkan(Requisitos req) {
@@ -156,6 +177,15 @@ public final class InteropVulkan implements AutoCloseable {
             Arrays.fill(prioridades, 1f);
             Set<String> extensiones = new LinkedHashSet<>();
             extensiones.add(windows ? VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME : VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+            String extSemaforo = windows ? VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME
+                    : VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME;
+            boolean semaforosGl = gl.GL_EXT_semaphore && (windows ? gl.GL_EXT_semaphore_win32 : gl.GL_EXT_semaphore_fd);
+            // -Dminecraftlodmod.sinSemaforos=true vuelve a la sincronización con glFinish (por si un driver falla).
+            boolean conSemaforos = semaforosGl && !Boolean.getBoolean("minecraftlodmod.sinSemaforos")
+                    && dispositivoSoporta(fisico, extSemaforo);
+            if (conSemaforos) {
+                extensiones.add(extSemaforo);
+            }
             extensiones.addAll(req.extensionesDispositivo(instancia, fisico));
             VkDeviceQueueCreateInfo.Buffer colas = VkDeviceQueueCreateInfo.calloc(1, st).sType$Default()
                     .queueFamilyIndex(familia).pQueuePriorities(st.floats(prioridades));
@@ -179,9 +209,97 @@ public final class InteropVulkan implements AutoCloseable {
             buffer = new VkCommandBuffer(pp.get(0), dispositivo);
             revisar(vkCreateFence(dispositivo, VkFenceCreateInfo.calloc(st).sType$Default(), null, lp), "vkCreateFence");
             fence = lp.get(0);
+            if (conSemaforos) {
+                try {
+                    semEntradas = crearSemaforo();
+                    semEntradasGl = importarSemaforo(semEntradas);
+                    semSalida = crearSemaforo();
+                    semSalidaGl = importarSemaforo(semSalida);
+                } catch (RuntimeException e) {
+                    LOG.warn("LOD: no se pudieron compartir semáforos con OpenGL ({}); se sincroniza con glFinish",
+                            e.toString());
+                    cerrarSemaforos();
+                }
+            }
         }
-        LOG.info("LOD: Vulkan listo en {} (memoria compartida con OpenGL por {})", nombreGpu,
-                windows ? "handles de Windows" : "descriptores de archivo");
+        LOG.info("LOD: Vulkan listo en {} (memoria compartida con OpenGL por {}, sincronización {})", nombreGpu,
+                windows ? "handles de Windows" : "descriptores de archivo",
+                semEntradas != 0 ? "por semáforos en la GPU" : "con glFinish (el driver no comparte semáforos)");
+    }
+
+    /** true si el puente sincroniza en la GPU (semáforos compartidos), sin frenar la CPU. */
+    public boolean conSemaforos() {
+        return semEntradas != 0;
+    }
+
+    private static boolean dispositivoSoporta(VkPhysicalDevice fisico, String extension) {
+        try (MemoryStack st = MemoryStack.stackPush()) {
+            IntBuffer n = st.mallocInt(1);
+            vkEnumerateDeviceExtensionProperties(fisico, (ByteBuffer) null, n, null);
+            VkExtensionProperties.Buffer props = VkExtensionProperties.malloc(n.get(0), st);
+            vkEnumerateDeviceExtensionProperties(fisico, (ByteBuffer) null, n, props);
+            for (int i = 0; i < props.capacity(); i++) {
+                if (extension.equals(props.get(i).extensionNameString())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    /** Semáforo binario exportable (fd u handle de Windows). */
+    private long crearSemaforo() {
+        try (MemoryStack st = MemoryStack.stackPush()) {
+            VkExportSemaphoreCreateInfo exportar = VkExportSemaphoreCreateInfo.calloc(st).sType$Default()
+                    .handleTypes(windows ? VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT
+                            : VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT);
+            LongBuffer lp = st.mallocLong(1);
+            revisar(vkCreateSemaphore(dispositivo, VkSemaphoreCreateInfo.calloc(st).sType$Default()
+                    .pNext(exportar.address()), null, lp), "vkCreateSemaphore");
+            return lp.get(0);
+        }
+    }
+
+    /** El mismo semáforo visto desde OpenGL. */
+    private int importarSemaforo(long semaforo) {
+        int gl = EXTSemaphore.glGenSemaphoresEXT();
+        try (MemoryStack st = MemoryStack.stackPush()) {
+            if (windows) {
+                PointerBuffer handle = st.mallocPointer(1);
+                revisar(vkGetSemaphoreWin32HandleKHR(dispositivo, VkSemaphoreGetWin32HandleInfoKHR.calloc(st)
+                        .sType$Default().semaphore(semaforo)
+                        .handleType(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT), handle),
+                        "vkGetSemaphoreWin32HandleKHR");
+                EXTSemaphoreWin32.glImportSemaphoreWin32HandleEXT(gl, GL_HANDLE_TYPE_OPAQUE_WIN32_EXT, handle.get(0));
+            } else {
+                IntBuffer fd = st.mallocInt(1);
+                revisar(vkGetSemaphoreFdKHR(dispositivo, VkSemaphoreGetFdInfoKHR.calloc(st).sType$Default()
+                        .semaphore(semaforo).handleType(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT), fd),
+                        "vkGetSemaphoreFdKHR");
+                EXTSemaphoreFD.glImportSemaphoreFdEXT(gl, GL_HANDLE_TYPE_OPAQUE_FD_EXT, fd.get(0));
+            }
+        }
+        if (!EXTSemaphore.glIsSemaphoreEXT(gl)) {
+            throw new IllegalStateException("OpenGL no importó el semáforo");
+        }
+        return gl;
+    }
+
+    private void cerrarSemaforos() {
+        if (semEntradasGl != 0) {
+            EXTSemaphore.glDeleteSemaphoresEXT(semEntradasGl);
+        }
+        if (semSalidaGl != 0) {
+            EXTSemaphore.glDeleteSemaphoresEXT(semSalidaGl);
+        }
+        if (semEntradas != 0) {
+            vkDestroySemaphore(dispositivo, semEntradas, null);
+        }
+        if (semSalida != 0) {
+            vkDestroySemaphore(dispositivo, semSalida, null);
+        }
+        semEntradas = semSalida = 0;
+        semEntradasGl = semSalidaGl = 0;
     }
 
     /** Levanta el puente, o null (con el motivo en el log) si esta PC no puede. */
@@ -250,6 +368,11 @@ public final class InteropVulkan implements AutoCloseable {
     }
 
     private void ejecutar(Consumer<VkCommandBuffer> grabar, boolean conBarreras) {
+        if (conBarreras && semEntradas != 0) {
+            ejecutarConSemaforos(grabar);
+            return;
+        }
+        esperarLoteAnterior();
         GL11.glFinish();
         try (MemoryStack st = MemoryStack.stackPush()) {
             vkResetCommandBuffer(buffer, 0);
@@ -267,6 +390,52 @@ public final class InteropVulkan implements AutoCloseable {
                     fence), "vkQueueSubmit");
             revisar(vkWaitForFences(dispositivo, fence, true, Long.MAX_VALUE), "vkWaitForFences");
             vkResetFences(dispositivo, fence);
+        }
+    }
+
+    /**
+     * Sin frenar la CPU: OpenGL señala que las entradas están escritas,
+     * Vulkan espera eso en la GPU, corre y señala la salida, y OpenGL espera
+     * esa señal (también en la GPU) antes de leerla. La fence de este lote se
+     * espera recién al empezar el siguiente (para reusar el buffer de
+     * comandos), cuando normalmente ya terminó.
+     */
+    private void ejecutarConSemaforos(Consumer<VkCommandBuffer> grabar) {
+        esperarLoteAnterior();
+        try (MemoryStack st = MemoryStack.stackPush()) {
+            IntBuffer texturas = st.mallocInt(imagenes.size());
+            IntBuffer layouts = st.mallocInt(imagenes.size());
+            for (ImagenCompartida imagen : imagenes) {
+                texturas.put(imagen.texturaGl);
+                layouts.put(EXTSemaphore.GL_LAYOUT_GENERAL_EXT);
+            }
+            texturas.flip();
+            layouts.flip();
+            EXTSemaphore.glSignalSemaphoreEXT(semEntradasGl, null, texturas, layouts);
+            GL11.glFlush(); // que la señal llegue a la GPU antes de que Vulkan la espere
+
+            vkResetCommandBuffer(buffer, 0);
+            revisar(vkBeginCommandBuffer(buffer, VkCommandBufferBeginInfo.calloc(st).sType$Default()
+                    .flags(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)), "vkBeginCommandBuffer");
+            barrera(buffer, imagenes, VK_IMAGE_LAYOUT_GENERAL);
+            grabar.accept(buffer);
+            barrera(buffer, imagenes, VK_IMAGE_LAYOUT_GENERAL);
+            revisar(vkEndCommandBuffer(buffer), "vkEndCommandBuffer");
+            revisar(vkQueueSubmit(cola, VkSubmitInfo.calloc(st).sType$Default()
+                    .waitSemaphoreCount(1).pWaitSemaphores(st.longs(semEntradas))
+                    .pWaitDstStageMask(st.ints(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT))
+                    .pCommandBuffers(st.pointers(buffer))
+                    .pSignalSemaphores(st.longs(semSalida)), fence), "vkQueueSubmit");
+            loteEnVuelo = true;
+            EXTSemaphore.glWaitSemaphoreEXT(semSalidaGl, null, texturas, layouts);
+        }
+    }
+
+    private void esperarLoteAnterior() {
+        if (loteEnVuelo) {
+            revisar(vkWaitForFences(dispositivo, fence, true, Long.MAX_VALUE), "vkWaitForFences");
+            vkResetFences(dispositivo, fence);
+            loteEnVuelo = false;
         }
     }
 
@@ -293,7 +462,9 @@ public final class InteropVulkan implements AutoCloseable {
 
     @Override
     public void close() {
+        GL11.glFinish(); // OpenGL puede estar esperando un semáforo o leyendo una imagen compartida
         vkDeviceWaitIdle(dispositivo);
+        cerrarSemaforos();
         for (ImagenCompartida imagen : imagenes) {
             imagen.cerrar();
         }

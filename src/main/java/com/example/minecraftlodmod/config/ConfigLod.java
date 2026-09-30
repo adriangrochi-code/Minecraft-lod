@@ -45,6 +45,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue fsrEscalaPorcentaje;
         public final ModConfigSpec.DoubleValue fsrNitidez;
         public final ModConfigSpec.BooleanValue invertirJitter;
+        public final ModConfigSpec.BooleanValue escaladoSoloSiGana;
         public final ModConfigSpec.BooleanValue pregenerar;
         public final ModConfigSpec.BooleanValue generacionAproximada;
         public final ModConfigSpec.IntValue radioPregeneracion;
@@ -123,6 +124,10 @@ public final class ConfigLod {
                     .defineInRange("fsrEscalaPorcentaje", 77, 50, 99);
             fsrNitidez = b.comment("Nitidez final (RCAS, en FSR1 y TEMPORAL): 0 = máxima; cada unidad la reduce a la mitad.")
                     .defineInRange("fsrNitidez", 0.25, 0.0, 2.0);
+            escaladoSoloSiGana = b.comment("Escalado: cada 2 minutos medir unos segundos con y sin escalado y dejarlo prendido",
+                            "solo si da más FPS. Si el límite es el procesador (lo más común en Minecraft), bajar la",
+                            "resolución no gana nada y las pasadas del escalador cuestan: ahí se apaga solo.")
+                    .define("escaladoSoloSiGana", true);
             invertirJitter = b.comment("XeSS/DLSS: pasar el desplazamiento sub-píxel con el signo contrario. Probar si la imagen",
                             "tiembla o queda borrosa quieta con XeSS o DLSS (depende de la convención de cada uno).")
                     .define("invertirJitter", false);

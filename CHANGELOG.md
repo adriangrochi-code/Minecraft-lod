@@ -6,6 +6,23 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.21.0 — Escalado que gana FPS (o se apaga solo)
+- **El LOD se arma para la resolución a la que se dibuja el mundo:** con
+  escalado, el detalle se mide en píxeles de la resolución interna. Antes el
+  LOD mandaba los mismos vértices que sin escalar (su costo real) y el
+  escalado no ganaba nada: en la prueba, FSR 1 al 50% pasó de no ganar nada
+  a +24% de FPS. El tope de "píxeles máximos por vóxel" sigue siendo en
+  píxeles de pantalla.
+- **XeSS y DLSS sin frenar el procesador:** el puente con Vulkan se
+  sincroniza con semáforos en la placa de video en vez de esperar a que
+  termine todo en cada cuadro (glFinish), que era lo que hacía perder FPS.
+  Si el driver no los tiene, sigue como antes. Sin probar todavía en tu PC.
+- **"Escalado solo si da más FPS"** (Depuración / Experimental, prendido):
+  cada 2 minutos mide unos segundos con escalado y sin él y lo deja solo si
+  los cuadros salen más rápidos. Si el límite es el procesador (lo más común
+  en Minecraft), bajar la resolución no gana y ahora se apaga solo; el log
+  dice qué midió.
+
 ## 0.20.1 — El horizonte lejano aparece, bosques nevados y mar helado
 - **El LOD lejano no aparecía** (se cortaba a una distancia fija aunque el
   radio fuera de miles de chunks). Varias causas, todas arregladas:
