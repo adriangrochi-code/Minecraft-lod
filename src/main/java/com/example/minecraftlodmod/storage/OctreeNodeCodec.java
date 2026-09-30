@@ -63,10 +63,8 @@ public final class OctreeNodeCodec {
         boolean homogeneo = buffer[offset + 1] != 0;
         int countRuns = ((buffer[offset + 2] & 0xFF) << 8) | (buffer[offset + 3] & 0xFF);
 
-        List<RunLengthCodec.Run> runs = RunLengthCodec.leerRuns(
-                buffer, offset + HEADER_BYTES, countRuns);
-
-        SuperVoxel[] voxeles = RunLengthCodec.decodificar(runs, totalVoxelesEsperados);
+        SuperVoxel[] voxeles = RunLengthCodec.leerYDecodificar(
+                buffer, offset + HEADER_BYTES, countRuns, totalVoxelesEsperados);
         return new NodoDeserializado(nivelLod, homogeneo, voxeles);
     }
 

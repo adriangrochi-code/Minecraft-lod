@@ -298,25 +298,35 @@ public final class GeneradorAproximado {
                 while (y + 8 <= ctx.maxY() - 1 && solido(ctx, x, y + 8, z)) {
                     y += 8;
                 }
-                for (int arriba = Math.min(ctx.maxY() - 1, y + 7); arriba > y; arriba--) {
-                    if (solido(ctx, x, arriba, z)) {
-                        return arriba;
-                    }
-                }
-                return y;
+                return afinar(ctx, x, z, y);
             }
         }
         for (int y = inicio; y >= ctx.minY(); y -= 8) {
             if (solido(ctx, x, y, z)) {
-                for (int arriba = Math.min(ctx.maxY() - 1, y + 7); arriba > y; arriba--) {
-                    if (solido(ctx, x, arriba, z)) {
-                        return arriba;
-                    }
-                }
-                return y;
+                return afinar(ctx, x, z, y);
             }
         }
         return ctx.minY() - 1;
+    }
+
+    /**
+     * El sólido más alto entre {@code y} (sólido) y los 7 bloques de arriba,
+     * por búsqueda binaria: 3 evaluaciones de densidad en vez de hasta 7 (la
+     * densidad es lo más caro del generador). Con un alero dentro de esos 8
+     * bloques puede quedar en otro borde; a la resolución del LOD aproximado
+     * (vóxeles de 8) no cambia nada visible.
+     */
+    private static int afinar(Contexto ctx, int x, int z, int y) {
+        int bajo = y, alto = Math.min(ctx.maxY() - 1, y + 7);
+        while (bajo < alto) {
+            int medio = (bajo + alto + 1) >>> 1;
+            if (solido(ctx, x, medio, z)) {
+                bajo = medio;
+            } else {
+                alto = medio - 1;
+            }
+        }
+        return bajo;
     }
 
     private static boolean solido(Contexto ctx, int x, int y, int z) {

@@ -133,12 +133,18 @@ public final class GreedyMesher {
     private static List<Quad> mallarEje(SuperVoxel[] grid, int lado, Quad.Eje eje, boolean positivo,
                                         Vecinos vecinos, boolean conOclusion) {
         List<Quad> resultado = new ArrayList<>();
+        // Una sola vez por eje (antes, tres matrices nuevas por capa): se limpian entre capas.
+        SuperVoxel[][] mascara = new SuperVoxel[lado][lado];
+        int[][] oclusion = new int[lado][lado];
+        boolean[][] visitado = new boolean[lado][lado];
 
         // Recorremos capa por capa a lo largo del eje principal.
         for (int capa = 0; capa < lado; capa++) {
             // Máscara 2D: qué "superficie" (vóxel visible desde esta cara) hay en cada celda de la capa.
-            SuperVoxel[][] mascara = new SuperVoxel[lado][lado];
-            int[][] oclusion = new int[lado][lado];
+            for (int u = 0; u < lado; u++) {
+                java.util.Arrays.fill(mascara[u], null);
+                java.util.Arrays.fill(visitado[u], false);
+            }
 
             for (int u = 0; u < lado; u++) {
                 for (int v = 0; v < lado; v++) {
@@ -163,17 +169,15 @@ public final class GreedyMesher {
                 }
             }
 
-            resultado.addAll(fusionarMascara(mascara, oclusion, lado, capa, eje, positivo));
+            fusionarMascara(mascara, oclusion, visitado, lado, capa, eje, positivo, resultado);
         }
 
         return resultado;
     }
 
     /** Algoritmo greedy 2D estándar: barre la máscara y va extendiendo rectángulos lo más posible. */
-    private static List<Quad> fusionarMascara(SuperVoxel[][] mascara, int[][] oclusion, int lado, int capa,
-                                               Quad.Eje eje, boolean positivo) {
-        List<Quad> quads = new ArrayList<>();
-        boolean[][] visitado = new boolean[lado][lado];
+    private static void fusionarMascara(SuperVoxel[][] mascara, int[][] oclusion, boolean[][] visitado, int lado,
+                                        int capa, Quad.Eje eje, boolean positivo, List<Quad> quads) {
 
         for (int u = 0; u < lado; u++) {
             for (int v = 0; v < lado; v++) {
@@ -215,8 +219,6 @@ public final class GreedyMesher {
                 quads.add(construirQuad(eje, positivo, capa, u, v, anchoU, anchoV, referencia, oclusionReferencia));
             }
         }
-
-        return quads;
     }
 
     private static Quad construirQuad(Quad.Eje eje, boolean positivo, int capa, int u, int v,

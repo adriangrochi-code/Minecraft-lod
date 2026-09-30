@@ -1,6 +1,6 @@
 package com.example.minecraftlodmod.storage;
 
-import java.io.ByteArrayOutputStream;
+import java.util.Arrays;
 import java.nio.ByteBuffer;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
@@ -23,6 +23,8 @@ public final class CompresionNodos {
 
     private static final ThreadLocal<Deflater> DEFLATER = ThreadLocal.withInitial(() -> new Deflater(Deflater.BEST_SPEED));
     private static final ThreadLocal<Inflater> INFLATER = ThreadLocal.withInitial(Inflater::new);
+    /** Salida de {@link #comprimir}, una por hilo; crece si un nodo no entra. */
+    private static final ThreadLocal<byte[]> SALIDA = ThreadLocal.withInitial(() -> new byte[64 * 1024]);
 
     /** Tope al descomprimir: un nodo de nivel 0 sin ninguna corrida ocupa ~40 KB. */
     static final int MAX_ORIGINAL = 1 << 20;
@@ -35,15 +37,22 @@ public final class CompresionNodos {
         deflater.reset();
         deflater.setInput(datos);
         deflater.finish();
-        ByteArrayOutputStream salida = new ByteArrayOutputStream(Math.max(64, datos.length / 4));
-        byte[] largo = ByteBuffer.allocate(4).putInt(datos.length).array();
-        salida.write(largo, 0, 4);
-        byte[] bloque = new byte[4096];
+        // Directo a un buffer del hilo que se reusa (antes: un bloque de 4 KB y un
+        // ByteArrayOutputStream nuevos por nodo); solo la copia final es por nodo.
+        byte[] salida = SALIDA.get();
+        salida[0] = (byte) (datos.length >>> 24);
+        salida[1] = (byte) (datos.length >>> 16);
+        salida[2] = (byte) (datos.length >>> 8);
+        salida[3] = (byte) datos.length;
+        int escritos = 4;
         while (!deflater.finished()) {
-            int n = deflater.deflate(bloque);
-            salida.write(bloque, 0, n);
+            if (escritos == salida.length) {
+                salida = Arrays.copyOf(salida, salida.length * 2);
+                SALIDA.set(salida);
+            }
+            escritos += deflater.deflate(salida, escritos, salida.length - escritos);
         }
-        return salida.toByteArray();
+        return Arrays.copyOf(salida, escritos);
     }
 
     public static byte[] descomprimir(byte[] comprimido) {

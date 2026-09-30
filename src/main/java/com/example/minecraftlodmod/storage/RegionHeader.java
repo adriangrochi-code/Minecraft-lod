@@ -123,6 +123,26 @@ public final class RegionHeader {
         return header;
     }
 
+    /**
+     * Copia con la misma tabla (las ubicaciones {offset, tamaño} se comparten:
+     * nunca se modifican después de registrarse). Mucho más barata que
+     * recorrer {@link #claves()} y volver a registrar cada nodo.
+     */
+    public RegionHeader copia() {
+        RegionHeader copia = new RegionHeader(regionX, regionZ, dimensionId, hashFuente);
+        copia.tablaOffsets.putAll(tablaOffsets);
+        return copia;
+    }
+
+    /** Suma de los tamaños de todos los nodos registrados (los bytes vivos del archivo). */
+    public long bytesVivos() {
+        long total = 0;
+        for (long[] ubicacion : tablaOffsets.values()) {
+            total += ubicacion[1];
+        }
+        return total;
+    }
+
     /** Claves de todos los nodos registrados (copia, para iterar sin exponer la tabla interna). */
     public java.util.Set<Long> claves() {
         return java.util.Set.copyOf(tablaOffsets.keySet());

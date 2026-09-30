@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class RunLengthCodecTest {
 
@@ -40,5 +41,19 @@ class RunLengthCodecTest {
         SuperVoxel[] reconstruido = RunLengthCodec.decodificar(leidos, original.length);
 
         assertArrayEquals(original, reconstruido);
+    }
+
+    @Test
+    void leerYDecodificarDaLoMismoYRechazaDeMas() {
+        SuperVoxel[] original = {voxel(5), voxel(5), voxel(7), voxel(7), voxel(7), voxel(1)};
+        List<RunLengthCodec.Run> runs = RunLengthCodec.codificar(original);
+        byte[] buffer = new byte[3 + RunLengthCodec.bytesNecesarios(runs)];
+        RunLengthCodec.escribirRuns(runs, buffer, 3);
+
+        assertArrayEquals(original, RunLengthCodec.leerYDecodificar(buffer, 3, runs.size(), original.length));
+        assertThrows(IllegalStateException.class,
+                () -> RunLengthCodec.leerYDecodificar(buffer, 3, runs.size(), original.length - 1));
+        assertThrows(IllegalStateException.class,
+                () -> RunLengthCodec.leerYDecodificar(buffer, 3, runs.size(), original.length + 1));
     }
 }

@@ -77,4 +77,27 @@ class BoundedRegionCacheTest {
         assertEquals(0, cache.cantidadEntradas());
         assertNull(cache.obtener(1L));
     }
+
+    @Test
+    void clavesQueAntesChocabanSeGuardanYSeLeenTodas() {
+        // Como RegionFileStore.claveCache: la región cae sobre los bits del nodo en Long.hashCode.
+        BoundedRegionCache cache = new BoundedRegionCache(1 << 20);
+        java.util.Set<Long> mezcladas = new java.util.HashSet<>();
+        for (int rx = 0; rx < 16; rx++) {
+            for (int nodo = 0; nodo < 256; nodo++) {
+                long clave = ((long) (rx & 0x3FFF) << 40) | ((long) nodo << 8);
+                cache.poner(clave, new byte[]{(byte) rx, (byte) nodo});
+                mezcladas.add(BoundedRegionCache.mezclar(clave));
+            }
+        }
+        assertEquals(16 * 256, mezcladas.size(), "la mezcla no junta claves distintas");
+        for (int rx = 0; rx < 16; rx++) {
+            for (int nodo = 0; nodo < 256; nodo++) {
+                long clave = ((long) (rx & 0x3FFF) << 40) | ((long) nodo << 8);
+                org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[]{(byte) rx, (byte) nodo}, cache.obtener(clave));
+            }
+        }
+        cache.quitar(0L);
+        assertNull(cache.obtener(0L));
+    }
 }

@@ -34,6 +34,8 @@ public final class ColoresBloque {
     }
 
     private static volatile Paleta paleta;
+    /** Tinte.values() clona el arreglo en cada llamada; se usa por cada bloque. */
+    private static final Tinte[] TINTES = Tinte.values();
 
     private ColoresBloque() {
     }
@@ -59,7 +61,7 @@ public final class ColoresBloque {
             return estado.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).col;
         }
         int base = p.rgbBase()[id];
-        Tinte tinte = Tinte.values()[p.tinte()[id]];
+        Tinte tinte = TINTES[p.tinte()[id]];
         return switch (tinte) {
             case NINGUNO -> base;
             case FIJO -> ColorTextura.tenir(base, p.tinteFijo()[id]);

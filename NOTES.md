@@ -441,3 +441,29 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 - Pendiente de Pista B: la GTX 1060 con Vulkan integrado; el menú de opciones de VulkanMod
   (Opciones > Video); macOS no tiene nativos incluidos (NO_DISPONIBLE).
 
+## Perfilado y optimización (0.15.1)
+
+Cómo medir: `./gradlew runClient -Pperfil=archivo.jfr` (JFR, `settings=profile`, empieza a
+los 45 s y graba 150 s); `jfr view hot-methods archivo.jfr`, o `jfr print --json --events
+jdk.ExecutionSample` y agrupar por hilo / primer marco del mod. Ojo: las pilas de la generación
+aproximada (funciones de densidad) pasan de 64 marcos y salen truncadas, sin marcos del mod.
+
+Perfil de partida (0.15.0, OpenGL por software, recorriendo el mundo de benchmark), 4958
+muestras:
+- 38% pool de generación: casi todo `finalDensity` del generador aproximado (inherente;
+  se bajó el refinado de altura de hasta 7 a 3 evaluaciones con búsqueda binaria).
+- 31% `Worker-Main`: generación de chunks vanilla (no es del mod).
+- 16% `LOD-EscrituraRegiones`: ~100% en `RegionHeader.claves()` (`Set.copyOf` de todo el
+  índice, dos veces por escritura) -> `RegionHeader.copia()` y `bytesVivos()`.
+- `BoundedRegionCache.obtener`: `LinkedHashMap` degradado a árboles por `Long.hashCode` de
+  `claveCache` (bits de región sobre los del nodo) -> claves mezcladas con fmix64.
+- Memoria: 22,5 GB asignados en 150 s. Del mod: `indiceDe` releía índices ausentes/viejos en
+  cada consulta (1,6 GB) -> marca `SIN_INDICE`; `CompresionNodos` (1,7 GB) -> buffer por hilo;
+  `GreedyMesher.mallarEje` (1,5 GB) -> matrices por eje; `Tinte/Material.values()` (600 MB);
+  `RunLengthCodec.leerRuns` -> `leerYDecodificar`; `carpetaDe` -> ruta por dimensión;
+  `LectorSeccionMinecraft.material` -> cache por estado (se vacía con `TagsUpdatedEvent`).
+
+Siguiente candidato (sin tocar): `CacheRelieve.preparar` lee hasta 32 regiones de disco por
+replanificación EN EL HILO DE RENDER (hasta ~14 ms cada 3 s = tirón en equipos débiles).
+Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
+

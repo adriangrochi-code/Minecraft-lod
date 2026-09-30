@@ -19,6 +19,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.TagsUpdatedEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -166,6 +167,11 @@ public final class GeneradorLocal {
     @SubscribeEvent
     public void alRegistrarComandos(RegisterCommandsEvent evento) {
         ComandoPregeneracion.registrar(evento.getDispatcher(), pregenerador);
+    }
+
+    @SubscribeEvent
+    public void alActualizarTags(TagsUpdatedEvent evento) {
+        LectorSeccionMinecraft.olvidarMateriales();
     }
 
     @SubscribeEvent

@@ -63,8 +63,11 @@ public record SuperVoxel(
             this.codigo = codigo;
         }
 
+        /** values() clona el arreglo en cada llamada; se llama por cada vóxel leído. */
+        public static final Material[] TODOS = values();
+
         public static Material fromCodigo(byte codigo) {
-            for (Material m : values()) {
+            for (Material m : TODOS) {
                 if (m.codigo == codigo) return m;
             }
             throw new IllegalArgumentException("Código de material desconocido: " + codigo);

@@ -273,7 +273,24 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         return Math.max(deCielo, deBloque);
     }
 
+    /**
+     * Material por estado de bloque, calculado una vez: son hasta cinco
+     * consultas de tags por bloque y se pregunta por cada bloque de cada
+     * sección. Los tags cambian al recargar datapacks: ahí se vacía
+     * ({@link #olvidarMateriales}).
+     */
+    private static final Map<BlockState, SuperVoxel.Material> MATERIALES = new ConcurrentHashMap<>();
+
+    /** Tags recargados (/reload): los materiales cacheados pueden haber cambiado. */
+    public static void olvidarMateriales() {
+        MATERIALES.clear();
+    }
+
     private static SuperVoxel.Material material(BlockState estado) {
+        return MATERIALES.computeIfAbsent(estado, LectorSeccionMinecraft::calcularMaterial);
+    }
+
+    private static SuperVoxel.Material calcularMaterial(BlockState estado) {
         if (estado.isAir()) {
             return SuperVoxel.Material.AIRE;
         }

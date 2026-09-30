@@ -35,6 +35,10 @@ neoForge {
         client {
             client()
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // ./gradlew runClient -Pperfil=archivo.jfr: perfil de CPU/memoria con Java Flight Recorder.
+            if (project.hasProperty('perfil')) {
+                jvmArgument "-XX:StartFlightRecording=filename=${project.property('perfil')},settings=profile,delay=45s,duration=150s"
+            }
         }
         server {
             server()

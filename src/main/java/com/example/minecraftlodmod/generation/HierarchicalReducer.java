@@ -58,7 +58,7 @@ public final class HierarchicalReducer {
 
     private static SuperVoxel fusionarBloque(SuperVoxel[] entrada, int lado, int ox, int oy, int oz) {
         int sumaAltura = 0;
-        int[] votosMaterial = new int[SuperVoxel.Material.values().length];
+        int[] votosMaterial = new int[SuperVoxel.Material.TODOS.length];
         int visibles = 0;
         SuperVoxel[] superficie = new SuperVoxel[4];
         int enSuperficie = 0;
@@ -137,7 +137,7 @@ public final class HierarchicalReducer {
         for (int i = 1; i < votos.length; i++) {
             if (votos[i] > votos[mejorIndice]) mejorIndice = i;
         }
-        return SuperVoxel.Material.values()[mejorIndice];
+        return SuperVoxel.Material.TODOS[mejorIndice];
     }
 
     private static int indice(int x, int y, int z, int lado) {

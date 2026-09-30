@@ -49,16 +49,33 @@ public final class BoundedRegionCache {
         return new BoundedRegionCache((long) presupuestoMb * 1024 * 1024);
     }
 
+    /**
+     * Las claves empaquetan dimensión, región y nodo en campos de bits, y
+     * {@code Long.hashCode} (mitad alta XOR mitad baja) superpone la región con
+     * el nodo: muchas claves chocaban y el mapa se degradaba a árboles. Se
+     * guardan pasadas por el mezclador de MurmurHash3 (biyectivo: no agrega
+     * colisiones, solo reparte el hash).
+     */
+    static long mezclar(long clave) {
+        clave ^= clave >>> 33;
+        clave *= 0xff51afd7ed558ccdL;
+        clave ^= clave >>> 33;
+        clave *= 0xc4ceb9fe1a85ec53L;
+        clave ^= clave >>> 33;
+        return clave;
+    }
+
     /** null si la clave no está cacheada (hay que leerla de disco). */
     public byte[] obtener(long claveNodo) {
-        return mapa.get(claveNodo); // el propio get() ya actualiza el orden LRU
+        return mapa.get(mezclar(claveNodo)); // el propio get() ya actualiza el orden LRU
     }
 
     public boolean contiene(long claveNodo) {
-        return mapa.containsKey(claveNodo);
+        return mapa.containsKey(mezclar(claveNodo));
     }
 
     public void poner(long claveNodo, byte[] datos) {
+        claveNodo = mezclar(claveNodo);
         byte[] anterior = mapa.remove(claveNodo);
         if (anterior != null) {
             bytesUsados -= anterior.length;
@@ -72,7 +89,7 @@ public final class BoundedRegionCache {
 
     /** Saca una entrada (quedó vieja: se guardó una versión nueva del nodo). */
     public void quitar(long claveNodo) {
-        byte[] anterior = mapa.remove(claveNodo);
+        byte[] anterior = mapa.remove(mezclar(claveNodo));
         if (anterior != null) {
             bytesUsados -= anterior.length;
         }

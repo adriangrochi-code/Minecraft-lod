@@ -110,6 +110,23 @@ class RegionFileStoreTest {
     }
 
     @Test
+    void loEscritoDespuesDeUnaConsultaSinIndiceSeLee() throws IOException {
+        // indiceDe recuerda "sin índice": la escritura siguiente tiene que reemplazar esa marca.
+        try (RegionFileStore store = storeSinHilo()) {
+            assertNull(store.leer(REGION, 1L));
+            assertFalse(store.contiene(REGION, 1L));
+            store.guardar(REGION, 1L, datos(1, 10));
+            store.vaciar();
+            assertTrue(store.contiene(REGION, 1L));
+            assertArrayEquals(datos(1, 10), store.leer(REGION, 1L));
+            store.guardar(REGION, 2L, datos(2, 20));
+            store.vaciar(); // segundo lote: copia el índice anterior sin perder nodos
+            assertArrayEquals(datos(1, 10), store.leer(REGION, 1L));
+            assertArrayEquals(datos(2, 20), store.leer(REGION, 2L));
+        }
+    }
+
+    @Test
     void unArchivoCorruptoSeTrataComoAusente() throws IOException {
         try (RegionFileStore store = storeSinHilo()) {
             Files.createDirectories(store.archivoDe(REGION).getParent());

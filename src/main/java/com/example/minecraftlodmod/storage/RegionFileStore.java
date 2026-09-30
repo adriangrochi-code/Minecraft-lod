@@ -63,8 +63,14 @@ public final class RegionFileStore implements AutoCloseable {
     private final ConcurrentHashMap<ClaveRegion, Indice> headers = new ConcurrentHashMap<>();
 
     /** Índice cargado de una región: la tabla y qué generación de datos describe. */
+    /** Carpeta de cada dimensión, calculada una vez. */
+    private final Path[] carpetas = new Path[256];
+
     private record Indice(RegionHeader header, long generacion) {
     }
+
+    /** Marca en {@link #headers}: la región no tiene índice válido en disco. */
+    private static final Indice SIN_INDICE = new Indice(null, -1);
 
     /** No compactar archivos chicos: el espacio muerto no justifica reescribirlos. */
     static final long COMPACTAR_DESDE_BYTES = 1L << 20;
@@ -306,7 +312,13 @@ public final class RegionFileStore implements AutoCloseable {
     }
 
     private Path carpetaDe(ClaveRegion region) {
-        return directorioBase.resolve("dim" + (region.dimensionId() & 0xFF));
+        int dimension = region.dimensionId() & 0xFF;
+        Path carpeta = carpetas[dimension];
+        if (carpeta == null) {
+            carpeta = directorioBase.resolve("dim" + dimension);
+            carpetas[dimension] = carpeta; // carrera inofensiva: todos calculan la misma ruta
+        }
+        return carpeta;
     }
 
     private void escribirRegion(ClaveRegion region) throws IOException {
@@ -320,14 +332,9 @@ public final class RegionFileStore implements AutoCloseable {
             try {
                 Indice existente = indiceDe(region);
                 long generacion = existente != null ? existente.generacion() : 0;
-                RegionHeader header = new RegionHeader(
-                        region.regionX(), region.regionZ(), region.dimensionId(), hashFuente);
-                if (existente != null) {
-                    for (long clave : existente.header().claves()) {
-                        long[] ubicacion = existente.header().buscarNodo(clave);
-                        header.registrarNodo(clave, ubicacion[0], ubicacion[1]);
-                    }
-                }
+                // Copia (no el mismo objeto): los lectores usan el índice publicado sin candado.
+                RegionHeader header = existente != null ? existente.header().copia()
+                        : new RegionHeader(region.regionX(), region.regionZ(), region.dimensionId(), hashFuente);
                 Path datos = datosDe(region, generacion);
                 Files.createDirectories(datos.getParent());
                 long tamanoArchivo;
@@ -348,10 +355,7 @@ public final class RegionFileStore implements AutoCloseable {
                 escribirIndice(region, header, generacion);
                 headers.put(region, new Indice(header, generacion));
 
-                long vivos = 0;
-                for (long clave : header.claves()) {
-                    vivos += header.buscarNodo(clave)[1];
-                }
+                long vivos = header.bytesVivos();
                 if (tamanoArchivo >= COMPACTAR_DESDE_BYTES && vivos * 2 < tamanoArchivo) {
                     compactar(region, header, generacion);
                 }
@@ -434,8 +438,16 @@ public final class RegionFileStore implements AutoCloseable {
     private Indice indiceDe(ClaveRegion region) {
         Indice enCache = headers.get(region);
         if (enCache != null) {
-            return enCache;
+            return enCache == SIN_INDICE ? null : enCache;
         }
+        Indice leido = leerIndice(region);
+        // También se recuerda que NO hay (región nueva, o de otro algoritmo): sin esto, cada
+        // consulta volvía al disco y releía el índice viejo entero. La escritura lo reemplaza.
+        headers.put(region, leido == null ? SIN_INDICE : leido);
+        return leido;
+    }
+
+    private Indice leerIndice(ClaveRegion region) {
         Path archivo = archivoDe(region);
         if (!Files.exists(archivo)) {
             return null;
@@ -450,9 +462,7 @@ public final class RegionFileStore implements AutoCloseable {
             if (header.hashFuente != hashFuente || !Files.exists(datosDe(region, generacion))) {
                 return null; // generado con otro algoritmo/fuente, o datos perdidos: se regenera
             }
-            Indice indice = new Indice(header, generacion);
-            headers.put(region, indice);
-            return indice;
+            return new Indice(header, generacion);
         } catch (IOException | RuntimeException e) {
             // Índice corrupto o de otra versión de formato: se trata como ausente
             // y se reescribe en el próximo guardado, en vez de romper la carga.

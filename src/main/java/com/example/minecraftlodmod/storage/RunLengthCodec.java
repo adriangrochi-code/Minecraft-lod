@@ -84,6 +84,34 @@ public final class RunLengthCodec {
         return runs;
     }
 
+    /**
+     * {@link #leerRuns} + {@link #decodificar} de una sola pasada, sin crear un
+     * {@link Run} por corrida ni la lista: es lo que corre por cada nodo que se
+     * lee para mallar.
+     */
+    public static SuperVoxel[] leerYDecodificar(byte[] origen, int offset, int cantidadRuns, int totalEsperado) {
+        SuperVoxel[] resultado = new SuperVoxel[totalEsperado];
+        int cursor = offset;
+        int escritos = 0;
+        for (int i = 0; i < cantidadRuns; i++) {
+            SuperVoxel voxel = SuperVoxel.leerDe(origen, cursor);
+            cursor += SuperVoxel.BYTES;
+            int longitud = ((origen[cursor] & 0xFF) << 8) | (origen[cursor + 1] & 0xFF);
+            cursor += 2;
+            if (longitud > totalEsperado - escritos) {
+                throw new IllegalStateException(
+                        "RLE decodificó más de " + totalEsperado + " vóxeles");
+            }
+            java.util.Arrays.fill(resultado, escritos, escritos + longitud, voxel);
+            escritos += longitud;
+        }
+        if (escritos != totalEsperado) {
+            throw new IllegalStateException(
+                    "RLE decodificó " + escritos + " vóxeles, se esperaban " + totalEsperado);
+        }
+        return resultado;
+    }
+
     public static int bytesNecesarios(List<Run> runs) {
         return runs.size() * BYTES_POR_RUN;
     }

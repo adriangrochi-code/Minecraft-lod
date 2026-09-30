@@ -6,6 +6,20 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.15.1 — Optimización (medida con un perfilador)
+- **Guardado del LOD mucho más liviano:** el hilo que escribe las regiones a
+  disco pasaba casi todo su tiempo copiando la lista de nodos de cada región
+  (~8% de todo el CPU del juego mientras se genera). Ahora la copia es directa.
+- **Menos lecturas de disco:** una región sin datos (o con datos de una versión
+  anterior del mod) ya no se vuelve a buscar en el disco en cada consulta.
+- **Cache de nodos sin colisiones:** las claves se repartían mal y el cache se
+  volvía lento; ahora se mezclan antes de guardarlas.
+- **Menos basura para el recolector de memoria:** compresión con buffer
+  reusado, lectura de nodos sin objetos intermedios, mallado sin matrices nuevas
+  por capa, y enums/materiales de bloque calculados una sola vez.
+- **Horizonte aproximado:** la altura de cada columna se busca con menos
+  evaluaciones del generador de terreno (búsqueda binaria).
+
 ## 0.15.0 — VulkanMod integrado
 - **Vulkan viene incluido en el mod**: ya no hace falta instalar VulkanMod ni
   Forgified Fabric API. El interruptor "Vulkan" de Depuración / Experimental lo
