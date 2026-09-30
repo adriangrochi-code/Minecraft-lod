@@ -6,6 +6,21 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.23.0 — Acabado como Voxy: sombras suaves y neblina
+Segundo paso de "que el LOD se vea como Voxy" (solo la idea, sin su código).
+- **El LOD termina en la niebla:** antes el terreno lejano no tenía niebla
+  y se cortaba contra el cielo. Ahora la misma niebla que vanilla corre hasta
+  el alcance del LOD se aplica también al LOD: el borde se esconde en ella.
+- **Neblina atmosférica** (Calidad, 0 a 1, por defecto 0,5): el terreno se
+  acerca al color del cielo con la distancia, como el aire real, desde donde
+  termina vanilla hasta el horizonte. Sin costo de rendimiento.
+- **Oclusión ambiental en pantalla (SSAO)** (Calidad, prendida): sombra
+  suave en valles, pies de montaña y bajo los árboles, calculada sobre la
+  imagen del LOD, además de la horneada. El radio crece con la distancia,
+  así de lejos marca el relieve. Cuesta algo de GPU: en gráficos integrados
+  débiles conviene apagarla.
+- Solo con OpenGL; con VulkanMod o shaderpacks no cambia nada.
+
 ## 0.22.0 — Texturas como Voxy: modelos horneados y hojas con volumen
 Primer paso de "que el LOD se vea como Voxy" (solo la idea, sin su código).
 - **Atlas propio del LOD:** las texturas del paquete activo se copian a un

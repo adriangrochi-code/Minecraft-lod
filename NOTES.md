@@ -10,6 +10,12 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Acabado del LOD (0.23.0, `render/AcabadoLod`):** ajustar viéndolo
+  `RenderLod.FUERZA_SSAO` (0,8), el radio del SSAO (2,5% de la distancia,
+  en `lod_ssao.fsh`) y el valor por defecto de la neblina (0,5). Medir el
+  costo del SSAO en la A275 y el 3500U; si es alto, apagarlo por defecto en
+  el preset Mínimo. Con VulkanMod el acabado no corre (sus shaders no se
+  convierten): falta portarlo o hacer la niebla dentro de `lod_textura_vk`.
 - **Atlas del LOD (0.22.0):** juzgar en monitor real el brillo de los huecos
   del follaje (`AtlasLod.HUECO_FOLLAJE` = 0,45) y si los modelos horneados
   (escaleras, cercos, losas) se ven bien en aldeas lejanas. El costado

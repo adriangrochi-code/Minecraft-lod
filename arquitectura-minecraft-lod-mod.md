@@ -518,8 +518,12 @@ Ideas adoptadas, en orden de implementación sugerido:
 5. **Oclusión ambiental horneada por vértice — implementado en
    `GreedyMesher`/`GeometriaLod`, opción `oclusionAmbiental`.** Voxy usa SSAO de
    postproceso; lo nuestro compatible es AO por vértice al mallar (0 costo
-   en GPU, gran aporte de profundidad visual). SSAO queda para el backend
-   opt-in.
+   en GPU, gran aporte de profundidad visual). **Desde 0.23.0 también SSAO**
+   (`render/AcabadoLod`, opción `oclusionPantalla`): pasada de pantalla con
+   `ShaderInstance` sobre la profundidad del LOD, antes de que se limpie; el
+   radio crece con la distancia. En la misma pasada va la niebla del LOD
+   (borde igual al de vanilla corrido + neblina atmosférica exp2), que
+   hasta ahí no existía. Sin GL crudo; no corre con VulkanMod ni shaderpacks.
 6. **Exclusión exacta del área vanilla (FP2, "vanilla renderability").**
    Máscara por chunk de qué renderiza vanilla realmente, en vez de un radio
    fijo → sin geometría LOD duplicada bajo el terreno cercano ni huecos.

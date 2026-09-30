@@ -107,6 +107,8 @@ public final class RenderLod {
     static final long RECONSTRUIR_INCOMPLETA_NANOS = 10_000_000_000L;
     /** Profundidad de 24 bits: un near plane lejos mejora mucho la precisión a distancia. */
     static final float NEAR_LOD = 16f;
+    /** Intensidad del SSAO del acabado (render/AcabadoLod); el ajuste fino es de Pista B. */
+    static final float FUERZA_SSAO = 0.8f;
     static final int BYTES_POR_VERTICE = 16; // POSITION_COLOR: 3 floats + 4 bytes
 
     /**
@@ -966,6 +968,10 @@ public final class RenderLod {
             dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura);
         }
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        VertexBuffer.unbind();
+        AcabadoLod.aplicar(mc, proyeccion, alcanceLodBloques, mc.options.getEffectiveRenderDistance() * 16f,
+                ConfigLod.CLIENTE.neblinaAtmosferica.get().floatValue(),
+                ConfigLod.CLIENTE.oclusionPantalla.get() ? FUERZA_SSAO : 0f);
         if (ConfigLod.CLIENTE.nubesLejanas.get()) {
             NubesLejanas.dibujar(mc, evento.getModelViewMatrix(), proyeccion, camara,
                     evento.getPartialTick().getGameTimeDeltaPartialTick(false), alcanceLodBloques,

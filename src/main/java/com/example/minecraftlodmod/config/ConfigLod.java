@@ -54,6 +54,8 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue oclusionAmbiental;
         public final ModConfigSpec.BooleanValue texturasComoTerreno;
         public final ModConfigSpec.BooleanValue nubesLejanas;
+        public final ModConfigSpec.BooleanValue oclusionPantalla;
+        public final ModConfigSpec.DoubleValue neblinaAtmosferica;
         public final ModConfigSpec.BooleanValue curvatura;
         public final ModConfigSpec.IntValue radioCurvaturaKm;
         public final ModConfigSpec.BooleanValue horizonteReal;
@@ -98,6 +100,13 @@ public final class ConfigLod {
                             "solo en la fila de arriba y abajo la textura de la tierra, como un corte del terreno. Apagado:",
                             "la textura del costado se repite en cada bloque del vóxel (una línea de pasto por bloque).")
                     .define("texturasComoTerreno", true);
+            oclusionPantalla = b.comment("Oclusión ambiental sobre la imagen del LOD (SSAO, como Voxy): sombra suave en valles,",
+                            "pies de montaña y bajo los árboles, además de la horneada. Cuesta algo de GPU por píxel de LOD.")
+                    .define("oclusionPantalla", true);
+            neblinaAtmosferica = b.comment("Neblina atmosférica: el terreno lejano se acerca al color del cielo con la distancia,",
+                            "como el aire real (0 = nada, 1 = el horizonte queda del color del cielo). El borde del LOD",
+                            "siempre termina dentro de la niebla de vanilla.")
+                    .defineInRange("neblinaAtmosferica", 0.5, 0.0, 1.0);
             nubesLejanas = b.comment("Seguir dibujando las nubes más allá de donde las corta vanilla, hasta el alcance del LOD.")
                     .define("nubesLejanas", true);
             curvatura = b.comment("Curvar el terreno LOD con la distancia como la superficie de un planeta: lo lejano baja",

@@ -58,6 +58,7 @@ public class MinecraftLodMod {
             modEventBus.addListener(paleta::alCoserAtlas);
             modEventBus.addListener(RenderLod::registrarShaders);
             modEventBus.addListener(NubesLejanas::registrarShader);
+            modEventBus.addListener(com.example.minecraftlodmod.render.AcabadoLod::registrarShaders);
             modEventBus.addListener(Escalado::registrarShaders);
             NeoForge.EVENT_BUS.addListener(Escalado::alEtapa);
             NeoForge.EVENT_BUS.addListener(paleta::alTerminarTick);
