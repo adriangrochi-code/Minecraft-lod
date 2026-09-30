@@ -71,7 +71,9 @@ class RenderPuroTest {
         int medioConZoom = PlanCeldas.nivelPara(600, Math.toRadians(10), alto, umbral);
 
         assertEquals(0, cerca, "Ni el nivel 0 cumple: máximo detalle");
-        assertEquals(2, medio, "4 * 514 / 600 = 3.4 px <= 4; 8 * 514 / 600 = 6.9 px > 4");
+        // A 600 bloques el umbral efectivo es 4 × factorUmbral(600) ≈ 3.34 px (más detalle cerca):
+        // 2 * 514 / 600 = 1.7 px cumple, 4 * 514 / 600 = 3.4 px ya no.
+        assertEquals(1, medio, "2 * 514 / 600 = 1.7 px <= 3.34; 4 * 514 / 600 = 3.4 px > 3.34");
         assertEquals(PlanCeldas.NIVEL_MAXIMO, lejos);
         assertTrue(medioConZoom < medio, "Con zoom el mismo lugar pide más detalle");
     }
@@ -389,5 +391,38 @@ class RenderPuroTest {
         assertEquals(540, EscaladoFsr.tamanoEscalado(1080, 0.5));
         assertEquals(1920, EscaladoFsr.tamanoEscalado(1920, 1.2), "Nunca más grande que la pantalla");
         assertEquals(1, EscaladoFsr.tamanoEscalado(1, 0.5), "Nunca cero");
+    }
+
+    @Test
+    void cercaSePideMasDetalleYLejosMenosQueConElUmbralFijo() {
+        assertEquals(0.6, PlanCeldas.factorUmbral(0), 1e-9);
+        assertEquals(1.0, PlanCeldas.factorUmbral(1024), 1e-9);
+        assertEquals(1.6, PlanCeldas.factorUmbral(100_000), 1e-9);
+        double fov = Math.toRadians(70);
+        // A 400 bloques con 2,5 px: el umbral fijo daría nivel 1; con el factor de cerca, nivel 0.
+        assertEquals(0, PlanCeldas.nivelPara(400, fov, 1080, 2.5));
+        // Muy lejos, un nivel más grueso que el que daría el umbral fijo (4 a 6 km: 3 → 4).
+        assertTrue(PlanCeldas.nivelPara(5000, fov, 1080, 2.5) >= 4);
+    }
+
+    @Test
+    void elFondoMarinoOscuroNoSeDescartaComoCueva() {
+        SuperVoxel agua = new SuperVoxel((byte) 40, (byte) 70, (byte) 200, (byte) 0, SuperVoxel.Material.AGUA, (byte) 0)
+                .conLuzHorneada(15);
+        SuperVoxel[] g = new SuperVoxel[8];
+        for (int x = 0; x < 2; x++) {
+            for (int z = 0; z < 2; z++) {
+                g[(x * 2) * 2 + z] = solido(0); // fondo profundo: sin luz
+                g[(x * 2 + 1) * 2 + z] = agua;
+            }
+        }
+        GeometriaLod geo = new GeometriaLod();
+        geo.descartarCarasSinLuz(true);
+        geo.agregarSeccion(g, 2, 0, 0, 0, 1);
+        boolean hayFondo = false;
+        for (int i = 0; i < geo.vertices(); i++) {
+            hayFondo |= geo.cara(i) == 3 && geo.y(i) == 1;
+        }
+        assertTrue(hayFondo, "El fondo a oscuras bajo el agua se dibuja igual");
     }
 }

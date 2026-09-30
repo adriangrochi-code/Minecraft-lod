@@ -90,6 +90,10 @@ public final class GreedyMesher {
         return quads;
     }
 
+    private static boolean esAgua(SuperVoxel v) {
+        return v != null && v.material() == SuperVoxel.Material.AGUA;
+    }
+
     private static boolean esAire(SuperVoxel v) {
         return v == null || v.material() == SuperVoxel.Material.AIRE;
     }
@@ -125,10 +129,14 @@ public final class GreedyMesher {
                             ? obtener(grid, lado, eje, capaVecina, u, v)
                             : afuera(vecinos, eje, capaVecina, u, v); // sin vecinos: cara expuesta
 
-                    if (esAire(vecino)) {
+                    // Cara visible: contra aire, o un sólido contra agua (fondo marino: se ve
+                    // a través del agua; sin esto, mirando a ras del agua quedaban huecos).
+                    boolean bajoAgua = esAgua(vecino) && !esAgua(actual);
+                    if (esAire(vecino) || bajoAgua) {
                         mascara[u][v] = actual;
-                        oclusion[u][v] = conOclusion
-                                ? oclusionCara(grid, lado, eje, capaVecina, u, v, vecinos) : Quad.SIN_OCLUSION;
+                        oclusion[u][v] = (conOclusion
+                                ? oclusionCara(grid, lado, eje, capaVecina, u, v, vecinos) : Quad.SIN_OCLUSION)
+                                | (bajoAgua ? Quad.BAJO_AGUA : 0);
                     }
                 }
             }

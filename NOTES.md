@@ -344,3 +344,26 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   (se copia la profundidad entre framebuffers de distinto tamaño), y exponer
   `fsrNitidez` en la pantalla de Cloth (hoy solo en el TOML / pantalla de
   NeoForge).
+- **Huecos en el agua (reportado con foto en el i5):** el mesher solo creaba
+  caras contra aire, así que bajo la superficie del agua del LOD no había
+  nada. Mirando a ras del agua, la visual entraba al agua translúcida de
+  vanilla y llegaba por debajo a la zona del LOD: se veía el cielo. Ahora
+  sólido contra agua también tiene cara (`Quad.BAJO_AGUA`) y el descarte de
+  cuevas no la saca. Verificado en el océano del benchmark (antes/después).
+  Pendiente: medir cuántos vértices suma el fondo marino.
+- Además, un chunk se le deja a vanilla solo si ya COMPILÓ la sección de la
+  superficie y las dos de abajo (`LevelRenderer.isSectionCompiled`), no solo
+  si está cargado. Con Embeddium esa consulta puede dar siempre false: en ese
+  caso el LOD dibuja por debajo de todo vanilla (más costo, sin huecos).
+- **Umbral por distancia (`PlanCeldas.factorUmbral`):** 0,6× cerca, 1× a 1024
+  bloques, hasta 1,6× lejos. Pedido: que los saltos de nivel no se noten cerca
+  y que lejos baje más. Los niveles intermedios (×1,5) de la sección 2 siguen
+  sin implementar (cambio de formato); el dithering entre niveles (sección 6)
+  es lo siguiente que más ayuda.
+- **Datos del i5 9400F + 1060 (F3 del usuario):** 82 FPS con GPU al 37%
+  (límite de CPU), servidor integrado a 15,7 ms/tick y 1,9 GB/s de asignación
+  con pregenerador (256) + horizonte aproximado prendidos: la inestabilidad
+  viene del trabajo de fondo. Pendiente: conectar la tercera perilla del
+  `PerformanceAutoTuner` (sección 23) para frenar la generación cuando cae
+  el FPS. FSR bajó de 440 a 160 FPS en esa PC sin causa encontrada todavía
+  (el shader solo no lo explica); en esa PC no tiene sentido usarlo.

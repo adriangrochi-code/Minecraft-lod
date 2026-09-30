@@ -260,12 +260,32 @@ public final class PlanCeldas {
         return nivelPara(distancia, fovRadianes, alturaPantallaPx, umbralPx, NIVEL_MAXIMO);
     }
 
+    /** Umbral cerca del jugador (fracción del configurado): más detalle donde un salto de nivel se nota. */
+    static final double FACTOR_UMBRAL_CERCA = 0.6;
+    /** Umbral en el horizonte lejano: menos detalle donde casi no se distingue. */
+    static final double FACTOR_UMBRAL_LEJOS = 1.6;
+    /** Distancia (bloques) a la que el umbral vale exactamente el configurado. */
+    static final double DISTANCIA_UMBRAL_NORMAL = 1024;
+
+    /**
+     * El umbral de error de pantalla crece con la distancia: 0,6× cerca (el
+     * nivel más fino se estira más allá del borde de vanilla y los saltos de
+     * nivel cercanos, los que más se notan, se alejan), 1× a
+     * {@link #DISTANCIA_UMBRAL_NORMAL} y hasta 1,6× lejos (baja de nivel antes,
+     * y compensa el costo de lo de cerca).
+     */
+    static double factorUmbral(double distancia) {
+        double f = FACTOR_UMBRAL_CERCA + (1 - FACTOR_UMBRAL_CERCA) * distancia / DISTANCIA_UMBRAL_NORMAL;
+        return Math.max(FACTOR_UMBRAL_CERCA, Math.min(FACTOR_UMBRAL_LEJOS, f));
+    }
+
     /** Como {@link #nivelPara(double, double, double, double)}, hasta {@code nivelMaximo}. */
     public static int nivelPara(double distancia, double fovRadianes, double alturaPantallaPx, double umbralPx,
                                 int nivelMaximo) {
+        double umbral = umbralPx * factorUmbral(distancia);
         for (int nivel = nivelMaximo; nivel > 0; nivel--) {
             double tamanoVoxel = 1 << nivel;
-            if (LodSelector.errorDePantalla(tamanoVoxel, distancia, fovRadianes, alturaPantallaPx) <= umbralPx) {
+            if (LodSelector.errorDePantalla(tamanoVoxel, distancia, fovRadianes, alturaPantallaPx) <= umbral) {
                 return nivel;
             }
         }

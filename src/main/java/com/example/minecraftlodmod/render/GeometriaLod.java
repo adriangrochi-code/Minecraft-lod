@@ -189,7 +189,9 @@ public final class GeometriaLod {
         }
         float plano = capa + (q.positivo() ? 1 : 0);
         VertexLightSampler.LuzEsquinas luz = VertexLightSampler.calcular(grid, lado, q);
-        if (descartarSinLuz && luz.minMin() == 0 && luz.maxMin() == 0 && luz.minMax() == 0 && luz.maxMax() == 0) {
+        // Las caras bajo el agua (fondo marino) se ven a través del agua aunque estén a oscuras.
+        if (descartarSinLuz && !q.bajoAgua()
+                && luz.minMin() == 0 && luz.maxMin() == 0 && luz.minMax() == 0 && luz.maxMax() == 0) {
             return false;
         }
         float sombra = sombraDeCara(q.eje(), q.positivo());

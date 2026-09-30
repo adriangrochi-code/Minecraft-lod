@@ -167,4 +167,24 @@ class GreedyMesherTest {
         assertTrue(GreedyMesher.mallar(g, 3, null, true).size() >= sin.size(),
                 "Con oclusión se fusiona menos, nunca más");
     }
+
+    @Test
+    void elFondoBajoElAguaTieneCarasYNoSeFusionaConLoDeAire() {
+        SuperVoxel agua = new SuperVoxel((byte) 40, (byte) 70, (byte) 200, (byte) 0, SuperVoxel.Material.AGUA, (byte) 0);
+        // Columna de 2: arena abajo, agua arriba.
+        SuperVoxel[] g = new SuperVoxel[8];
+        for (int x = 0; x < 2; x++) {
+            for (int z = 0; z < 2; z++) {
+                g[(x * 2) * 2 + z] = solido();
+                g[(x * 2 + 1) * 2 + z] = agua;
+            }
+        }
+        List<Quad> quads = GreedyMesher.mallar(g, 2);
+        Quad fondo = quads.stream().filter(q -> q.eje() == Quad.Eje.Y && q.positivo() && q.y() == 0)
+                .findFirst().orElseThrow(() -> new AssertionError("El fondo bajo el agua tiene que tener cara"));
+        assertTrue(fondo.bajoAgua(), "Marcada como bajo agua (el descarte de cuevas no la saca)");
+        Quad superficie = quads.stream().filter(q -> q.eje() == Quad.Eje.Y && q.positivo() && q.y() == 1)
+                .findFirst().orElseThrow();
+        assertTrue(!superficie.bajoAgua(), "La superficie del agua da contra aire");
+    }
 }

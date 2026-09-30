@@ -28,6 +28,12 @@ public record Quad(
 
     /** Las 4 esquinas sin oclusión. */
     public static final int SIN_OCLUSION = 0xFF;
+    /**
+     * Bit extra en {@code oclusion}: la cara da contra AGUA, no contra aire
+     * (fondo marino, paredes sumergidas). Se ve a través del agua aunque no le
+     * llegue luz, así que el descarte de cuevas no la saca.
+     */
+    public static final int BAJO_AGUA = 1 << 8;
 
     public Quad(int x, int y, int z, int ancho, int alto, Eje eje, boolean positivo,
                 SuperVoxel voxelRepresentativo) {
@@ -39,6 +45,10 @@ public record Quad(
      * @param vMax false = esquina en v0, true = en v1
      * @return 0 (rincón cerrado) a 3 (sin oclusión)
      */
+    public boolean bajoAgua() {
+        return (oclusion & BAJO_AGUA) != 0;
+    }
+
     public int oclusionEn(boolean uMax, boolean vMax) {
         return (oclusion >> ((uMax ? 2 : 0) + (vMax ? 4 : 0))) & 3;
     }

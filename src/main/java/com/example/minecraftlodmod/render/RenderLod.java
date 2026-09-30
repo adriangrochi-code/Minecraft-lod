@@ -446,7 +446,7 @@ public final class RenderLod {
         for (int dx = -distanciaVanilla; dx <= distanciaVanilla; dx++) {
             for (int dz = -distanciaVanilla; dz <= distanciaVanilla; dz++) {
                 if ((long) dx * dx + (long) dz * dz < vanilla2
-                        && mc.level.getChunkSource().hasChunk(chunkX + dx, chunkZ + dz)) {
+                        && vanillaLoDibujo(mc, chunkX + dx, chunkZ + dz)) {
                     deVanilla.add(PlanCeldas.claveChunk(chunkX + dx, chunkZ + dz));
                 }
             }
@@ -1032,6 +1032,28 @@ public final class RenderLod {
             maximo = Math.max(maximo, dx * dx + dz * dz);
         }
         return (float) Math.sqrt(maximo);
+    }
+
+    /**
+     * true si vanilla ya DIBUJA el chunk: cargado en el cliente y con la
+     * sección de la superficie y las dos de abajo compiladas. Solo "cargado"
+     * no alcanzaba: en el borde de la distancia de render, vanilla tiene el
+     * chunk pero todavía no compiló (o no compila, por falta de vecinos) el
+     * fondo, y a través del agua translúcida se veía el cielo. Mientras
+     * vanilla no lo termina, el LOD lo sigue dibujando por debajo.
+     */
+    private static boolean vanillaLoDibujo(Minecraft mc, int chunkX, int chunkZ) {
+        if (!mc.level.getChunkSource().hasChunk(chunkX, chunkZ)) {
+            return false;
+        }
+        int x = chunkX * 16 + 8, z = chunkZ * 16 + 8;
+        int superficie = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z) - 1;
+        for (int y = superficie; y > superficie - 48 && y >= mc.level.getMinBuildHeight(); y -= 16) {
+            if (!mc.levelRenderer.isSectionCompiled(new net.minecraft.core.BlockPos(x, y, z))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static double prioridad(PlanCeldas.Celda celda, Vec3 camara, double miraX, double miraZ) {
