@@ -511,7 +511,8 @@ Ideas adoptadas, en orden de implementación sugerido:
 6. **Exclusión exacta del área vanilla (FP2, "vanilla renderability").**
    Máscara por chunk de qué renderiza vanilla realmente, en vez de un radio
    fijo → sin geometría LOD duplicada bajo el terreno cercano ni huecos.
-7. **Generación aproximada por funciones de densidad (FP2, MIT).** Para el
+7. **Generación aproximada por funciones de densidad (FP2, MIT) — implementado:
+   `GeneradorAproximado` + `TerrenoAproximado` (niveles 3-4 por chunk, claves propias).** Para el
    horizonte de varios km: samplear `NoiseRouter.finalDensity` de
    1.21 a baja resolución para regiones nunca visitadas, sin generar
    chunks. Es lo que hace sostenible el preset Horizonte (secciones 17-18).

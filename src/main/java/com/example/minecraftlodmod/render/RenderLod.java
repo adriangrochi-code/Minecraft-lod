@@ -21,6 +21,8 @@ import net.minecraft.client.renderer.ShaderInstance;
 import com.mojang.blaze3d.shaders.Uniform;
 import com.example.minecraftlodmod.generation.GreedyMesher;
 import com.example.minecraftlodmod.generation.PrioridadVista;
+import com.example.minecraftlodmod.generation.TerrenoAproximado;
+import com.example.minecraftlodmod.generation.GeneradorAproximado;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
@@ -232,6 +234,12 @@ public final class RenderLod {
     private double miraPlanX, miraPlanZ;
     /** Con zoom, girar más que esto replanifica (el detalle fino sigue a la mirada). */
     static final double REPLANIFICAR_GIRO = Math.toRadians(10);
+    /**
+     * Más lejos que esto (bloques), una celda va en un solo buffer en vez de
+     * uno por dirección: se ve chica y pesa más la cantidad de llamadas de
+     * dibujo que los vértices que ahorra separar por dirección.
+     */
+    static final double UN_BUFFER_DESDE = 768;
     /** Margen del cono con zoom, a cada lado, para que al girar un poco ya esté armado. */
     static final double MARGEN_ZOOM = Math.toRadians(10);
     /** Si la cámara sube o baja esto, se replanifica (la oclusión por relieve depende de la altura). */
@@ -477,12 +485,15 @@ public final class RenderLod {
             boolean incompleta = estado.construidaCon != null
                     && estado.chunksConDatos < chunksDibujables(celda)
                     && ahora - estado.construidaNanos > RECONSTRUIR_INCOMPLETA_NANOS;
+            double mitad = celda.ladoEnBloques() / 2.0;
+            boolean unBuffer = celda.esGrande() || Math.hypot(celda.origenX() + mitad - camara.x,
+                    celda.origenZ() + mitad - camara.z) > UN_BUFFER_DESDE;
             if (!estado.enConstruccion && (cambio || incompleta) && encoladas < ENCOLADAS_POR_PLAN) {
                 estado.enConstruccion = true;
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(prioridad(celda, camara, miraX, miraZ), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                cubiertos, texturas, oclusion)));
+                                cubiertos, texturas, oclusion, unBuffer)));
             }
         }
         celdas.entrySet().removeIf(e -> {
@@ -497,7 +508,7 @@ public final class RenderLod {
     /** Hilo de mallas: lee los nodos del nivel elegido y arma los vértices de la celda. */
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
                        int minSeccion, int maxSeccion, Set<Long> deVanilla,
-                       GeometriaLod.Texturas texturas, boolean oclusion) {
+                       GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer) {
         long inicioArmado = System.nanoTime();
         try {
             GeometriaLod geometria = new GeometriaLod();
@@ -517,6 +528,17 @@ public final class RenderLod {
             ByteBufferBuilder memoria = new ByteBufferBuilder(geometria.vertices() * formato.getVertexSize());
             MeshData[] mallas = new MeshData[GeometriaLod.CARAS];
             float[] planos = new float[2 * GeometriaLod.CARAS];
+            if (unBuffer) {
+                // Lejos (teselas y celdas pasando UN_BUFFER_DESDE): un solo buffer con todas las caras.
+                // Se ven chicas y la GPU ya descarta las de espaldas; separarlas triplicaba las llamadas.
+                mallas[0] = malla(geometria, -1, geometria.vertices(), formato, memoria, texturizada);
+                planos[0] = Float.NEGATIVE_INFINITY;
+                planos[1] = Float.POSITIVE_INFINITY;
+                listas.add(new MallaLista(clave, celda, mallas, planos, memoria, conDatos, texturizada));
+                nanosArmado.add(System.nanoTime() - inicioArmado);
+                mallasArmadas.increment();
+                return;
+            }
             for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
                 planos[2 * cara] = geometria.planoMin(cara);
                 planos[2 * cara + 1] = geometria.planoMax(cara);
@@ -534,6 +556,7 @@ public final class RenderLod {
         }
     }
 
+    /** @param cara 0-5, o -1 para todas las caras en una sola malla */
     private static MeshData malla(GeometriaLod geometria, int cara, int n, VertexFormat formato,
                                   ByteBufferBuilder memoria, boolean texturizada) {
         if (texturizada) {
@@ -546,7 +569,7 @@ public final class RenderLod {
         }
         BufferBuilder builder = new BufferBuilder(memoria, VertexFormat.Mode.QUADS, formato);
         for (int i = 0; i < geometria.vertices(); i++) {
-            if (geometria.cara(i) == cara) {
+            if (cara < 0 || geometria.cara(i) == cara) {
                 builder.addVertex(geometria.x(i), geometria.y(i), geometria.z(i)).setColor(geometria.color(i));
             }
         }
@@ -580,7 +603,8 @@ public final class RenderLod {
                 }
                 int chunkX = celda.celdaX() * PlanCeldas.LADO_CELDA + dx;
                 int chunkZ = celda.celdaZ() * PlanCeldas.LADO_CELDA + dz;
-                if (!tieneDatos(store, dimension, chunkX, chunkZ)) {
+                boolean real = tieneDatos(store, dimension, chunkX, chunkZ);
+                if (!real && !tieneAproximado(store, dimension, chunkX, chunkZ)) {
                     continue;
                 }
                 conDatos++;
@@ -597,6 +621,11 @@ public final class RenderLod {
                     } else {
                         lod[l] = tieneDatos(store, dimension, vx, vz);
                     }
+                }
+                if (!real) {
+                    armarAproximado(geometria, store, dimension, nivel, chunkX, chunkZ, dx, dz,
+                            minSeccion, maxSeccion, omitidas);
+                    continue;
                 }
                 for (int sy = minSeccion; sy < maxSeccion; sy++) {
                     SuperVoxel[] grid = leerNodo.apply(new PosSeccion(chunkX, sy, chunkZ));
@@ -616,6 +645,41 @@ public final class RenderLod {
             }
         }
         return conDatos;
+    }
+
+    /**
+     * Chunk sin datos reales pero con horizonte aproximado: niveles 3 o 4
+     * (los únicos que existen aproximados; si la celda pide uno más fino, se
+     * usa el 3). Vecinas solo arriba y abajo: los costados de un chunk
+     * aproximado se dibujan (lejos, costo chico).
+     */
+    private static void armarAproximado(GeometriaLod geometria, RegionFileStore store, byte dimension, int nivel,
+                                        int chunkX, int chunkZ, int dx, int dz, int minSeccion, int maxSeccion,
+                                        int omitidas) {
+        int nivelA = Math.max(TerrenoAproximado.NIVEL_MIN, Math.min(TerrenoAproximado.NIVEL_MAX, nivel));
+        int lado = SectionExtractor.LADO >> nivelA;
+        int total = SectionExtractor.voxelesPorNodo(nivelA);
+        RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimension, chunkX, chunkZ);
+        SuperVoxel[][] grillas = new SuperVoxel[maxSeccion - minSeccion][];
+        for (int sy = minSeccion; sy < maxSeccion; sy++) {
+            byte[] bytes = store.leer(region, SectionExtractor.claveNodo(TerrenoAproximado.nivelGuardado(nivelA),
+                    chunkX, sy, chunkZ));
+            grillas[sy - minSeccion] = bytes == null ? null : OctreeNodeCodec.deserializar(bytes, 0, total).voxeles();
+        }
+        for (int i = 0; i < grillas.length; i++) {
+            if (grillas[i] == null) {
+                continue;
+            }
+            GreedyMesher.Vecinos vecinos = GreedyMesher.Vecinos.deGrillas(lado, null, null,
+                    i > 0 ? grillas[i - 1] : null, i + 1 < grillas.length ? grillas[i + 1] : null, null, null);
+            geometria.agregarSeccion(grillas[i], lado, dx * 16f, (minSeccion + i) * 16f, dz * 16f, 16f / lado,
+                    omitidas, vecinos);
+        }
+    }
+
+    private static boolean tieneAproximado(RegionFileStore store, byte dimension, int chunkX, int chunkZ) {
+        return store.contiene(GeneradorLocal.claveRegion(dimension, chunkX, chunkZ),
+                GeneradorAproximado.claveMarca(chunkX, chunkZ));
     }
 
     /** Marca de "nodo sin datos" en el memo de {@link #armarCelda} (computeIfAbsent no guarda null). */
@@ -919,8 +983,13 @@ public final class RenderLod {
             for (int sx = 0; sx < porLado; sx++) {
                 for (int sz = 0; sz < porLado; sz++) {
                     int seccionX = teselaX * porLado + sx, seccionZ = teselaZ * porLado + sz;
-                    byte[] bytes = store.leer(GeneradorLocal.claveRegion(dimension, seccionX, seccionZ),
-                            SectionExtractor.claveNodo(nivel, seccionX, seccionY, seccionZ));
+                    RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimension, seccionX, seccionZ);
+                    byte[] bytes = store.leer(region, SectionExtractor.claveNodo(nivel, seccionX, seccionY, seccionZ));
+                    if (bytes == null && !store.contiene(region, GeneradorLocal.claveMarca(seccionX, seccionZ))) {
+                        // Chunk nunca generado: horizonte aproximado (las teselas 3-4 usan esos mismos niveles).
+                        bytes = store.leer(region, SectionExtractor.claveNodo(TerrenoAproximado.nivelGuardado(nivel),
+                                seccionX, seccionY, seccionZ));
+                    }
                     if (bytes == null) {
                         continue;
                     }

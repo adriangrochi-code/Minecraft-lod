@@ -40,6 +40,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue lodActivo;
         public final ModConfigSpec.BooleanValue ocultarTapado;
         public final ModConfigSpec.BooleanValue pregenerar;
+        public final ModConfigSpec.BooleanValue generacionAproximada;
         public final ModConfigSpec.IntValue radioPregeneracion;
         public final ModConfigSpec.BooleanValue texturasLod;
         public final ModConfigSpec.BooleanValue descartarCuevas;
@@ -58,6 +59,10 @@ public final class ConfigLod {
                     .define("autoAjuste", true);
             lodActivo = b.comment("Dibujar el LOD. Apagarlo sirve para comparar contra vanilla; la generación sigue.")
                     .define("lodActivo", true);
+            generacionAproximada = b.comment("Horizonte aproximado: estimar el terreno lejano nunca generado directo del",
+                            "generador del mundo (sin generar chunks) hasta el radio de LOD. Lo real lo reemplaza al",
+                            "explorar o pregenerar. Solo singleplayer por ahora.")
+                    .define("generacionAproximada", true);
             pregenerar = b.comment("Generar chunks vanilla del jugador hacia afuera (como Chunky) para llenar el LOD",
                             "sin recorrer el mundo. Usa CPU y disco: los chunks generados quedan guardados en el mundo.",
                             "Solo singleplayer por ahora.")

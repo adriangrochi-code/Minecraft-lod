@@ -83,6 +83,7 @@ public final class GeneradorLocal {
 
     private final LinkedHashSet<Pendiente> pendientes = new LinkedHashSet<>();
     private final PregeneradorChunks pregenerador = new PregeneradorChunks(this);
+    private final GeneradorAproximado aproximado = new GeneradorAproximado(this);
 
     /** Cada cuántos ticks se reconstruyen los niveles grandes de lo recién generado (5 s). */
     static final int TICKS_ENTRE_LOTES_GRANDES = 100;
@@ -187,6 +188,8 @@ public final class GeneradorLocal {
         chunksSucios.clear();
         pregenerador.reiniciar();
         pregeneradorRoto = false;
+        aproximado.reiniciar();
+        aproximadoRoto = false;
         descartadosPorColaLlena = 0;
     }
 
@@ -220,6 +223,7 @@ public final class GeneradorLocal {
     public void alTerminarTick(ServerTickEvent.Post evento) {
         registrarEstadisticas();
         pregenerar(evento.getServer());
+        aproximar(evento.getServer());
         if (++ticksDesdeLote >= TICKS_ENTRE_LOTES_GRANDES) {
             ticksDesdeLote = 0;
             lanzarLoteGrande();
@@ -263,6 +267,26 @@ public final class GeneradorLocal {
     }
 
     private boolean pregeneradorRoto;
+    private boolean aproximadoRoto;
+
+    /** Horizonte aproximado (solo singleplayer por la misma razón que la pregeneración). */
+    private void aproximar(MinecraftServer servidor) {
+        if (aproximadoRoto || !servidor.isSingleplayer() || calidad == null) {
+            return;
+        }
+        try {
+            aproximado.tick(servidor, ConfigLod.CLIENTE.generacionAproximada.get(), calidad.radioLodChunks());
+        } catch (RuntimeException e) {
+            aproximadoRoto = true;
+            LOG.error("LOD: la generación aproximada falló y se apaga hasta reiniciar el mundo", e);
+        }
+    }
+
+    /** Un chunk aproximado quedó guardado: sus niveles grandes se rearman en el próximo lote. */
+    void chunkAproximadoListo(byte dimension, int minSeccion, int maxSeccion, int chunkX, int chunkZ) {
+        chunksSucios.computeIfAbsent(new Dimension(dimension, minSeccion, maxSeccion), d -> ConcurrentHashMap.newKeySet())
+                .add(NivelesGrandes.empaquetar(chunkX, chunkZ));
+    }
 
     /** Chunks cargados que esperan lugar en la cola de extracción. */
     int cantidadPendientes() {
@@ -343,8 +367,14 @@ public final class GeneradorLocal {
     private record AccesoStore(RegionFileStore store, byte dimension) implements NivelesGrandes.Acceso {
         @Override
         public SuperVoxel[] seccion(int nivel, int seccionX, int seccionY, int seccionZ) {
-            byte[] bytes = store.leer(claveRegion(dimension, seccionX, seccionZ),
-                    SectionExtractor.claveNodo(nivel, seccionX, seccionY, seccionZ));
+            RegionFileStore.ClaveRegion region = claveRegion(dimension, seccionX, seccionZ);
+            byte[] bytes = store.leer(region, SectionExtractor.claveNodo(nivel, seccionX, seccionY, seccionZ));
+            // Sin dato real y chunk nunca generado: el aproximado (si hay) arma el horizonte.
+            if (bytes == null && nivel >= TerrenoAproximado.NIVEL_MIN && nivel <= TerrenoAproximado.NIVEL_MAX
+                    && !store.contiene(region, claveMarca(seccionX, seccionZ))) {
+                bytes = store.leer(region, SectionExtractor.claveNodo(TerrenoAproximado.nivelGuardado(nivel),
+                        seccionX, seccionY, seccionZ));
+            }
             return bytes == null ? null
                     : OctreeNodeCodec.deserializar(bytes, 0, SectionExtractor.voxelesPorNodo(nivel)).voxeles();
         }

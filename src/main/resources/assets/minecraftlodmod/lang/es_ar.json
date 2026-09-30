@@ -58,5 +58,7 @@
   "minecraftlodmod.comando.pregenerar.radio": "Radio de pregeneración: %s chunks",
   "minecraftlodmod.comando.pregenerar.apagado": "La pregeneración está apagada. Prendela con /lod pregenerar on",
   "minecraftlodmod.comando.pregenerar.estado": "Pregenerando: anillo %s de %s, %s chunks nuevos (%s por segundo), %s en curso",
-  "minecraftlodmod.comando.pregenerar.completo": "Pregeneración completa: radio %s chunks (%s chunks nuevos)"
+  "minecraftlodmod.comando.pregenerar.completo": "Pregeneración completa: radio %s chunks (%s chunks nuevos)",
+  "minecraftlodmod.configuration.generacionAproximada": "Horizonte aproximado",
+  "minecraftlodmod.configuration.generacionAproximada.tooltip": "Estima el terreno lejano que nunca se generó directo del generador del mundo, sin generar chunks: horizonte de varios km en minutos y sin ocupar disco del mundo. Sin estructuras ni árboles sueltos (los bosques se ven como copas). Cuando explorás o pregenerás, lo real lo reemplaza."
 }

@@ -55,6 +55,11 @@ final class PantallaCloth {
                 .setTooltip(texto("lodActivo.tooltip"))
                 .setSaveConsumer(c.lodActivo::set)
                 .build());
+        general.addEntry(e.startBooleanToggle(texto("generacionAproximada"), c.generacionAproximada.get())
+                .setDefaultValue(c.generacionAproximada.getDefault())
+                .setTooltip(texto("generacionAproximada.tooltip"))
+                .setSaveConsumer(c.generacionAproximada::set)
+                .build());
         general.addEntry(e.startBooleanToggle(texto("pregenerar"), c.pregenerar.get())
                 .setDefaultValue(c.pregenerar.getDefault())
                 .setTooltip(texto("pregenerar.tooltip"))

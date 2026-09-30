@@ -315,3 +315,24 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 - **`/lod pregenerar [on|off|radio <chunks>]`** (`ComandoPregeneracion`): mismo
   valor que la opción del menú (config del cliente), con el avance (anillo,
   chunks nuevos, chunks/s, en curso). Solo singleplayer. Probado en el cliente.
+- **Horizonte aproximado (`GeneradorAproximado`, `TerrenoAproximado`):** para
+  chunks nunca generados, altura por `RandomState.router().finalDensity()`
+  (búsqueda de a 8 bloques con pista de la columna vecina) y superficie por
+  bioma (arena, terracota, nieve, piedra, copas de árbol, pasto). Se guardan
+  niveles 3 y 4 en claves propias (nivel + 8) con marca propia (nivel 14);
+  lo real siempre tiene prioridad (render, teselas 3-4 y niveles grandes vía
+  `AccesoStore`). 2×2 columnas por chunk; más allá de 1536 bloques, 1.
+  Medido (4 núcleos Xeon, pool de 2 hilos del preset Medio): 2-4 ms/chunk,
+  390-800 chunks/s con lotes de 16 por tarea (antes 80/s, atado a los ticks);
+  el radio de 160 chunks (~80 mil) se completa en ~3 min. Limitaciones: sin estructuras, árboles sueltos, ríos
+  sobre el nivel del mar ni reglas de superficie reales; dimensiones con techo
+  (Nether) no se aproximan. Solo singleplayer (opción en config del cliente).
+  Pendiente: generar directo los niveles 5-8 muestreando a su resolución para
+  radios de miles de chunks (hoy se muestrea por chunk aunque se dibuje con
+  vóxeles de 256 bloques).
+- **Un solo buffer lejos (`RenderLod.UN_BUFFER_DESDE` = 768 bloques):** teselas
+  y celdas lejanas van en un buffer con todas las caras en vez de uno por
+  dirección. Con el horizonte aproximado completo (160 chunks): 11.400 → 4.800
+  llamadas de dibujo por frame, +34% vértices enviados (las caras de espaldas
+  las descarta la GPU). En render por software fue algo más lento (limitado por
+  vértices); **Pista B:** medir en GPU real y ajustar la distancia.
