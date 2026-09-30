@@ -131,21 +131,62 @@ public final class GenerationTaskScheduler {
         if (!reservados.tryAcquire()) {
             return null;
         }
+        prioritariasEsperando.incrementAndGet();
         return pool.submit(() -> {
+            boolean contada = true;
             try {
                 permisos.acquire();
+                prioritariasEsperando.decrementAndGet();
+                contada = false;
                 try {
                     return tarea.call();
                 } finally {
                     permisos.release();
                 }
             } finally {
+                if (contada) {
+                    prioritariasEsperando.decrementAndGet();
+                }
                 reservados.release();
             }
         });
     }
 
-    private <T> Future<T> enviarConCupoTomado(Callable<T> tarea) {
+    /**
+     * Tareas prioritarias (todas menos las de fondo) encoladas o esperando
+     * un permiso: mientras haya alguna, el trabajo de fondo no arranca y el
+     * que está en curso cede en su próximo punto de corte.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger prioritariasEsperando =
+            new java.util.concurrent.atomic.AtomicInteger();
+    /** Tareas de fondo enviadas y todavía no terminadas. */
+    private final java.util.concurrent.atomic.AtomicInteger deFondo = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * Trabajo de fondo (el horizonte aproximado): puede tardar minutos por
+     * tarea en un procesador lento y no debe dejar sin turno a la extracción
+     * de chunks reales cercanos, que es lo que el jugador ve primero. Solo
+     * entra si no hay tareas prioritarias esperando y si deja libre al menos
+     * un permiso del límite actual (con límite 1, entra de a una y solo con
+     * el pool ocioso). Quien la ejecuta debería consultar
+     * {@link #hayPrioritariasEsperando()} entre partes y ceder.
+     *
+     * @param conReserva con la cola llena, usar uno de los {@link #RESERVADOS}
+     * @return null si no entró (se reintenta más tarde)
+     */
+    public <T> Future<T> intentarEnviarDeFondo(Callable<T> tarea, boolean conReserva) {
+        if (prioritariasEsperando.get() > 0 || deFondo.get() >= maximoDeFondo(limiteActual)) {
+            return null;
+        }
+        Semaphore cupo;
+        if (permisosDeCola.tryAcquire()) {
+            cupo = permisosDeCola;
+        } else if (conReserva && reservados.tryAcquire()) {
+            cupo = reservados;
+        } else {
+            return null;
+        }
+        deFondo.incrementAndGet();
         return pool.submit(() -> {
             try {
                 permisos.acquire();
@@ -155,6 +196,39 @@ public final class GenerationTaskScheduler {
                     permisos.release();
                 }
             } finally {
+                deFondo.decrementAndGet();
+                cupo.release();
+            }
+        });
+    }
+
+    /** Tareas de fondo a la vez con ese límite de concurrencia: todas menos una, y al menos una. */
+    static int maximoDeFondo(int limite) {
+        return Math.max(1, limite - 1);
+    }
+
+    /** ¿Hay extracción u otro trabajo prioritario esperando turno? El trabajo de fondo cede si sí. */
+    public boolean hayPrioritariasEsperando() {
+        return prioritariasEsperando.get() > 0;
+    }
+
+    private <T> Future<T> enviarConCupoTomado(Callable<T> tarea) {
+        prioritariasEsperando.incrementAndGet();
+        return pool.submit(() -> {
+            boolean contada = true;
+            try {
+                permisos.acquire();
+                prioritariasEsperando.decrementAndGet();
+                contada = false;
+                try {
+                    return tarea.call();
+                } finally {
+                    permisos.release();
+                }
+            } finally {
+                if (contada) {
+                    prioritariasEsperando.decrementAndGet(); // interrumpida antes de arrancar
+                }
                 permisosDeCola.release();
             }
         });

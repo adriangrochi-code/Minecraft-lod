@@ -181,4 +181,45 @@ class GenerationTaskSchedulerTest {
             scheduler.apagar();
         }
     }
+
+    @Test
+    void elFondoDejaSiempreUnLugarSalvoConLimiteUno() {
+        assertEquals(1, GenerationTaskScheduler.maximoDeFondo(1));
+        assertEquals(1, GenerationTaskScheduler.maximoDeFondo(2));
+        assertEquals(3, GenerationTaskScheduler.maximoDeFondo(4));
+    }
+
+    @Test
+    @Timeout(10)
+    void elFondoNoArrancaConExtraccionEsperandoYLaExtraccionPasaPrimero() throws Exception {
+        GenerationTaskScheduler s = new GenerationTaskScheduler(2);
+        s.ajustarLimiteConcurrencia(1);
+        CountDownLatch fondoCorriendo = new CountDownLatch(1);
+        CountDownLatch soltarFondo = new CountDownLatch(1);
+        AtomicInteger orden = new AtomicInteger();
+        Future<Integer> fondo = s.intentarEnviarDeFondo(() -> {
+            fondoCorriendo.countDown();
+            // Como un lote de aproximación: entre partes mira si tiene que ceder.
+            while (!s.hayPrioritariasEsperando()) {
+                Thread.sleep(5);
+            }
+            soltarFondo.await();
+            return orden.incrementAndGet();
+        }, false);
+        assertNotNull(fondo);
+        assertTrue(fondoCorriendo.await(5, TimeUnit.SECONDS));
+        assertNull(s.intentarEnviarDeFondo(() -> 0, false), "Solo una de fondo con límite 1");
+
+        Future<Integer> extraccion = s.intentarEnviar(orden::incrementAndGet);
+        assertNotNull(extraccion);
+        assertTrue(s.hayPrioritariasEsperando(), "La extracción espera el único permiso");
+        assertNull(s.intentarEnviarDeFondo(() -> 0, true), "Con extracción esperando, el fondo no entra");
+
+        soltarFondo.countDown(); // el lote cede
+        assertEquals(1, fondo.get());
+        assertEquals(2, extraccion.get());
+        assertFalse(s.hayPrioritariasEsperando());
+        assertNotNull(s.intentarEnviarDeFondo(() -> 0, false), "Sin nada esperando, vuelve a entrar");
+        s.apagar();
+    }
 }

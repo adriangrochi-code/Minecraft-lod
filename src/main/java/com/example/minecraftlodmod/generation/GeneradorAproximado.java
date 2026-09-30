@@ -102,6 +102,8 @@ public final class GeneradorAproximado {
     private int centroX, centroZ;
     private final List<Long> candidatos = new ArrayList<>();
     private final Set<Long> enVuelo = ConcurrentHashMap.newKeySet();
+    /** Chunks de un lote que cedió el turno a la extracción real: vuelven a la ventana en el próximo tick. */
+    private final java.util.Queue<Long> devueltos = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private boolean espiralAgotada, avisoCompleto;
     private final AtomicLong hechos = new AtomicLong();
     private final AtomicLong hechosTotal = new AtomicLong();
@@ -125,10 +127,15 @@ public final class GeneradorAproximado {
     private int radioRegion = -1;
     /** Nodo que no entró en la cola llena: se reintenta primero. */
     private int[] reintentoRegion;
+    /** Nodo que cedió el turno a la extracción real antes de empezar (lo deja el hilo del pool). */
+    private final java.util.concurrent.atomic.AtomicReference<int[]> reintentoRegionDevuelto =
+            new java.util.concurrent.atomic.AtomicReference<>();
     private final Set<Long> regionesEnVuelo = ConcurrentHashMap.newKeySet();
     private int tareasRegionEnVuelo;
     private final java.util.concurrent.atomic.AtomicInteger regionesTerminadas = new java.util.concurrent.atomic.AtomicInteger();
     private final AtomicLong regionesHechas = new AtomicLong();
+    /** Veces que un lote le cedió el turno a la extracción real (para el log). */
+    private final AtomicLong cesiones = new AtomicLong();
 
     GeneradorAproximado(GeneradorLocal generador) {
         this.generador = generador;
@@ -179,6 +186,7 @@ public final class GeneradorAproximado {
         // por región y el armado de los niveles grandes (lo que se dibuja lejos) esperaban horas en la cola.
         int maximoChunks = cargado ? 1 : Math.max(1, Math.min(enVueloMaximo, scheduler.limiteConcurrenciaActual() - 1));
         Contexto ctx = contexto;
+        int alcanceReal = servidor.getPlayerList().getViewDistance() + 1;
         lanzarRegiones(ctx, store, scheduler, cargado ? 1 : REGIONES_EN_VUELO);
         int revisados = 0;
         while (candidatos.size() < VENTANA && revisados < REVISIONES_POR_TICK && !espiralAgotada) {
@@ -188,8 +196,18 @@ public final class GeneradorAproximado {
             }
             revisados++;
             int x = centroX + espiral.dx(), z = centroZ + espiral.dz();
+            // Lo que vanilla va a cargar igual llega como chunk real: aproximarlo es el trabajo más caro
+            // (columnas afinadas) y competía por el procesador con la generación de esos mismos chunks.
+            if (Math.max(Math.abs(x - jx), Math.abs(z - jz)) <= alcanceReal) {
+                continue;
+            }
             if (!tieneLod(store, ctx.dimension(), x, z)) {
                 candidatos.add(ChunkPos.asLong(x, z));
+            }
+        }
+        for (Long devuelto; (devuelto = devueltos.poll()) != null; ) {
+            if (!candidatos.contains(devuelto)) {
+                candidatos.add(devuelto);
             }
         }
         if (candidatos.isEmpty()) {
@@ -221,13 +239,21 @@ public final class GeneradorAproximado {
             }
             lote.forEach(c -> enVuelo.add(c[0]));
             tareasEnVuelo++;
-            var tarea = scheduler.intentarEnviar(() -> {
+            var tarea = scheduler.intentarEnviarDeFondo(() -> {
                 try {
-                    for (long[] c : lote) {
+                    for (int i = 0; i < lote.size(); i++) {
+                        long[] c = lote.get(i);
+                        if (scheduler.hayPrioritariasEsperando()) {
+                            devolver(lote, i); // chunks reales esperando: se les cede el turno
+                            break;
+                        }
                         int x = ChunkPos.getX(c[0]), z = ChunkPos.getZ(c[0]);
                         try {
                             long inicio = System.nanoTime();
-                            generar(ctx, store, x, z, c[1] == 1);
+                            if (!generar(ctx, store, x, z, c[1] == 1, scheduler::hayPrioritariasEsperando)) {
+                                devolver(lote, i); // cedió a mitad del chunk
+                                break;
+                            }
                             nanosCalculo.addAndGet(System.nanoTime() - inicio);
                             hechos.incrementAndGet();
                             hechosTotal.incrementAndGet();
@@ -242,7 +268,7 @@ public final class GeneradorAproximado {
                     terminadas.incrementAndGet();
                 }
                 return null;
-            });
+            }, false);
             if (tarea == null) {
                 lote.forEach(c -> enVuelo.remove(c[0]));
                 tareasEnVuelo--;
@@ -250,6 +276,15 @@ public final class GeneradorAproximado {
             }
             lote.forEach(c -> candidatos.remove(c[0]));
             it = candidatos.iterator();
+        }
+    }
+
+    /** Hilo del pool: los chunks del lote desde {@code desde} vuelven a la ventana sin hacerse. */
+    private void devolver(List<long[]> lote, int desde) {
+        cesiones.incrementAndGet();
+        for (int j = desde; j < lote.size(); j++) {
+            enVuelo.remove(lote.get(j)[0]);
+            devueltos.add(lote.get(j)[0]);
         }
     }
 
@@ -267,6 +302,9 @@ public final class GeneradorAproximado {
         int porNodo5 = NivelesGrandes.ladoEnSecciones(NivelesGrandes.NIVEL_MIN);
         int centroNodoX = Math.floorDiv(centroX, porNodo5), centroNodoZ = Math.floorDiv(centroZ, porNodo5);
         int revisados = 0;
+        if (reintentoRegion == null) {
+            reintentoRegion = reintentoRegionDevuelto.getAndSet(null);
+        }
         while (tareasRegionEnVuelo < maximoEnVuelo && revisados < REVISIONES_REGION_POR_TICK) {
             int[] r = reintentoRegion;
             reintentoRegion = null;
@@ -301,8 +339,13 @@ public final class GeneradorAproximado {
             tareasRegionEnVuelo++;
             // Con lugar reservado: la pregeneración y la extracción llenan la cola y dejaban sin turno al
             // horizonte lejano, que cubre miles de chunks por tarea.
-            var tarea = scheduler.intentarEnviarReservado(() -> {
+            int[] nodo = r;
+            var tarea = scheduler.intentarEnviarDeFondo(() -> {
                 try {
+                    if (scheduler.hayPrioritariasEsperando()) {
+                        reintentoRegionDevuelto.set(nodo); // llegó extracción real mientras esperaba: después
+                        return null;
+                    }
                     long inicio = System.nanoTime();
                     generarGrande(ctx, store, region, nivel, nx, nz);
                     nanosCalculo.addAndGet(System.nanoTime() - inicio);
@@ -323,7 +366,7 @@ public final class GeneradorAproximado {
                     regionesTerminadas.incrementAndGet();
                 }
                 return null;
-            });
+            }, true);
             if (tarea == null) {
                 regionesEnVuelo.remove(clave);
                 tareasRegionEnVuelo--;
@@ -398,8 +441,15 @@ public final class GeneradorAproximado {
                 nivel.getMaxBuildHeight(), nivel.getMinSection(), nivel.getMaxSection());
     }
 
-    /** Hilo del pool: calcula y guarda los niveles 3 y 4 aproximados del chunk. */
-    private static void generar(Contexto ctx, RegionFileStore store, int chunkX, int chunkZ, boolean unaColumna) {
+    /**
+     * Hilo del pool: calcula y guarda los niveles 3 y 4 aproximados del chunk.
+     *
+     * @param ceder se consulta entre columnas: si da true (extracción real esperando turno) se
+     *              abandona el chunk sin guardar nada
+     * @return false si cedió el turno
+     */
+    private static boolean generar(Contexto ctx, RegionFileStore store, int chunkX, int chunkZ, boolean unaColumna,
+                                   java.util.function.BooleanSupplier ceder) {
         TerrenoAproximado.Columna[] columnas = new TerrenoAproximado.Columna[4];
         Holder<Biome> biomaAgua = null;
         int bx = chunkX * 16, bz = chunkZ * 16;
@@ -410,9 +460,26 @@ public final class GeneradorAproximado {
                     columnas[cx * 2 + cz] = columnas[0]; // lejos: la del centro vale para todo el chunk
                     continue;
                 }
+                if (ceder.getAsBoolean()) {
+                    return false;
+                }
                 int x = unaColumna ? bx + 8 : bx + cx * 8 + 4, z = unaColumna ? bz + 8 : bz + cz * 8 + 4;
+                if (pista == Integer.MIN_VALUE && !unaColumna) {
+                    // Primera columna afinada: se busca desde la estimación rápida y no desde el techo del
+                    // mundo (hasta ~48 evaluaciones de la densidad final, lo más caro del generador).
+                    try {
+                        pista = altura(ctx, x, z, Integer.MIN_VALUE, true, ceder);
+                    } catch (CederTurno e) {
+                        return false;
+                    }
+                }
                 // Lejos (una columna por chunk) alcanza la estimación rápida; cerca, la densidad final.
-                int altura = altura(ctx, x, z, pista, unaColumna);
+                int altura;
+                try {
+                    altura = altura(ctx, x, z, pista, unaColumna, ceder);
+                } catch (CederTurno e) {
+                    return false;
+                }
                 pista = altura;
                 Holder<Biome> bioma = ctx.biomas().getNoiseBiome(QuartPos.fromBlock(x),
                         QuartPos.fromBlock(Math.max(altura, ctx.nivelMar())), QuartPos.fromBlock(z), ctx.clima());
@@ -436,6 +503,7 @@ public final class GeneradorAproximado {
             guardar(store, region, 4, chunkX, sy, chunkZ, TerrenoAproximado.grillaNivel4(n3));
         }
         store.guardar(region, claveMarca(chunkX, chunkZ), MARCA);
+        return true;
     }
 
     private static void guardar(RegionFileStore store, RegionFileStore.ClaveRegion region, int nivel,
@@ -458,6 +526,21 @@ public final class GeneradorAproximado {
         return altura(ctx, x, z, pista, false);
     }
 
+    static int altura(Contexto ctx, int x, int z, int pista, boolean rapida) {
+        return altura(ctx, x, z, pista, rapida, NUNCA_CEDER);
+    }
+
+    private static final java.util.function.BooleanSupplier NUNCA_CEDER = () -> false;
+
+    /** Corta la búsqueda de una columna para cederle el turno a la extracción real (sin traza: es control de flujo). */
+    private static final class CederTurno extends RuntimeException {
+        CederTurno() {
+            super(null, null, false, false);
+        }
+    }
+
+    private static final CederTurno CEDER = new CederTurno();
+
     /**
      * @param rapida usar la estimación de superficie de vanilla (sin cuevas ni
      *               picos dentados) en vez de la densidad final: para el
@@ -465,21 +548,26 @@ public final class GeneradorAproximado {
      *               la densidad final (que evalúa también las cuevas) hacía que
      *               un nodo tardara minutos
      */
-    static int altura(Contexto ctx, int x, int z, int pista, boolean rapida) {
+    /**
+     * @param ceder se consulta antes de cada evaluación de densidad; si da true, la búsqueda
+     *              se corta con {@link CederTurno}
+     */
+    private static int altura(Contexto ctx, int x, int z, int pista, boolean rapida,
+                              java.util.function.BooleanSupplier ceder) {
         int inicio = ctx.maxY() - 1;
         if (pista != Integer.MIN_VALUE && pista >= ctx.minY()) {
             inicio = Math.min(ctx.maxY() - 1, pista + MARGEN_PISTA);
-            if (solido(ctx, x, inicio, z, rapida)) {
+            if (solido(ctx, x, inicio, z, rapida, ceder)) {
                 int y = inicio;
-                while (y + 8 <= ctx.maxY() - 1 && solido(ctx, x, y + 8, z, rapida)) {
+                while (y + 8 <= ctx.maxY() - 1 && solido(ctx, x, y + 8, z, rapida, ceder)) {
                     y += 8;
                 }
-                return afinar(ctx, x, z, y, rapida);
+                return afinar(ctx, x, z, y, rapida, ceder);
             }
         }
         for (int y = inicio; y >= ctx.minY(); y -= 8) {
-            if (solido(ctx, x, y, z, rapida)) {
-                return afinar(ctx, x, z, y, rapida);
+            if (solido(ctx, x, y, z, rapida, ceder)) {
+                return afinar(ctx, x, z, y, rapida, ceder);
             }
         }
         return ctx.minY() - 1;
@@ -492,11 +580,12 @@ public final class GeneradorAproximado {
      * bloques puede quedar en otro borde; a la resolución del LOD aproximado
      * (vóxeles de 8) no cambia nada visible.
      */
-    private static int afinar(Contexto ctx, int x, int z, int y, boolean rapida) {
+    private static int afinar(Contexto ctx, int x, int z, int y, boolean rapida,
+                              java.util.function.BooleanSupplier ceder) {
         int bajo = y, alto = Math.min(ctx.maxY() - 1, y + 7);
         while (bajo < alto) {
             int medio = (bajo + alto + 1) >>> 1;
-            if (solido(ctx, x, medio, z, rapida)) {
+            if (solido(ctx, x, medio, z, rapida, ceder)) {
                 bajo = medio;
             } else {
                 alto = medio - 1;
@@ -505,7 +594,11 @@ public final class GeneradorAproximado {
         return bajo;
     }
 
-    private static boolean solido(Contexto ctx, int x, int y, int z, boolean rapida) {
+    private static boolean solido(Contexto ctx, int x, int y, int z, boolean rapida,
+                                  java.util.function.BooleanSupplier ceder) {
+        if (ceder.getAsBoolean()) {
+            throw CEDER;
+        }
         DensityFunction.SinglePointContext punto = new DensityFunction.SinglePointContext(x, y, z);
         return rapida ? ctx.densidadInicial().compute(punto) > UMBRAL_SUPERFICIE_INICIAL
                 : ctx.densidad().compute(punto) > 0;
@@ -620,13 +713,14 @@ public final class GeneradorAproximado {
             return;
         }
         long n = hechos.getAndSet(0), nanos = nanosCalculo.getAndSet(0), regiones = regionesHechas.getAndSet(0);
-        if (n > 0 || regiones > 0) {
+        long cedidas = cesiones.getAndSet(0);
+        if (n > 0 || regiones > 0 || cedidas > 0) {
             LOG.info("LOD horizonte aproximado: anillo {} de {}, {} chunks ({} /s), {} nodos por región "
-                            + "(anillo {} de {}), {} ms de cálculo en el pool",
+                            + "(anillo {} de {}), {} ms de cálculo en el pool, {} veces cedió el turno a chunks reales",
                     espiral.anillo(), espiral.radio(), n,
                     String.format("%.0f", n / ((ahora - ultimoLogNanos) / 1e9)), regiones,
                     espiralRegion == null ? 0 : espiralRegion.anillo(), espiralRegion == null ? 0 : espiralRegion.radio(),
-                    nanos / 1_000_000);
+                    nanos / 1_000_000, cedidas);
         }
         ultimoLogNanos = ahora;
     }

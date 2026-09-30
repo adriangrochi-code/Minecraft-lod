@@ -10,15 +10,13 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
-- **La aproximación puede frenar la extracción real (visto en Xvfb, 0.24.0):**
-  cuando el auto-ajuste baja la generación simultánea a 1, esa única plaza
-  la puede tomar una tarea de `GeneradorAproximado.generar` (minutos por
-  tarea en CPU lenta) y los chunks reales cercanos esperan en el semáforo
-  (`GenerationTaskScheduler.enviarConCupoTomado`): "extraction 0/s" con
-  cientos pendientes. Arreglo propuesto: que la aproximación no use el
-  último lugar del límite, o que la extracción real tenga lugar reservado
-  (ya existe `intentarEnviarReservado` para el otro sentido). Revisar en la
-  A275.
+- **Prioridad de chunks reales sobre la aproximación (0.24.1):** resuelto
+  (`GenerationTaskScheduler.intentarEnviarDeFondo`/`hayPrioritariasEsperando`,
+  cesión entre evaluaciones de densidad en `GeneradorAproximado`). Pendiente
+  medir en la A275 cuánto tarda un chunk aproximado cercano (en Xvfb, con el
+  procesador compartido con el render por software, son minutos) y si con
+  pregeneración continua el horizonte avanza (el trabajo de fondo espera
+  mientras haya extracción encolada).
 - **Luz de bloque de noche (0.24.0):** juzgar el color cálido
   (`vec3(1.0, 0.86, 0.66)` en `lod_textura.fsh`/`_vk`) y la curva
   `pow(luz/3, 1.5)`. La luz de bloque va cuantizada a 2 bits

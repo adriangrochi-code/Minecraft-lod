@@ -6,6 +6,23 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.24.1 — Los chunks reales primero
+- **La aproximación del horizonte ya no frena los chunks cercanos:** cuando
+  el auto-ajuste dejaba un solo lugar de generación (procesador justo, como
+  la A275), la aproximación lo ocupaba minutos y los chunks reales cercanos
+  no entraban al LOD (en la prueba: cientos esperando, 0 por segundo). Ahora
+  la extracción de chunks reales tiene prioridad: la aproximación no arranca
+  si hay chunks reales esperando, nunca ocupa el último lugar si hay más de
+  uno, y si ya está trabajando cede el turno enseguida (entre cada cálculo
+  del terreno) y retoma después. En la prueba, tras teletransportarse a una
+  zona nueva: 16, 193 y 80 chunks reales cada 10 s (antes 0), con la
+  aproximación cediendo 75 veces y siguiendo igual con el horizonte.
+- **No aproxima lo que vanilla va a cargar igual:** los chunks dentro de la
+  distancia de visión llegan como chunks reales; estimarlos era el trabajo
+  más caro y competía por el procesador con la generación del mundo.
+- La primera columna de cada chunk cercano arranca la búsqueda desde la
+  estimación rápida de la superficie en vez del techo del mundo.
+
 ## 0.24.0 — Luz de antorchas de noche y biomas que se funden
 Tercer paso de "que el LOD se vea como Voxy" (solo la idea, sin su código).
 - **De noche, lo iluminado sigue iluminado:** el LOD guardaba un solo valor
