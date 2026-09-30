@@ -46,11 +46,17 @@
   "minecraftlodmod.configuration.oclusionAmbiental": "Oclusión ambiental",
   "minecraftlodmod.configuration.oclusionAmbiental.tooltip": "Oscurece rincones, bases de paredes y bajo los árboles del LOD, como la iluminación suave de vanilla. No cuesta GPU; genera algo más de geometría.",
   "minecraftlodmod.configuration.lodActivo": "LOD activado",
-  "minecraftlodmod.configuration.lodActivo.tooltip": "Dibuja el terreno lejano. Apagalo para comparar contra vanilla; la generación de LOD sigue funcionando.",
+  "minecraftlodmod.configuration.lodActivo.tooltip": "Dibuja el terreno lejano. Apágalo para comparar contra vanilla; la generación de LOD sigue funcionando.",
   "minecraftlodmod.configuration.pregenerar": "Pregenerar chunks para el LOD",
-  "minecraftlodmod.configuration.pregenerar.tooltip": "Genera el mundo desde vos hacia afuera (como Chunky) para que el LOD llegue lejos sin tener que recorrerlo. Usa CPU y disco: los chunks quedan guardados en el mundo. Se frena solo si el juego se pone lento.",
+  "minecraftlodmod.configuration.pregenerar.tooltip": "Genera el mundo desde ti hacia afuera (como Chunky) para que el LOD llegue lejos sin tener que recorrerlo. Usa CPU y disco: los chunks quedan guardados en el mundo. Se frena solo si el juego se pone lento.",
   "minecraftlodmod.configuration.radioPregeneracion": "Radio de pregeneración (chunks)",
   "minecraftlodmod.configuration.radioPregeneracion.tooltip": "256 ≈ 200 mil chunks: 1-2 GB y decenas de minutos. 1024 ≈ 3 millones: decenas de GB y horas. 2048 ≈ 13 millones: cientos de GB y días.",
   "minecraftlodmod.configuration.ocultarTapado": "Ocultar lo tapado por montañas",
-  "minecraftlodmod.configuration.ocultarTapado.tooltip": "No arma ni dibuja el terreno lejano que queda escondido detrás del relieve. Menos trabajo en zonas montañosas; si ves que algo aparece tarde al subir una colina, apagalo."
+  "minecraftlodmod.configuration.ocultarTapado.tooltip": "No arma ni dibuja el terreno lejano que queda escondido detrás del relieve. Menos trabajo en zonas montañosas; si ves que algo aparece tarde al subir una colina, apágalo.",
+  "minecraftlodmod.comando.pregenerar.on": "Pregeneración activada (radio %s chunks). Mira el avance con /lod pregenerar",
+  "minecraftlodmod.comando.pregenerar.off": "Pregeneración desactivada",
+  "minecraftlodmod.comando.pregenerar.radio": "Radio de pregeneración: %s chunks",
+  "minecraftlodmod.comando.pregenerar.apagado": "La pregeneración está apagada. Actívala con /lod pregenerar on",
+  "minecraftlodmod.comando.pregenerar.estado": "Pregenerando: anillo %s de %s, %s chunks nuevos (%s por segundo), %s en curso",
+  "minecraftlodmod.comando.pregenerar.completo": "Pregeneración completa: radio %s chunks (%s chunks nuevos)"
 }

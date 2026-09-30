@@ -52,5 +52,11 @@
   "minecraftlodmod.configuration.radioPregeneracion": "Radio de pregeneración (chunks)",
   "minecraftlodmod.configuration.radioPregeneracion.tooltip": "256 ≈ 200 mil chunks: 1-2 GB y decenas de minutos. 1024 ≈ 3 millones: decenas de GB y horas. 2048 ≈ 13 millones: cientos de GB y días.",
   "minecraftlodmod.configuration.ocultarTapado": "Ocultar lo tapado por montañas",
-  "minecraftlodmod.configuration.ocultarTapado.tooltip": "No arma ni dibuja el terreno lejano que queda escondido detrás del relieve. Menos trabajo en zonas montañosas; si ves que algo aparece tarde al subir una colina, apagalo."
+  "minecraftlodmod.configuration.ocultarTapado.tooltip": "No arma ni dibuja el terreno lejano que queda escondido detrás del relieve. Menos trabajo en zonas montañosas; si ves que algo aparece tarde al subir una colina, apagalo.",
+  "minecraftlodmod.comando.pregenerar.on": "Pregeneración activada (radio %s chunks). Mirá el avance con /lod pregenerar",
+  "minecraftlodmod.comando.pregenerar.off": "Pregeneración desactivada",
+  "minecraftlodmod.comando.pregenerar.radio": "Radio de pregeneración: %s chunks",
+  "minecraftlodmod.comando.pregenerar.apagado": "La pregeneración está apagada. Prendela con /lod pregenerar on",
+  "minecraftlodmod.comando.pregenerar.estado": "Pregenerando: anillo %s de %s, %s chunks nuevos (%s por segundo), %s en curso",
+  "minecraftlodmod.comando.pregenerar.completo": "Pregeneración completa: radio %s chunks (%s chunks nuevos)"
 }

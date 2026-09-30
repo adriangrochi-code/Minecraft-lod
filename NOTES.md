@@ -312,3 +312,6 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   resto, el normal. Con zoom, girar más de 10° replanifica. Probado con
   catalejo real: mismas 199 piezas, 8,0M → 10,7M vértices (solo lo mirado se
   afinó). Pendiente de Pista B: juzgar la calidad con zoom en monitor real.
+- **`/lod pregenerar [on|off|radio <chunks>]`** (`ComandoPregeneracion`): mismo
+  valor que la opción del menú (config del cliente), con el avance (anillo,
+  chunks nuevos, chunks/s, en curso). Solo singleplayer. Probado en el cliente.

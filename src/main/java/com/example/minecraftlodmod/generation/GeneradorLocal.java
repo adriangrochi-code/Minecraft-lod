@@ -18,6 +18,7 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -157,6 +158,11 @@ public final class GeneradorLocal {
         scheduler = new GenerationTaskScheduler(calidad.hilosGeneracion(), presupuesto.maxTareasEnCola());
         LOG.info("LOD: generación LOCAL activa ({}, cola {}) en {}",
                 calidad, presupuesto.maxTareasEnCola(), directorio);
+    }
+
+    @SubscribeEvent
+    public void alRegistrarComandos(RegisterCommandsEvent evento) {
+        ComandoPregeneracion.registrar(evento.getDispatcher(), pregenerador);
     }
 
     @SubscribeEvent

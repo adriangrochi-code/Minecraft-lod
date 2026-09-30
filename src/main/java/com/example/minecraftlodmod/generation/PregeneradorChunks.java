@@ -71,6 +71,9 @@ public final class PregeneradorChunks {
     private boolean espiralAgotada;
     private int tick;
     private long generados;
+    /** Desde que arrancó la espiral actual: para el estado que muestra el comando. */
+    private long generadosTotal;
+    private long inicioEspiralNanos;
     private long ultimoLogNanos = System.nanoTime();
     private boolean avisoCompleto;
 
@@ -109,6 +112,8 @@ public final class PregeneradorChunks {
             candidatos.clear();
             espiralAgotada = false;
             avisoCompleto = false;
+            generadosTotal = 0;
+            inicioEspiralNanos = System.nanoTime();
         }
         registrarAvance();
         if (servidor.getAverageTickTimeNanos() > MSPT_MAXIMO_NANOS
@@ -175,9 +180,24 @@ public final class PregeneradorChunks {
                 it.remove();
                 if (listo) {
                     generados++;
+                    generadosTotal++;
                 }
             }
         }
+    }
+
+    /** Lo que muestra {@code /lod pregenerar}. */
+    public record Estado(boolean enMarcha, int anillo, int radio, long generados, double porSegundo, int enCurso,
+                         boolean completo) {
+    }
+
+    public Estado estado() {
+        if (espiral == null) {
+            return new Estado(false, 0, 0, 0, 0, 0, false);
+        }
+        double segundos = Math.max(1e-3, (System.nanoTime() - inicioEspiralNanos) / 1e9);
+        return new Estado(true, espiral.anillo(), espiral.radio(), generadosTotal, generadosTotal / segundos,
+                enVuelo.size(), avisoCompleto);
     }
 
     /** Suelta todos los tickets (pregeneración apagada, cambio de dimensión, servidor cerrando). */

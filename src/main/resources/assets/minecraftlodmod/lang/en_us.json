@@ -52,5 +52,11 @@
   "minecraftlodmod.configuration.radioPregeneracion": "Pregeneration radius (chunks)",
   "minecraftlodmod.configuration.radioPregeneracion.tooltip": "256 ≈ 200k chunks: 1-2 GB, tens of minutes. 1024 ≈ 3M: tens of GB, hours. 2048 ≈ 13M: hundreds of GB, days.",
   "minecraftlodmod.configuration.ocultarTapado": "Hide terrain behind mountains",
-  "minecraftlodmod.configuration.ocultarTapado.tooltip": "Skips building and drawing distant terrain hidden behind hills. Less work in mountainous areas; turn it off if something pops in late when climbing."
+  "minecraftlodmod.configuration.ocultarTapado.tooltip": "Skips building and drawing distant terrain hidden behind hills. Less work in mountainous areas; turn it off if something pops in late when climbing.",
+  "minecraftlodmod.comando.pregenerar.on": "Pregeneration enabled (radius %s chunks). Check progress with /lod pregenerar",
+  "minecraftlodmod.comando.pregenerar.off": "Pregeneration disabled",
+  "minecraftlodmod.comando.pregenerar.radio": "Pregeneration radius: %s chunks",
+  "minecraftlodmod.comando.pregenerar.apagado": "Pregeneration is off. Turn it on with /lod pregenerar on",
+  "minecraftlodmod.comando.pregenerar.estado": "Pregenerating: ring %s of %s, %s new chunks (%s per second), %s in progress",
+  "minecraftlodmod.comando.pregenerar.completo": "Pregeneration complete: radius %s chunks (%s new chunks)"
 }
