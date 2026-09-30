@@ -60,5 +60,11 @@
   "minecraftlodmod.comando.pregenerar.estado": "Pregenerando: anillo %s de %s, %s chunks nuevos (%s por segundo), %s en curso",
   "minecraftlodmod.comando.pregenerar.completo": "Pregeneración completa: radio %s chunks (%s chunks nuevos)",
   "minecraftlodmod.configuration.generacionAproximada": "Horizonte aproximado",
-  "minecraftlodmod.configuration.generacionAproximada.tooltip": "Estima el terreno lejano que nunca se generó directo del generador del mundo, sin generar chunks: horizonte de varios km en minutos y sin ocupar disco del mundo. Sin estructuras ni árboles sueltos (los bosques se ven como copas). Cuando explorás o pregenerás, lo real lo reemplaza."
+  "minecraftlodmod.configuration.generacionAproximada.tooltip": "Estima el terreno lejano que nunca se generó directo del generador del mundo, sin generar chunks: horizonte de varios km en minutos y sin ocupar disco del mundo. Sin estructuras ni árboles sueltos (los bosques se ven como copas). Cuando explorás o pregenerás, lo real lo reemplaza.",
+  "minecraftlodmod.configuration.fsrActivo": "AMD FSR (experimental)",
+  "minecraftlodmod.configuration.fsrActivo.tooltip": "Dibuja el mundo a menor resolución y lo escala con AMD FSR 1; la interfaz queda nítida. Ayuda si tu GPU es el límite (A275, 3500U). No funciona con gráficos Fabulous ni con Iris: ahí se apaga solo.",
+  "minecraftlodmod.configuration.fsrEscalaPorcentaje": "Resolución FSR (%)",
+  "minecraftlodmod.configuration.fsrEscalaPorcentaje.tooltip": "77 = Calidad, 67 = Equilibrado, 59 = Rendimiento, 50 = Rendimiento máximo (modos de AMD).",
+  "minecraftlodmod.configuration.fsrNitidez": "Nitidez FSR",
+  "minecraftlodmod.configuration.fsrNitidez.tooltip": "0 = máxima; cada unidad la reduce a la mitad."
 }

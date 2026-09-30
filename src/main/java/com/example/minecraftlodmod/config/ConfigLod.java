@@ -39,6 +39,9 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue autoAjuste;
         public final ModConfigSpec.BooleanValue lodActivo;
         public final ModConfigSpec.BooleanValue ocultarTapado;
+        public final ModConfigSpec.BooleanValue fsrActivo;
+        public final ModConfigSpec.IntValue fsrEscalaPorcentaje;
+        public final ModConfigSpec.DoubleValue fsrNitidez;
         public final ModConfigSpec.BooleanValue pregenerar;
         public final ModConfigSpec.BooleanValue generacionAproximada;
         public final ModConfigSpec.IntValue radioPregeneracion;
@@ -72,6 +75,14 @@ public final class ConfigLod {
                     .defineInRange("radioPregeneracion", 256, 16, ParametrosCalidad.RADIO_MAX);
             ocultarTapado = b.comment("No armar ni dibujar el LOD escondido detrás de montañas (oclusión por relieve).")
                     .define("ocultarTapado", true);
+            fsrActivo = b.comment("EXPERIMENTAL: dibujar el mundo a menor resolución y escalarlo con AMD FSR 1.",
+                            "Ayuda cuando la GPU es el límite. Se desactiva solo con gráficos Fabulous o con Iris.")
+                    .define("fsrActivo", false);
+            fsrEscalaPorcentaje = b.comment("Resolución del mundo con FSR, en % de la pantalla (77 = 'Calidad' de AMD,",
+                            "67 = 'Equilibrado', 59 = 'Rendimiento', 50 = 'Rendimiento máximo').")
+                    .defineInRange("fsrEscalaPorcentaje", 77, 50, 99);
+            fsrNitidez = b.comment("Nitidez de FSR (RCAS): 0 = máxima; cada unidad la reduce a la mitad.")
+                    .defineInRange("fsrNitidez", 0.25, 0.0, 2.0);
             texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
                             "con la distancia). Apagado: colores planos, un poco más barato en GPU.")
                     .define("texturasLod", true);

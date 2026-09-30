@@ -9,6 +9,10 @@ displayName = "${mod_name}"
 authors = "${mod_authors}"
 description = '''${mod_description}'''
 
+# Solo para el escalado FSR experimental (render/EscaladoFsr).
+[[mixins]]
+config = "minecraftlodmod.mixins.json"
+
 [[dependencies.${mod_id}]]
     modId = "neoforge"
     type = "required"

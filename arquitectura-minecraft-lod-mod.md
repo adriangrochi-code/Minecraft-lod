@@ -526,3 +526,25 @@ jerárquico en GPU por compute + multidraw indirecto de Voxy (requiere GL
 off-heap con GL crudo de FP2. Ambos rompen la regla de compatibilidad
 (secciones 6, 15, 20) y el hardware de la A275 no los soporta bien; quedan
 como candidatos para el backend de alto rendimiento opt-in (sección 20).
+
+## 26. Escalado AMD FSR 1 (experimental, opt-in) — primera excepción a "solo eventos"
+
+Pedido: bajar el costo de GPU en hardware donde la GPU es el límite (A275,
+3500U a 1080p). FSR 1 (AMD FidelityFX, MIT) escala una imagen de menor
+resolución con EASU (reconstrucción de bordes) + RCAS (nitidez).
+
+**Decisión:** implementado en `render/EscaladoFsr.java`, APAGADO por defecto,
+con dos mixins en `render/mixin/` (el único paquete de mixins del mod):
+`Minecraft.getMainRenderTarget()` devuelve un framebuffer chico mientras
+`GameRenderer.render` dibuja el mundo, y después se escala al framebuffer
+real; interfaz, contorno de entidades y efectos de pantalla quedan a
+resolución completa. Las pasadas usan solo abstracciones de Minecraft
+(RenderTarget, ShaderInstance, BufferUploader).
+
+Es la primera vez que el mod entra al cuadro de Minecraft con mixins (hasta
+acá, solo eventos de NeoForge — secciones 6 y 20). Por eso es opt-in y se
+desactiva solo donde choca: gráficos Fabulous (framebuffers de transparencia
+del tamaño de la ventana) e Iris/Oculus (reemplazan este tramo). Con
+Embeddium debería convivir: falta probarlo en hardware real (Pista B), igual
+que la ganancia de FPS y la calidad visual.
+

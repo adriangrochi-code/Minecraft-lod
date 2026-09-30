@@ -60,5 +60,11 @@
   "minecraftlodmod.comando.pregenerar.estado": "Pregenerating: ring %s of %s, %s new chunks (%s per second), %s in progress",
   "minecraftlodmod.comando.pregenerar.completo": "Pregeneration complete: radius %s chunks (%s new chunks)",
   "minecraftlodmod.configuration.generacionAproximada": "Approximate horizon",
-  "minecraftlodmod.configuration.generacionAproximada.tooltip": "Estimates never-generated distant terrain straight from the world generator, without generating chunks: a multi-km horizon in minutes with no world disk usage. No structures or individual trees (forests show as canopy). Real chunks replace it as you explore or pregenerate."
+  "minecraftlodmod.configuration.generacionAproximada.tooltip": "Estimates never-generated distant terrain straight from the world generator, without generating chunks: a multi-km horizon in minutes with no world disk usage. No structures or individual trees (forests show as canopy). Real chunks replace it as you explore or pregenerate.",
+  "minecraftlodmod.configuration.fsrActivo": "AMD FSR (experimental)",
+  "minecraftlodmod.configuration.fsrActivo.tooltip": "Renders the world at a lower resolution and upscales it with AMD FSR 1; the HUD stays sharp. Helps when the GPU is the bottleneck. Not compatible with Fabulous graphics or Iris: it turns itself off there.",
+  "minecraftlodmod.configuration.fsrEscalaPorcentaje": "FSR resolution (%)",
+  "minecraftlodmod.configuration.fsrEscalaPorcentaje.tooltip": "77 = Quality, 67 = Balanced, 59 = Performance, 50 = Ultra performance (AMD modes).",
+  "minecraftlodmod.configuration.fsrNitidez": "FSR sharpness",
+  "minecraftlodmod.configuration.fsrNitidez.tooltip": "0 = maximum; each unit halves it."
 }

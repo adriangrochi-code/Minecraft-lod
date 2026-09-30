@@ -88,6 +88,16 @@ final class PantallaCloth {
                 .setTooltip(texto("descartarCuevas.tooltip"))
                 .setSaveConsumer(c.descartarCuevas::set)
                 .build());
+        general.addEntry(e.startBooleanToggle(texto("fsrActivo"), c.fsrActivo.get())
+                .setDefaultValue(c.fsrActivo.getDefault())
+                .setTooltip(texto("fsrActivo.tooltip"))
+                .setSaveConsumer(c.fsrActivo::set)
+                .build());
+        general.addEntry(e.startIntSlider(texto("fsrEscalaPorcentaje"), c.fsrEscalaPorcentaje.get(), 50, 99)
+                .setDefaultValue(c.fsrEscalaPorcentaje.getDefault())
+                .setTooltip(texto("fsrEscalaPorcentaje.tooltip"))
+                .setSaveConsumer(c.fsrEscalaPorcentaje::set)
+                .build());
         general.addEntry(e.startBooleanToggle(texto("ocultarTapado"), c.ocultarTapado.get())
                 .setDefaultValue(c.ocultarTapado.getDefault())
                 .setTooltip(texto("ocultarTapado.tooltip"))

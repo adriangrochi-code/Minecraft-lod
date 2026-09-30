@@ -336,3 +336,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   llamadas de dibujo por frame, +34% vértices enviados (las caras de espaldas
   las descarta la GPU). En render por software fue algo más lento (limitado por
   vértices); **Pista B:** medir en GPU real y ajustar la distancia.
+- **FSR 1 experimental (`EscaladoFsr` + `render/mixin/`):** paquete nuevo
+  `render.mixin`, obligatorio para Mixin (trata todo su paquete como mixins).
+  Probado en Xvfb: los mixins se aplican, la imagen al 50% se ve escalada y
+  sin roturas. **Pendiente de Pista B:** FPS real en A275/3500U/1060, calidad
+  visual, convivencia con Embeddium, contorno de entidades brillantes con FSR
+  (se copia la profundidad entre framebuffers de distinto tamaño), y exponer
+  `fsrNitidez` en la pantalla de Cloth (hoy solo en el TOML / pantalla de
+  NeoForge).
