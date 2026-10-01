@@ -203,6 +203,11 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue nodosPorSegundo;
         public final ModConfigSpec.IntValue rafagaNodos;
         public final ModConfigSpec.BooleanValue permitirSincroVertical;
+        public final ModConfigSpec.BooleanValue generacionVertical;
+        public final ModConfigSpec.IntValue margenGeneracionAbajo;
+        public final ModConfigSpec.BooleanValue recortarGeneracionArriba;
+        public final ModConfigSpec.IntValue margenGeneracionArriba;
+        public final ModConfigSpec.IntValue distanciaGeneracionJugador;
 
         Servidor(ModConfigSpec.Builder b) {
             b.push("generacion");
@@ -223,6 +228,25 @@ public final class ConfigLod {
             permitirSincroVertical = b.comment("Permitir que los clientes con el mod pidan la sincronización vertical",
                             "(solo las secciones cercanas en altura; opción experimental del cliente).")
                     .define("permitirSincroVertical", true);
+            b.pop();
+
+            b.comment("EXPERIMENTAL (etapa 2 de cubic chunks): generar el terreno con ruido solo en una franja",
+                    "vertical de cada columna. Pensado para mundos muy altos; ver la sección 32 de la arquitectura.")
+                    .push("cubico");
+            generacionVertical = b.comment("Calcular el ruido del terreno solo cerca de la superficie y de los jugadores.",
+                            "Debajo queda piedra de relleno (con pizarra profunda, lecho de roca, cuevas de",
+                            "carvers y menas, pero sin cuevas de ruido, acuíferos ni vetas grandes). Solo",
+                            "dimensiones con cielo y sin techo (no Nether ni End). Afecta a los chunks nuevos.")
+                    .define("generacionVertical", false);
+            margenGeneracionAbajo = b.comment("Secciones (de 16 bloques) debajo de la superficie más baja que se generan completas.")
+                    .defineInRange("margenAbajo", 4, 1, 256);
+            recortarGeneracionArriba = b.comment("Recortar también arriba de la superficie (más ahorro en mundos altos, pero",
+                            "las islas flotantes fuera de la franja no se generan: las sigue mostrando el LOD aproximado).")
+                    .define("recortarArriba", false);
+            margenGeneracionArriba = b.comment("Secciones arriba de la superficie más alta (si se recorta arriba).")
+                    .defineInRange("margenArriba", 8, 1, 256);
+            distanciaGeneracionJugador = b.comment("Secciones arriba y abajo de cada jugador cercano que se generan completas.")
+                    .defineInRange("distanciaJugador", 8, 1, 256);
             b.pop();
         }
     }

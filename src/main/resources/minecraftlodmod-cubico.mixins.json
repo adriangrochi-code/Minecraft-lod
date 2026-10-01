@@ -4,9 +4,12 @@
   "package": "com.example.minecraftlodmod.cubico.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "AccesoChunk",
     "AccesoInfoBlockEntity",
     "AccesoSeccionBloques",
     "MixinChunkHolder",
+    "MixinGeneradorRuido",
+    "MixinNoiseChunk",
     "MixinPaqueteChunk",
     "MixinPlayerChunkSender"
   ],

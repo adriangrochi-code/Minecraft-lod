@@ -54,6 +54,8 @@ public class MinecraftLodMod {
         modEventBus.addListener(protocolo::registrar);
         modEventBus.addListener(com.example.minecraftlodmod.cubico.SincroVertical::registrar);
         NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.cubico.SincroVertical.class);
+        com.example.minecraftlodmod.cubico.GeneracionVertical.registrar(modEventBus);
+        NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.cubico.GeneracionVertical.class);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
             PaletaTexturas paleta = new PaletaTexturas();

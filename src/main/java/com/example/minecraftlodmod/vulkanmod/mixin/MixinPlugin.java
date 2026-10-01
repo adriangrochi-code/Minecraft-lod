@@ -14,10 +14,17 @@ public class MixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public void onLoad(String mixinPackage) {
+        if (servidorDedicado()) {
+            return; // Minecraft LOD: en el servidor dedicado no hay LWJGL (crasheaba al arrancar)
+        }
         // Enlarge the per-thread LWJGL MemoryStack (default 64 KB) before any Vulkan
         // init runs. The default stack can overflow into an OutOfMemoryError while
         // enumerating instance extensions/layers during vkCreateInstance on some drivers.
         org.lwjgl.system.Configuration.STACK_SIZE.set(512);
+    }
+
+    private static boolean servidorDedicado() {
+        return net.neoforged.fml.loading.FMLLoader.getDist().isDedicatedServer();
     }
 
     @Override
@@ -28,7 +35,7 @@ public class MixinPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         // Minecraft LOD: VulkanMod integrado, solo con Vulkan activado en el menú (ver config.ConmutadorVulkan).
-        if (!com.example.minecraftlodmod.config.ConmutadorVulkan.activoEnEstaSesion()) {
+        if (servidorDedicado() || !com.example.minecraftlodmod.config.ConmutadorVulkan.activoEnEstaSesion()) {
             return false;
         }
         if (mixinClassName.contains(".wayland.")) {

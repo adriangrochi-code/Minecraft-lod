@@ -853,3 +853,40 @@ cliente; no CPU ni memoria del servidor.
 **Etapa 2 (pendiente):** no generar ni cargar en el servidor lo lejano en
 vertical (empezando por la generación); con formato de guardado propio para
 pasar de 4064 de alto.
+
+## 32. Cubic chunks, etapa 2: generar con ruido solo una franja vertical — 2026-10-01
+
+Pedido: en mundos muy altos, que el servidor no gaste CPU ni memoria en lo
+que está lejos en vertical de los jugadores, empezando por la generación.
+
+**Dónde se gasta:** el paso NOISE evalúa la densidad final en cada esquina de
+celda (4×8×4 bloques) de toda la altura de la columna; en un mundo de 2048 de
+alto es ~5× lo de uno vanilla aunque casi todo sea piedra o aire. Ese rango lo
+fija `NoiseSettings.clampToHeightAccessor(chunk)` en dos lugares:
+`NoiseChunk.forChunk` (paso BIOMES, el `NoiseChunk` queda guardado en el
+`ProtoChunk`) y `NoiseBasedChunkGenerator.fillFromNoise` (paso NOISE).
+
+**Parte 1 (implementada en 0.26.1, `cubico/GeneracionVertical`, opción de
+servidor `cubico.generacionVertical`, apagada):**
+- Al crear el `NoiseChunk` de un chunk que todavía no pasó por NOISE se
+  decide su franja (`VentanaVertical`): superficie estimada en 5 puntos con
+  la densidad sin "jaggedness" y el umbral de la superficie preliminar de
+  vanilla, menos un margen; las alturas de los jugadores cercanos con su
+  distancia; arriba, hasta el techo salvo `recortarArriba`. Se guarda en un
+  adjunto del chunk (`ventana_generacion`, persistente, pasa al LevelChunk):
+  es la marca de "secciones pendientes" para la parte 2, y hace que el
+  `NoiseChunk` y el llenado usen siempre el mismo rango.
+- Los dos `clampToHeightAccessor` devuelven la franja. El acuífero conserva
+  la altura completa (los carvers lo consultan en todo su rango).
+- Después del llenado, lo de abajo pasa a secciones de un solo valor (el
+  bloque por defecto, sin costo). Sobre ese relleno siguen corriendo las
+  reglas de superficie (pizarra, lecho de roca), los carvers y las menas;
+  faltan cuevas de ruido, acuíferos y vetas grandes.
+- Solo dimensiones con cielo y sin techo: en el Nether la "superficie" sería
+  el techo y se perdería el piso.
+
+**Parte 2 (pendiente):** completar las secciones pendientes cuando un jugador
+se acerca en vertical (ruido de esas secciones en un ProtoChunk aparte,
+copiando solo las que nadie modificó; lo difícil son features y estructuras,
+que necesitan vecinos) y, después, no cargar en el servidor lo lejano en
+vertical.
