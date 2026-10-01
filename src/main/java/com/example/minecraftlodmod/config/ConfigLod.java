@@ -41,6 +41,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue hudRendimiento;
         public final ModConfigSpec.BooleanValue logDepuracion;
         public final ModConfigSpec.BooleanValue sincroVertical;
+        public final ModConfigSpec.BooleanValue contratoVoxy;
         public final ModConfigSpec.IntValue distanciaVertical;
         public final ModConfigSpec.BooleanValue ocultarTapado;
         public final ModConfigSpec.EnumValue<ModoEscalado> escalado;
@@ -168,6 +169,10 @@ public final class ConfigLod {
             distanciaVertical = b.comment("Sincronización vertical: secciones (de 16 bloques) arriba y abajo del jugador que",
                             "se mandan con sus bloques reales.")
                     .defineInRange("distanciaVertical", 8, 2, 32);
+            contratoVoxy = b.comment("EXPERIMENTAL: con un shaderpack que trae el contrato de Voxy (voxy.json, por ejemplo",
+                            "Complementary), el LOD se dibuja con el código del pack para LODs: iluminación, niebla y",
+                            "sombras del pack sobre el LOD, sin la niebla de borde. Hay que recargar los shaders al cambiarla.")
+                    .define("contratoVoxy", false);
             b.pop();
 
             b.comment("Valores usados solo con preset = PERSONALIZADO (o guardados por la calibración).")

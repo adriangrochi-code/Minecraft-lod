@@ -172,6 +172,8 @@ public final class RenderLod {
     private static volatile int versionTexturas;
     private int versionTexturasVista = -1;
     private boolean texturasEnUso;
+    /** Con shaderpack: el LOD se dibuja con el voxy_opaque del pack (DibujoVoxy) en vez de gbuffers_terrain. */
+    private boolean voxyEnUso;
     private boolean oclusionEnUso;
     private boolean shadersEnUso;
     /**
@@ -578,11 +580,13 @@ public final class RenderLod {
                 && ConfigLod.CLIENTE.texturasLod.get();
         boolean usarOclusion = ConfigLod.CLIENTE.oclusionAmbiental.get();
         boolean usarShaders = ShadersIris.enUso();
+        boolean usarVoxy = false;
         if (usarShaders) {
-            ShadersVoxy.revisar(); // contrato Voxy del pack: por ahora solo diagnóstico en el log
+            ShadersVoxy.revisar(); // contrato Voxy del pack: diagnóstico en el log y, con la opción, el programa
+            usarVoxy = DibujoVoxy.listo();
         }
         if (versionTexturas != versionTexturasVista || usarTexturas != texturasEnUso
-                || usarOclusion != oclusionEnUso || usarShaders != shadersEnUso) {
+                || usarOclusion != oclusionEnUso || usarShaders != shadersEnUso || usarVoxy != voxyEnUso) {
             versionTexturasVista = versionTexturas;
             texturasEnUso = usarTexturas;
             oclusionEnUso = usarOclusion;
@@ -590,7 +594,11 @@ public final class RenderLod {
                 LOG.info("LOD: shaderpack {}; el LOD se dibuja {}", usarShaders ? "activo" : "apagado",
                         usarShaders ? "con el terreno del pack" : "con sus propios shaders");
             }
+            if (usarVoxy != voxyEnUso) {
+                LOG.info("LOD: contrato Voxy del pack {}", usarVoxy ? "en uso (el LOD se dibuja con voxy_opaque)" : "sin usar");
+            }
             shadersEnUso = usarShaders;
+            voxyEnUso = usarVoxy;
             LOG.info("LOD: texturas {} (shader {}, tabla {}, opción {})", usarTexturas ? "activas" : "apagadas",
                     shaderTextura != null ? "ok" : "sin cargar", PaletaTexturas.tabla() != null ? "ok" : "sin calcular",
                     ConfigLod.CLIENTE.texturasLod.get());
@@ -804,10 +812,11 @@ public final class RenderLod {
         Set<Long> vigentes = new HashSet<>();
         ordenDibujo.clear();
         int encoladas = 0;
-        boolean bloque = shadersEnUso;
-        TipoMalla tipoEsperado = bloque ? TipoMalla.BLOQUE : texturasEnUso ? TipoMalla.TEXTURA : TipoMalla.PLANA;
+        boolean bloque = shadersEnUso && !voxyEnUso;
+        // Con el contrato Voxy, el formato compacto con texturas (es la entrada del vértice de ContratoVoxy).
+        TipoMalla tipoEsperado = bloque ? TipoMalla.BLOQUE : texturasEnUso || voxyEnUso ? TipoMalla.TEXTURA : TipoMalla.PLANA;
         // Con shaders las texturas no se dibujan, pero dan el color promedio de cada cara.
-        GeometriaLod.Texturas texturas = texturasEnUso || bloque ? PaletaTexturas.tabla() : null;
+        GeometriaLod.Texturas texturas = texturasEnUso || bloque || voxyEnUso ? PaletaTexturas.tabla() : null;
         boolean oclusion = oclusionEnUso;
         int minSeccion = mc.level.getMinSection();
         int maxSeccion = mc.level.getMaxSection();
@@ -1227,6 +1236,10 @@ public final class RenderLod {
      * en su zona porque el LOD no dibuja los chunks que vanilla ya tiene.
      */
     private void dibujarConShaderpack(Minecraft mc, RenderLevelStageEvent evento, Vec3 camara) {
+        if (voxyEnUso) {
+            dibujarConContratoVoxy(evento, camara);
+            return;
+        }
         farParaShaders = alcanceLodBloques * 1.1f;
         if (ShadersIris.pasadaDeSombras()) {
             return;
@@ -1242,6 +1255,32 @@ public final class RenderLod {
                 GameRenderer.getRendertypeSolidShader());
         mc.gameRenderer.lightTexture().turnOffLightLayer();
         VertexBuffer.unbind();
+    }
+
+    /**
+     * Con el contrato Voxy del pack ({@link DibujoVoxy}): proyección propia del LOD
+     * (como sin shaders; el far de vanilla no se toca), profundidad propia y el
+     * voxy_opaque del pack. Las mallas son las del formato compacto con texturas.
+     */
+    private void dibujarConContratoVoxy(RenderLevelStageEvent evento, Vec3 camara) {
+        farParaShaders = 0;
+        if (ShadersIris.pasadaDeSombras()) {
+            return; // el LOD no proyecta sombras (los packs usan su profundidad para las sombras lejanas)
+        }
+        float far = Math.max(NEAR_LOD * 2, Math.max(calidad.radioLodChunks(), radioEnUso) * 16f * 1.5f);
+        Matrix4f proyeccion = PlanCeldas.conPlanosDeProfundidad(new Matrix4f(evento.getProjectionMatrix()), NEAR_LOD, far);
+        double radioPlaneta = ConfigLod.CLIENTE.curvatura.get() ? radioCurvatura() : 0;
+        double inicioCurva = Minecraft.getInstance().options.getEffectiveRenderDistance() * 16.0;
+        DesplazamientoCelda desplazamiento = DibujoVoxy.empezar(evento.getModelViewMatrix(), proyeccion, alcanceLodBloques,
+                radioPlaneta > 0 ? HorizonteCurvo.coeficiente(radioPlaneta) : 0f, (float) inicioCurva);
+        try {
+            Malla m = new Malla(evento.getModelViewMatrix(), proyeccion, null, null, desplazamiento, null, camara,
+                    false, inicioCurva, radioPlaneta);
+            recorrerMallas(TipoMalla.TEXTURA, m, false);
+        } finally {
+            DibujoVoxy.terminar();
+            VertexBuffer.unbind();
+        }
     }
 
     /**
@@ -1324,32 +1363,9 @@ public final class RenderLod {
         }
         // Fundido entre niveles: solo con el shader propio (sin él, las salientes se van al empezar).
         Uniform fundido = desplazamiento != null || tipo == TipoMalla.TEXTURA ? shader.getUniform("Fundido") : null;
-        long ahora = System.nanoTime();
-        Malla m = new Malla(evento.getModelViewMatrix(), proyeccion, shader, desplazamiento, fundido, camara,
+        Malla m = new Malla(evento.getModelViewMatrix(), proyeccion, shader, desplazamiento, null, fundido, camara,
                 curvaPorCelda, inicioCurva, radioPlaneta);
-        for (EstadoCelda estado : ordenDibujo) {
-            if (!estado.tieneMalla || estado.construidaCon == null || estado.tipo != tipo
-                    || estado.oculta || estado.esperando) {
-                continue;
-            }
-            float visible = FundidoNiveles.fraccionEntrada(ahora, estado.aparicionNanos);
-            if (visible >= 1f) {
-                estado.aparicionNanos = 0;
-            }
-            m.dibujar(estado.buffers, estado.planos, estado.verticesCara, estado.construidaCon.origenX(),
-                    estado.construidaCon.origenZ(), estado.construidaCon.ladoEnBloques(), fundido == null ? 1f : visible,
-                    true);
-        }
-        for (Saliente s : salientes) {
-            if (s.tipo != tipo || (s.inicioNanos != 0 && fundido == null)) {
-                continue;
-            }
-            float queda = 1f - FundidoNiveles.fraccionEntrada(ahora, s.inicioNanos);
-            if (s.inicioNanos == 0) {
-                queda = 1f;
-            }
-            m.dibujar(s.buffers, s.planos, s.verticesCara, s.origenX, s.origenZ, s.lado, queda, false);
-        }
+        recorrerMallas(tipo, m, fundido != null);
         if (fundido != null) {
             fundido.set(1f, 1f);
             fundido.upload();
@@ -1360,21 +1376,53 @@ public final class RenderLod {
         }
     }
 
+    /** Las celdas con malla del tipo pedido y las salientes (las que se desvanecen), en orden de dibujo. */
+    private void recorrerMallas(TipoMalla tipo, Malla m, boolean conFundido) {
+        long ahora = System.nanoTime();
+        for (EstadoCelda estado : ordenDibujo) {
+            if (!estado.tieneMalla || estado.construidaCon == null || estado.tipo != tipo
+                    || estado.oculta || estado.esperando) {
+                continue;
+            }
+            float visible = FundidoNiveles.fraccionEntrada(ahora, estado.aparicionNanos);
+            if (visible >= 1f) {
+                estado.aparicionNanos = 0;
+            }
+            m.dibujar(estado.buffers, estado.planos, estado.verticesCara, estado.construidaCon.origenX(),
+                    estado.construidaCon.origenZ(), estado.construidaCon.ladoEnBloques(), conFundido ? visible : 1f,
+                    true);
+        }
+        for (Saliente s : salientes) {
+            if (s.tipo != tipo || (s.inicioNanos != 0 && !conFundido)) {
+                continue;
+            }
+            float queda = 1f - FundidoNiveles.fraccionEntrada(ahora, s.inicioNanos);
+            if (s.inicioNanos == 0) {
+                queda = 1f;
+            }
+            m.dibujar(s.buffers, s.planos, s.verticesCara, s.origenX, s.origenZ, s.lado, queda, false);
+        }
+    }
+
     /** Lo común a dibujar las mallas de una pasada (celdas y salientes). */
     private final class Malla {
         final Matrix4f modelView, proyeccion;
         final ShaderInstance shader;
         final Uniform desplazamiento, fundido;
+        /** Programa propio sin ShaderInstance (contrato Voxy): el desplazamiento va por acá. */
+        final DesplazamientoCelda desplazamientoPrograma;
         final Vec3 camara;
         final boolean curvaPorCelda;
         final double inicioCurva, radioPlaneta;
 
         Malla(Matrix4f modelView, Matrix4f proyeccion, ShaderInstance shader, Uniform desplazamiento,
-              Uniform fundido, Vec3 camara, boolean curvaPorCelda, double inicioCurva, double radioPlaneta) {
+              DesplazamientoCelda desplazamientoPrograma, Uniform fundido, Vec3 camara, boolean curvaPorCelda,
+              double inicioCurva, double radioPlaneta) {
             this.modelView = modelView;
             this.proyeccion = proyeccion;
             this.shader = shader;
             this.desplazamiento = desplazamiento;
+            this.desplazamientoPrograma = desplazamientoPrograma;
             this.fundido = fundido;
             this.camara = camara;
             this.curvaPorCelda = curvaPorCelda;
@@ -1412,6 +1460,8 @@ public final class RenderLod {
             if (desplazamiento != null) {
                 desplazamiento.set(ox, oy, oz);
                 desplazamiento.upload();
+            } else if (desplazamientoPrograma != null) {
+                desplazamientoPrograma.poner(ox, oy, oz);
             } else {
                 vista = new Matrix4f(modelView).translate(ox, oy, oz);
             }
@@ -1427,7 +1477,7 @@ public final class RenderLod {
                 }
                 for (VertexBuffer buffer : piezas) {
                     buffer.bind();
-                    if (desplazamiento != null) {
+                    if (desplazamiento != null || desplazamientoPrograma != null) {
                         buffer.draw();
                     } else {
                         buffer.drawWithShader(vista, proyeccion, shader);

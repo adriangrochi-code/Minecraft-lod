@@ -68,6 +68,8 @@
   "minecraftlodmod.configuration.fsrNitidez.tooltip": "0 = máxima; cada unidad la reduce a la mitad.",
   "minecraftlodmod.configuration.hudRendimiento": "HUD de rendimiento",
   "minecraftlodmod.configuration.hudRendimiento.tooltip": "Muestra arriba de la pantalla FPS, tiempo de cuadro (promedio, peor y 1% bajo), CPU, RAM, tick del servidor y el trabajo del LOD. Se oculta con F1 o con F3.",
+  "minecraftlodmod.configuration.contratoVoxy": "Contrato Voxy de shaders",
+  "minecraftlodmod.configuration.contratoVoxy.tooltip": "EXPERIMENTAL: con un shaderpack que incluye el contrato de Voxy (voxy.json, por ejemplo Complementary), el LOD se dibuja con el código del pack para LODs: iluminación, niebla y sombras del pack sobre el LOD, sin la niebla de borde. Recarga los shaders después de cambiarla.",
   "minecraftlodmod.configuration.sincroVertical": "Sincronización vertical",
   "minecraftlodmod.configuration.sincroVertical.tooltip": "EXPERIMENTAL (etapa 1 de cubic chunks): el servidor te manda de cada columna solo las secciones cercanas en altura; lo de más arriba y más abajo (islas flotantes, montañas, cuevas profundas) lo dibuja el LOD. Menos memoria, red y mallas en el cliente; se nota sobre todo en mundos muy altos. Necesita el mod en el servidor.",
   "minecraftlodmod.configuration.distanciaVertical": "Distancia vertical",

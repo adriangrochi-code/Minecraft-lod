@@ -149,6 +149,7 @@ public final class PantallaLod extends Screen {
         paginas.add(new Pagina(pestana("experimental"), List.of(
                 List.of(interruptor("hudRendimiento", Impacto.BAJO, c.hudRendimiento),
                         interruptor("logDepuracion", Impacto.BAJO, c.logDepuracion)),
+                List.of(interruptor("contratoVoxy", Impacto.VARIABLE, c.contratoVoxy)),
                 List.of(interruptor("sincroVertical", Impacto.VARIABLE, c.sincroVertical),
                         entero("distanciaVertical", Impacto.MEDIO, 2, 32, 1, c.distanciaVertical,
                                 v -> Component.literal(v + " (" + v * 16 + " bloques)"))),

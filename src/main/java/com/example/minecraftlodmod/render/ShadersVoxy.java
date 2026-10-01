@@ -66,6 +66,8 @@ public final class ShadersVoxy {
     private static ShaderPack packVisto;
     private static NamespacedId dimensionVista;
     private static String estado = "";
+    private static String ultimoVertice;
+    private static String ultimoFragmento;
 
     private ShadersVoxy() {
     }
@@ -89,6 +91,7 @@ public final class ShadersVoxy {
         packVisto = pack;
         dimensionVista = dimension;
         estado = "";
+        DibujoVoxy.liberar();
         if (pack == null) {
             return;
         }
@@ -133,6 +136,10 @@ public final class ShadersVoxy {
             }
             boolean ok = compilar(archivo, programa, tipos, codigo);
             resumen.append(archivo).append(ok ? " ok " : " con errores ");
+            if (ok && archivo.equals("voxy_opaque.glsl")) {
+                // Etapa B: con la opción prendida, el LOD se dibuja con este programa (DibujoVoxy).
+                DibujoVoxy.preparar(pipeline, ultimoVertice, ultimoFragmento, programa.buffersOpacos());
+            }
         }
         estado = resumen.toString().trim();
     }
@@ -187,7 +194,9 @@ public final class ShadersVoxy {
             return null;
         }
         List<StringPair> conVoxy = new ArrayList<>(definiciones);
-        conVoxy.add(new StringPair("VOXY", ""));
+        if (conVoxy.stream().noneMatch(d -> d.key().equals("VOXY"))) {
+            conVoxy.add(new StringPair("VOXY", ""));
+        }
         return JcppProcessor.glslPreprocessSource(String.join("\n", lineas) + "\n", conVoxy);
     }
 
@@ -212,6 +221,8 @@ public final class ShadersVoxy {
         String vertice = ContratoVoxy.vertice(programa, tipos, version, extensiones);
         String fragmento = ContratoVoxy.fragmento(programa, tipos, version, extensiones, fuentePack);
         String base = archivo.substring(0, archivo.lastIndexOf('.'));
+        ultimoVertice = vertice;
+        ultimoFragmento = fragmento;
         guardar(base + ".vsh", vertice);
         guardar(base + ".fsh", fragmento);
 
