@@ -6,6 +6,26 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.1 — Generación por franja vertical (etapa 2 de cubic chunks, parte 1)
+- **Nueva opción experimental del servidor `cubico.generacionVertical`**
+  (apagada, en `minecraftlodmod-server.toml`): el ruido del terreno se
+  calcula solo en una franja de cada columna, la superficie con margen
+  (`margenAbajo`, 4 secciones) y la altura de los jugadores cercanos
+  (`distanciaJugador`, 8). Abajo queda piedra de relleno que no cuesta nada;
+  sobre ella siguen la pizarra profunda, el lecho de roca, las menas y las
+  cuevas de los carvers (faltan cuevas de ruido, acuíferos y vetas grandes).
+  Con `recortarArriba` también se recorta encima de la superficie (las
+  islas flotantes fuera de la franja no se generan; el LOD aproximado las
+  sigue mostrando). Solo chunks nuevos, no Nether ni End.
+- Medido en un mundo de prueba de 2048 de alto (-1024..1023), 1024 chunks en
+  un servidor dedicado: ruido por chunk 171 ms → 103 ms con la franja
+  (-40%) → 28 ms recortando también arriba (6× menos). Estimar la franja
+  cuesta 1,4-1,7 ms por chunk.
+- Cada chunk guarda la franja que se generó completa: es la marca para
+  completar las secciones de relleno cuando un jugador se acerque (parte 2).
+- **Arreglo:** el mod no arrancaba en un servidor dedicado (el VulkanMod
+  integrado tocaba LWJGL, que el servidor no tiene).
+
 ## 0.26.0 — Sincronización vertical (etapa 1 de cubic chunks) y LOD vertical
 - **Nueva opción experimental "Sincronización vertical"** (pestaña
   Experimental, apagada): el servidor te manda de cada columna solo las

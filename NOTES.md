@@ -10,6 +10,15 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Generación por franja vertical (0.26.1, cubico/GeneracionVertical):**
+  medida solo en servidor dedicado (tiempos), sin mirar el terreno. Falta
+  recorrer en el juego un mundo alto con la opción prendida: que el borde
+  franja/relleno no deje escalones raros ni agua o lava colgando, y cómo se
+  ve la pizarra/relleno al bajar. Parte 2 pendiente: completar las secciones
+  de relleno cuando un jugador se acerca (ruido en un ProtoChunk aparte,
+  copiar solo secciones no modificadas; features y estructuras necesitan
+  vecinos) y después no cargar en el servidor lo lejano en vertical.
+
 - **Sincronización vertical (0.26.0, cubico/):** probar con Sodium y con
   VulkanMod en la PC (acá solo vanilla + OpenGL en Xvfb). Limitaciones
   conocidas, para la próxima vuelta:

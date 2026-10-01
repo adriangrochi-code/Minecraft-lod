@@ -884,6 +884,9 @@ servidor `cubico.generacionVertical`, apagada):**
   faltan cuevas de ruido, acuíferos y vetas grandes.
 - Solo dimensiones con cielo y sin techo: en el Nether la "superficie" sería
   el techo y se perdería el piso.
+- Medido (mundo -1024..1023, 1024 chunks, servidor dedicado): ruido por chunk
+  171 ms → 103 ms con la franja → 28 ms con `recortarArriba`; estimar la
+  franja, 1,4-1,7 ms.
 
 **Parte 2 (pendiente):** completar las secciones pendientes cuando un jugador
 se acerca en vertical (ruido de esas secciones en un ProtoChunk aparte,
