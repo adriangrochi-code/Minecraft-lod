@@ -14,12 +14,12 @@ class BoundedRegionCacheTest {
         cache.poner(1L, datos);
 
         assertArrayEquals(datos, cache.obtener(1L));
-        assertEquals(100, cache.bytesUsados());
+        assertEquals(100 + BoundedRegionCache.COSTO_ENTRADA, cache.bytesUsados());
     }
 
     @Test
     void desalojaLoMenosUsadoRecientementeAlSuperarElPresupuesto() {
-        BoundedRegionCache cache = new BoundedRegionCache(250); // espacio para ~2 entradas de 100 bytes
+        BoundedRegionCache cache = new BoundedRegionCache(2 * (100 + BoundedRegionCache.COSTO_ENTRADA) + 50); // espacio para 2 entradas de 100 bytes
 
         cache.poner(1L, new byte[100]);
         cache.poner(2L, new byte[100]);
@@ -32,7 +32,7 @@ class BoundedRegionCacheTest {
 
     @Test
     void accederAUnaEntradaLaPreservaFrenteAUnaMasNuevaMenosUsada() {
-        BoundedRegionCache cache = new BoundedRegionCache(250);
+        BoundedRegionCache cache = new BoundedRegionCache(2 * (100 + BoundedRegionCache.COSTO_ENTRADA) + 50);
 
         cache.poner(1L, new byte[100]);
         cache.poner(2L, new byte[100]);
@@ -51,7 +51,20 @@ class BoundedRegionCacheTest {
         cache.poner(1L, new byte[50]);
         cache.poner(1L, new byte[200]); // reemplaza, no debería duplicar el conteo
 
-        assertEquals(200, cache.bytesUsados());
+        assertEquals(200 + BoundedRegionCache.COSTO_ENTRADA, cache.bytesUsados());
+    }
+
+    @Test
+    void elPresupuestoCuentaLoQueOcupaCadaEntradaNoSoloSusDatos() {
+        // Nodos chicos (como los homogéneos): con 1 KB de presupuesto no entran 100 de 8 bytes.
+        BoundedRegionCache cache = new BoundedRegionCache(1000);
+        for (long k = 0; k < 100; k++) {
+            cache.poner(k, new byte[8]);
+        }
+        assertTrue(cache.bytesUsados() <= 1000);
+        assertEquals(1000 / (8 + BoundedRegionCache.COSTO_ENTRADA), cache.cantidadEntradas());
+        assertNotNull(cache.obtener(99), "quedan las más nuevas");
+        assertNull(cache.obtener(0));
     }
 
     @Test
