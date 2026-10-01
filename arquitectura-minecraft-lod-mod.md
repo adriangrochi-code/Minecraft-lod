@@ -464,6 +464,12 @@ varía mucho según cuántas corridas RLE tenga). Lo desalojado no se pierde:
 sigue en disco (sección 5), así que un miss de este cache cuesta una lectura
 de SSD, no regenerar desde cero.
 
+**Actualización 0.26.6:** sobre `Long2ObjectLinkedOpenHashMap` (fastutil)
+en vez de `LinkedHashMap<Long, byte[]>`, y el límite cuenta datos +
+`COSTO_ENTRADA` (48 B) por entrada: los nodos promedian ~43 B y el costo
+fijo no contado hacía que el cache ocupara ~3× su presupuesto (medido 145 MB
+"usados" vs ~450 MB reales; heap del juego 1133 → 856 MB).
+
 **2. Backpressure en `generation/GenerationTaskScheduler.java` (implementado):**
 `maxTareasEnCola` acota cuántas tareas pueden estar pendientes/en ejecución a
 la vez. Sin este tope, un jugador moviéndose rápido podría hacer que el
