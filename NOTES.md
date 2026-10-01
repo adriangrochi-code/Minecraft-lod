@@ -47,23 +47,27 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   - en multiplayer el LOD vertical necesita los datos LOD en el cliente
     (hoy solo singleplayer, como el resto del LOD por red).
 
-- **Shaders de Voxy, etapa B (0.25.3 dejó la A):** `render/ShadersVoxy` ya
-  arma y compila `voxy_opaque/translucent` del pack (verificado con
-  Complementary r5.9.3 en Mesa). Falta, y hace falta verlo en la PC:
-  - definir `VOXY` para todo el pack (hoy solo para los archivos voxy; si se
-    define antes de tener lo siguiente, deferred/composite leen
-    `vxDepthTex*` vacías);
-  - framebuffer sobre los colortex de Iris según `opaqueDrawBuffers` /
-    `translucentDrawBuffers` y la mezcla del json;
-  - profundidad propia del LOD → `vxDepthTexOpaque/Trans` (samplers de Iris,
-    mixin de `IrisSamplers`), uniforms `vx*` (mixin de `CommonUniforms`) y
+- **Shaders de Voxy, etapa B (0.26.8, opción experimental `contratoVoxy`):**
+  el LOD se dibuja con `voxy_opaque` del pack (`render/DibujoVoxy`), `VOXY`
+  definido para todo el pack, `vx*` y `vxDepthTex*` en Iris. Verificado en
+  Xvfb (llvmpipe) con un pack de prueba y con Complementary r5.9.3: arma,
+  compila, sin errores de GL, el LOD sale con la luz, niebla y nubes del
+  pack. Falta, y hace falta verlo en la PC:
+  - pasada translúcida (`voxy_translucent`, `translucentDrawBuffers`, mezcla
+    del json): hoy el agua del LOD va por la opaca y sale plana y opaca;
+    hay que separar el agua en su propia malla;
+  - `customId` del bloque (IdMap de Iris, `block.properties`): hoy 0, el
+    pack trata todo como bloque genérico (sin agua, hojas, emisivos);
+  - luz del cielo real en `lightMap` (hoy va 15 fijo) y
     `excludeLodsFromVanillaDepth`;
-  - armar el programa con `ProgramUniforms`/`ProgramSamplers` de Iris como
-    su `IrisLodRenderProgram` (DH), dibujarlo en la fase de gbuffers;
-  - `customId` del bloque (IdMap de Iris, `block.properties`) y luz del
-    cielo real en `lightMap` (hoy va 15 fijo), color sin sombra de cara.
-  Probar con NVIDIA: Mesa acepta inicializadores no constantes en globales y
-  otros drivers podrían no hacerlo.
+  - sombras del LOD (Complementary con `VOXY` usa colortex18 de sombra en
+    pantalla; el LOD no está en el shadow map);
+  - Iris 1.8 admite colortex0-15: con el contrato prendido se amplía a 32
+    (`MixinObjetivosIris`); si el pipeline igual falla con `VOXY`, el pack
+    se recarga sin él (`MixinPipelineIris`) y el LOD vuelve a
+    gbuffers_terrain. Juzgar en GPU real que no haya buffers de más;
+  - probar con NVIDIA: Mesa acepta inicializadores no constantes en
+    globales y otros drivers podrían no hacerlo.
 
 - **Vóxeles que se notan (0.25.0):** juzgar en monitor real el fundido entre
   niveles (`FundidoNiveles.DURACION_NANOS` = 0,4 s; tramado Bayer 4×4) y si

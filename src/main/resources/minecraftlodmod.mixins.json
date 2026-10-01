@@ -11,6 +11,8 @@
     "MixinGameRenderer",
     "MixinMinecraft",
     "MixinRenderTarget",
+    "MixinObjetivosIris",
+    "MixinPipelineIris",
     "MixinSamplersIris",
     "MixinShaderInstance",
     "MixinShaderPackIris",

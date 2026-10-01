@@ -116,6 +116,51 @@ public final class DibujoVoxy {
         }
     }
 
+    /** Pack (nombre en la config de Iris) cuyo pipeline no se pudo armar con {@code VOXY}. */
+    private static volatile String packRechazado;
+    /** Si la última carga de pack definió {@code VOXY}. */
+    private static volatile boolean voxyEnCarga;
+
+    /**
+     * Si la carga del pack que está por hacer Iris define {@code VOXY}: con el contrato
+     * prendido, salvo que ese pack ya haya fallado con él.
+     */
+    public static boolean definirVoxy() {
+        boolean definir = activoEnConfig() && !nombrePackConfigurado().equals(packRechazado);
+        voxyEnCarga = definir;
+        return definir;
+    }
+
+    /**
+     * Iris no pudo armar el pipeline del pack. Si fue con {@code VOXY} definido (Complementary
+     * con {@code VOXY} usa colortex18/19 y Iris 1.8 solo tiene 16), el pack se recarga sin él en
+     * el próximo cuadro: queda con el LOD por gbuffers_terrain en vez de sin shaders.
+     */
+    public static void pipelineFallido() {
+        if (!voxyEnCarga) {
+            return;
+        }
+        voxyEnCarga = false;
+        packRechazado = nombrePackConfigurado();
+        LOG.warn("LOD/Voxy: Iris no pudo armar el pipeline de {} con VOXY definido; se recarga sin el contrato Voxy",
+                packRechazado);
+        net.minecraft.client.Minecraft.getInstance().tell(() -> {
+            try {
+                net.irisshaders.iris.Iris.reload();
+            } catch (java.io.IOException | RuntimeException e) {
+                LOG.error("LOD/Voxy: no se pudo recargar el pack sin VOXY", e);
+            }
+        });
+    }
+
+    private static String nombrePackConfigurado() {
+        try {
+            return String.valueOf(net.irisshaders.iris.Iris.getIrisConfig().getShaderPackName().orElse(""));
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
     public static int distanciaChunks() {
         return distanciaChunks;
     }
@@ -236,6 +281,11 @@ public final class DibujoVoxy {
     static void preparar(IrisRenderingPipeline pipeline, String vertice, String fragmento, List<Integer> buffers) {
         liberar();
         if (!activoEnConfig()) {
+            return;
+        }
+        if (!voxyEnCarga) {
+            // El pack se cargó sin VOXY (falló con él): sus deferred no leen la profundidad del LOD.
+            LOG.info("LOD/Voxy: el pack se cargó sin VOXY; el LOD sigue con gbuffers_terrain");
             return;
         }
         try {
