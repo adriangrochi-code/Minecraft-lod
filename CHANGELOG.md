@@ -6,6 +6,22 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.7 — Vegetación de cuevas en lo que se completa al bajar
+- Con `cubico.generacionVertical`, la banda que se completa cuando un
+  jugador se acerca ahora también recibe sus features: musgo, arcilla,
+  azaleas, lianas y hojas de las cuevas frondosas, liquen brillante,
+  dripstone, sculk, mazmorras, manantiales, y en islas (si se recortó
+  arriba) árboles y pasto. Mismo orden y misma semilla que la generación de
+  vanilla, así cada feature cae donde habría caído; corre sobre el mundo
+  vivo con un filtro que descarta lo que caiga fuera de la banda (nada se
+  duplica arriba). Menas, lagos, geodas y estructuras no se repiten (ya
+  estaban sobre el relleno).
+- Medido contra la misma zona generada completa (y -64..0, 49 columnas):
+  musgo 2989 vs 2866, lianas 291 vs 291, azaleas 82 vs 79, arcilla 13418 vs
+  13869; bloques iguales 99,20% → 99,37%. Toda la lava con luz 15. Costo:
+  3,6 ms por columna en el hilo del servidor (el completado se reparte con
+  un tope de 4 ms por tick).
+
 ## 0.26.6 — La caché RAM del LOD respeta el presupuesto de verdad
 - **Arreglo importante de memoria:** la caché RAM del LOD contaba solo los
   datos de cada nodo (~43 B en promedio), pero cada entrada arrastraba

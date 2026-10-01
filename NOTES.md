@@ -17,8 +17,10 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   ve la pizarra/relleno al bajar. El completado (0.26.2) está verificado
   bloque por bloque contra un mundo completo, no a la vista: falta mirar
   que no se note la llegada de las cuevas al bajar rápido (completa 2
-  secciones de adelanto) y que el reenvío del chunk no tironee. Pendiente:
-  features sobre lo completado.
+  secciones de adelanto) y que el reenvío del chunk no tironee. La
+  decoración (0.26.7) corre features sobre el mundo vivo con escrituras
+  filtradas: mirar que no queden plantas cortadas en el borde del chunk
+  (lo que cruzaría al vecino se descarta).
 - **Secciones lejanas comprimidas / compartidas (0.26.3):** medidas en
   servidor dedicado sin jugadores. Falta jugar con ellas prendidas (que
   bajar o subir rápido no tironee al descomprimir; ~4000
