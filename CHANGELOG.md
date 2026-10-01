@@ -6,6 +6,19 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.25.1 — Interfaz con Vulkan y chunks huecos
+- **Con Vulkan no se veía la interfaz** (HUD, barra de objetos, mira, F3)
+  si el Java no trae `jdk.attach` (el de Modrinth no lo trae): VulkanMod
+  tenía que convertir la profundidad de las proyecciones a la de Vulkan y esa
+  conversión nunca se aplicaba, así que se recortaba todo lo de la pantalla.
+  Ahora se aplica siempre que el arreglo por `jdk.attach` no está activo.
+  El mensaje "jdk.attach module not found" del log es normal y no rompe nada.
+- **Chunks huecos que quedaban vacíos:** si un chunk real se cargaba con la
+  cola de extracción llena y se descargaba antes de extraerse, quedaba sin
+  datos, y la aproximación (que lo había salteado por estar a la vista) no
+  volvía a pasar. Ahora la aproximación vuelve a recorrer su zona cada minuto
+  y tapa esos huecos.
+
 ## 0.25.0 — Que no se noten los vóxeles
 - **Arreglado: chunks aproximados que no terminaban nunca.** La búsqueda de
   la superficie calculaba mal el punto medio con alturas negativas (el mundo
