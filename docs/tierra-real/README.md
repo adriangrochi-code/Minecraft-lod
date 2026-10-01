@@ -17,6 +17,7 @@ secciones lejanas que ya tiene el mod.
    vuelta al mundo.
 6. `06-hitos.md` — plan por hitos, con qué se prueba y qué se mide en cada uno.
 7. `07-coordinacion.md` — reglas para trabajar en paralelo con la otra sesión.
+   **`08-compilar.md` — si la rama no compila, empezá por acá (prioridad 1).**
 8. `prompt-inicial.md` — el texto para pegar al arrancar la sesión nueva.
 
 Antes de esto, como siempre en este repo: `CLAUDE.md`,
