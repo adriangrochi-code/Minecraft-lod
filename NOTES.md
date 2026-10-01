@@ -18,7 +18,13 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   bloque por bloque contra un mundo completo, no a la vista: falta mirar
   que no se note la llegada de las cuevas al bajar rápido (completa 2
   secciones de adelanto) y que el reenvío del chunk no tironee. Pendiente:
-  features sobre lo completado y no cargar lo lejano en vertical.
+  features sobre lo completado.
+- **Secciones lejanas comprimidas / compartidas (0.26.3):** medidas en
+  servidor dedicado sin jugadores. Falta jugar con ellas prendidas (que
+  bajar o subir rápido no tironee al descomprimir; ~4000
+  descompresiones/recompresiones cada 30 s en la prueba, por la extracción
+  del LOD) y probar con otros mods (Lithium/C2ME-like escriben secciones
+  desde otros hilos: la compartida avisa con error, la comprimida no).
 
 - **Sincronización vertical (0.26.0, cubico/):** probar con Sodium y con
   VulkanMod en la PC (acá solo vanilla + OpenGL en Xvfb). Limitaciones

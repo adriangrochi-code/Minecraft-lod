@@ -903,6 +903,24 @@ terminar la luz (`lightChunk(chunk, true)` como barrera) se reenvía el chunk.
 Medido: 99,2% de bloques iguales a la generación completa (falta la
 vegetación de cuevas, que viene de features).
 
+**Parte 3, "no cargar lo lejano en vertical" (0.26.3):** medido con un
+histograma del heap en el mundo alto: 840 mil `PalettedContainer`, el 74% de
+un solo valor pero ~250 B fijos cada uno (candados, detector de hilos), y
+~200 MB en `long[]` de datos de bloques, casi todo roca profunda mixta (menas,
+tufa, diorita: ~2 KB por sección). Las columnas siguen cargadas enteras (carga,
+luz, guardado, red y otros mods lo asumen); se achica lo que guarda cada sección:
+- `SeccionesComprimidas` + `AlmacenComprimido`: un `BitStorage` que guarda los
+  datos con Deflate y se descomprime solo al leer (lecturas desde cualquier
+  hilo con la versión descomprimida en una local; escribir y comprimir, solo el
+  hilo del servidor; `getRaw` para guardar/paquetes descomprime en temporal).
+  Barrido con tope de 1 ms/tick sobre secciones a más de `distanciaCompresion`
+  de todos los jugadores, sin ticks aleatorios. Access transformer para el
+  campo `data` y el record `Data` de `PalettedContainer`. Medido: heap 818 →
+  720 MB, datos de esas secciones 94 → 7,8 MB, mismos bloques al guardar.
+- `SeccionesCompartidas`: contenedores de un solo valor compartidos, copia al
+  escribir en `LevelChunk#setBlockState`, guarda contra escrituras directas.
+  ~10 MB (solo el aire es uniforme de verdad).
+
 **Pendiente:** features sobre lo completado (vegetación de cuevas frondosas,
-dripstone, líquenes; necesitan vecinos) y no cargar en el servidor lo lejano
-en vertical.
+dripstone, líquenes; necesitan vecinos); los ~250 B fijos por contenedor y la
+luz (`DataLayer`) de las secciones lejanas; el cliente (hoy todo es servidor).

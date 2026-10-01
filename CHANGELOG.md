@@ -6,6 +6,27 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.3 — Menos RAM del servidor con lo lejano en vertical (etapa 2 de cubic chunks)
+- **Nueva opción `cubico.comprimirSeccionesLejanas`** (servidor, apagada):
+  los bloques de las secciones a más de `distanciaCompresion` (8) secciones
+  en vertical de todos los jugadores se guardan comprimidos en RAM y se
+  descomprimen solos la primera vez que algo los lee. Guardar el mundo o
+  mandar el chunk no las deja descomprimidas. No toca secciones con ticks
+  aleatorios. Barrido en el hilo del servidor con tope de 1 ms por tick.
+- Medido en el mundo de prueba de 2048 de alto (1024 chunks): heap del
+  servidor 818 → 720 MB (-12%); los datos de bloques de las secciones
+  comprimidas pasaron de 94 MB a 7,8 MB. El mundo guardado da los mismos
+  bloques que sin compresión. En mundos de altura normal el efecto es chico
+  (casi nada queda a más de 8 secciones del jugador).
+- **Nueva opción `cubico.compartirSeccionesUniformes`** (apagada): las
+  secciones de un solo bloque comparten un contenedor, con copia al escribir.
+  Ganó ~10 MB en la prueba: la roca profunda casi nunca es uniforme (menas,
+  tufa, diorita) y muchas secciones tienen dos biomas. Si otro mod escribe
+  directo en las secciones, avisa con un error en vez de romper el mundo.
+- Por qué no se descargan secciones enteras: todo Minecraft (carga, luz,
+  guardado, red) y los demás mods asumen columnas completas; achicar lo que
+  guarda cada sección lejana da el ahorro sin romper eso.
+
 ## 0.26.2 — Completar el relleno al bajar (etapa 2 de cubic chunks, parte 2)
 - Con `cubico.generacionVertical`, cuando un jugador se acerca en altura a
   una columna con relleno (a menos de `distanciaJugador` secciones), la
