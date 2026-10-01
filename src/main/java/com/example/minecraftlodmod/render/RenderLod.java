@@ -309,16 +309,29 @@ public final class RenderLod {
      * encolado antes. Solo {@code execute()}: {@code submit()} envolvería la
      * tarea en algo no comparable.
      */
-    private final ExecutorService hiloMallas = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
-            new PriorityBlockingQueue<>(), r -> {
-        Thread hilo = new Thread(r, "LOD-Mallas");
-        hilo.setDaemon(true);
-        hilo.setPriority(Thread.MIN_PRIORITY);
-        return hilo;
+    private final ExecutorService hiloMallas = new ThreadPoolExecutor(HILOS_MALLAS, HILOS_MALLAS, 0,
+            TimeUnit.MILLISECONDS, new PriorityBlockingQueue<>(), new java.util.concurrent.ThreadFactory() {
+        private final java.util.concurrent.atomic.AtomicInteger numero = new java.util.concurrent.atomic.AtomicInteger();
+
+        @Override
+        public Thread newThread(Runnable r) {
+            Thread hilo = new Thread(r, "LOD-Mallas-" + numero.incrementAndGet());
+            hilo.setDaemon(true);
+            hilo.setPriority(Thread.MIN_PRIORITY);
+            return hilo;
+        }
     });
+
+    /**
+     * Hilos que arman mallas: con uno solo, en la 1060 (6 núcleos) la cola llegaba a ~960
+     * celdas mientras se volaba y lo cercano tardaba en aparecer. Un tercio de los núcleos
+     * (1 a 3): el resto queda para el juego, el servidor y la generación.
+     */
+    static final int HILOS_MALLAS = Integer.getInteger("minecraftlodmod.hilosMallas",
+            Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() / 3)));
     private final AtomicLong secuenciaTareas = new AtomicLong();
-    /** Solo del hilo de mallas (uno solo): se reutiliza entre celdas ({@link GeometriaLod#reiniciar}). */
-    private final GeometriaLod geometriaMallas = new GeometriaLod();
+    /** Una por hilo de mallas: se reutiliza entre celdas ({@link GeometriaLod#reiniciar}). */
+    private final ThreadLocal<GeometriaLod> geometriaMallas = ThreadLocal.withInitial(GeometriaLod::new);
 
     /** Tarea de armado ordenada por distancia a la cámara al encolarse (y por orden de llegada si empatan). */
     private record TareaMalla(double distancia2, long secuencia, Runnable accion)
@@ -829,7 +842,7 @@ public final class RenderLod {
                        GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer, boolean bloque) {
         long inicioArmado = System.nanoTime();
         try {
-            GeometriaLod geometria = geometriaMallas;
+            GeometriaLod geometria = geometriaMallas.get();
             geometria.reiniciar();
             geometria.usarTexturas(texturas);
             geometria.descartarCarasSinLuz(ConfigLod.CLIENTE.descartarCuevas.get());

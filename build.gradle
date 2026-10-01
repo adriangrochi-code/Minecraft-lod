@@ -44,6 +44,10 @@ neoForge {
                 jvmArgument "-XX:StartFlightRecording=filename=${project.property('perfil')},settings=profile,delay=45s,duration=150s"
             }
             // ./gradlew runClient -PsinDepthFix: VulkanMod sin el arreglo de profundidad (como el Java de Modrinth).
+            // ./gradlew runClient -PhilosMallas=N: cantidad de hilos que arman mallas (pruebas).
+            if (project.hasProperty('hilosMallas')) {
+                systemProperty 'minecraftlodmod.hilosMallas', project.property('hilosMallas')
+            }
             if (project.hasProperty('sinDepthFix')) {
                 systemProperty 'minecraftlodmod.sinDepthFix', 'true'
             }

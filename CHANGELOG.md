@@ -6,6 +6,12 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.25.7 — Mallas en varios hilos
+- En el video de la 0.25.3 (GTX 1060) la cola de mallas por armar llegaba a
+  ~960 mientras se volaba: un solo hilo las armaba todas y lo cercano
+  tardaba en aparecer. Ahora usa un tercio de los núcleos (de 1 a 3; en el
+  i5-9400, 2 hilos), cada uno con su propia geometría reutilizable.
+
 ## 0.25.6 — Chunks huecos, lluvia sin tirones, RAM llena con lo cercano, opciones con Vulkan
 - **Chunks huecos o vacíos (y LOD cercano que faltaba):** un chunk se
   extraía apenas cargaba, a veces antes de que el motor de luz lo iluminara;
