@@ -89,8 +89,31 @@ public final class DibujoVoxy {
     private static final Matrix4f VISTA_PREVIA = new Matrix4f();
     private static int distanciaChunks;
 
+    /**
+     * Iris carga el pack al iniciar el renderizador, antes que la config del mod
+     * (y una excepción ahí hace fallar la carga de cualquier pack): hasta que esté
+     * cargada, el valor se lee del archivo. Ante cualquier problema, apagado.
+     */
     public static boolean activoEnConfig() {
-        return ConfigLod.CLIENTE.contratoVoxy.get();
+        try {
+            if (ConfigLod.SPEC_CLIENTE.isLoaded()) {
+                return ConfigLod.CLIENTE.contratoVoxy.get();
+            }
+            java.nio.file.Path archivo = net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get()
+                    .resolve("minecraftlodmod-client.toml");
+            if (!java.nio.file.Files.isRegularFile(archivo)) {
+                return false;
+            }
+            for (String linea : java.nio.file.Files.readAllLines(archivo)) {
+                String l = linea.strip();
+                if (l.startsWith("contratoVoxy")) {
+                    return l.substring(l.indexOf('=') + 1).strip().startsWith("true");
+                }
+            }
+            return false;
+        } catch (RuntimeException | java.io.IOException e) {
+            return false;
+        }
     }
 
     public static int distanciaChunks() {
