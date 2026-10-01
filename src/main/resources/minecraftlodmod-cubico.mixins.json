@@ -9,8 +9,10 @@
     "AccesoSeccionBloques",
     "MixinChunkHolder",
     "MixinGeneradorRuido",
+    "MixinLevelChunkCompartido",
     "MixinNoiseChunk",
     "MixinNoiseChunkSuperficie",
+    "MixinPalettedContainer",
     "MixinPaqueteChunk",
     "MixinPlayerChunkSender"
   ],

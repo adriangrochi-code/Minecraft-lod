@@ -208,6 +208,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue recortarGeneracionArriba;
         public final ModConfigSpec.IntValue margenGeneracionArriba;
         public final ModConfigSpec.IntValue distanciaGeneracionJugador;
+        public final ModConfigSpec.BooleanValue compartirSeccionesUniformes;
 
         Servidor(ModConfigSpec.Builder b) {
             b.push("generacion");
@@ -247,6 +248,11 @@ public final class ConfigLod {
                     .defineInRange("margenArriba", 8, 1, 256);
             distanciaGeneracionJugador = b.comment("Secciones arriba y abajo de cada jugador cercano que se generan completas.")
                     .defineInRange("distanciaJugador", 8, 1, 256);
+            compartirSeccionesUniformes = b.comment("Las secciones uniformes (todo piedra, todo aire, un solo bioma) comparten",
+                            "un solo contenedor en vez de tener uno propio: ~15-20% menos RAM del servidor en mundos",
+                            "altos, también ayuda en mundos normales. Se copian al escribir. Si otro mod escribe",
+                            "directo en las secciones, el juego avisa con un error: apagalo en ese caso.")
+                    .define("compartirSeccionesUniformes", false);
             b.pop();
         }
     }

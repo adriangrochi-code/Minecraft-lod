@@ -123,6 +123,10 @@ public final class GeneracionVertical {
             if (r != null) {
                 LOG.info("[LOD] Generación vertical (30 s): {}", r);
             }
+            r = SeccionesCompartidas.ESTADISTICAS.resumenYReiniciar();
+            if (r != null) {
+                LOG.info("[LOD] Secciones uniformes (30 s): {}", r);
+            }
             r = CompletadoVertical.ESTADISTICAS.resumenYReiniciar();
             if (r != null) {
                 LOG.info("[LOD] Completado vertical (30 s): {}", r);
