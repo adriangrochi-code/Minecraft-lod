@@ -921,6 +921,17 @@ luz, guardado, red y otros mods lo asumen); se achica lo que guarda cada secció
   escribir en `LevelChunk#setBlockState`, guarda contra escrituras directas.
   ~10 MB (solo el aire es uniforme de verdad).
 
+- Luz (0.26.4, `MixinDataLayer`): `get(int)` y `copy()` reescritos para leer
+  `data` una sola vez; las capas visibles (`getDataLayerData`, que el motor de
+  luz nunca escribe: copia antes, `getDataLayerToWrite`) se comprimen desde
+  el barrido. `isEmpty`/`isDefinitelyHomogenous`/`isDefinitelyFilledWith`
+  dan false si está comprimida (si no, no se guardaba); `getData` devuelve
+  una copia temporal (guardar, paquetes) y `set` descomprime e invalida. Solo
+  chunks cargados hace más de 10 s (las capas en cola sí se escriben directo).
+  Medido: ~17 MB de luz con datos → ~1 MB; luz guardada igual que sin
+  compresión.
+
 **Pendiente:** features sobre lo completado (vegetación de cuevas frondosas,
-dripstone, líquenes; necesitan vecinos); los ~250 B fijos por contenedor y la
-luz (`DataLayer`) de las secciones lejanas; el cliente (hoy todo es servidor).
+dripstone, líquenes; necesitan vecinos); los ~250 B fijos por contenedor
+(lo que más pesa ahora: ~170 MB en el mundo de prueba); el cliente (hoy todo
+es servidor).

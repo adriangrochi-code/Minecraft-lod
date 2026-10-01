@@ -25,6 +25,9 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   descompresiones/recompresiones cada 30 s en la prueba, por la extracción
   del LOD) y probar con otros mods (Lithium/C2ME-like escriben secciones
   desde otros hilos: la compartida avisa con error, la comprimida no).
+  Luz comprimida (0.26.4): un mod que escriba la luz por `getData()` sobre
+  una capa comprimida escribiría en una copia temporal (vanilla no lo hace;
+  Starlight/ScalableLux reemplazan el motor y no usan estas capas igual).
 
 - **Sincronización vertical (0.26.0, cubico/):** probar con Sodium y con
   VulkanMod en la PC (acá solo vanilla + OpenGL en Xvfb). Limitaciones

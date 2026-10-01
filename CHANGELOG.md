@@ -6,6 +6,21 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.4 — Luz de las secciones lejanas comprimida
+- Con `cubico.comprimirSeccionesLejanas`, además de los bloques, la luz
+  (cielo y bloque) de las secciones lejanas en vertical se guarda comprimida
+  y se descomprime sola al leerla. Guardar el chunk y mandar la luz usan una
+  copia temporal (la capa sigue comprimida); solo el motor de luz al
+  escribir la descomprime de verdad. La luz de un chunk recién cargado
+  (menos de 10 s) no se toca.
+- Medido en el mundo de prueba de 2048 de alto: solo ~8500 capas de luz
+  tenían datos (las de luz pareja ya no ocupan nada en vanilla), 17 MB que
+  quedan en ~1 MB; los `byte[]` del heap bajaron de 85 a 69 MB. La luz
+  guardada coincide con la de una corrida sin compresión (99,46%, lo mismo
+  que entre dos corridas normales) y los bloques al 100%.
+- Arreglo encontrado en la prueba: una capa comprimida contaba como "vacía"
+  y no se guardaba (ni se habría mandado a los clientes).
+
 ## 0.26.3 — Menos RAM del servidor con lo lejano en vertical (etapa 2 de cubic chunks)
 - **Nueva opción `cubico.comprimirSeccionesLejanas`** (servidor, apagada):
   los bloques de las secciones a más de `distanciaCompresion` (8) secciones
