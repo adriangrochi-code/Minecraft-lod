@@ -4,6 +4,7 @@
   "package": "com.example.minecraftlodmod.tierra.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "MixinEstabilidadTierra",
     "MixinFluidoTierra"
   ],
   "injectors": {

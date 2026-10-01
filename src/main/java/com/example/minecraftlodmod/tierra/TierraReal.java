@@ -65,6 +65,53 @@ public final class TierraReal {
     public static void registrar(IEventBus busDelMod) {
         FUNCIONES.register(busDelMod);
         FUENTES_BIOMAS.register(busDelMod);
+        // Atajo del LOD aproximado: la altura de cada columna sale de los datos, sin buscarla en la densidad.
+        com.example.minecraftlodmod.generation.FuenteAltura.registrar(nivel -> {
+            AlturaTierra a = alturaDe(nivel);
+            return a == null ? null : a::altura;
+        });
+    }
+
+    /**
+     * Metros por bloque de una dimensión de Tierra real por la clave de su
+     * {@code dimension_type} ({@code minecraftlodmod:tierra_8} → 8), o 0 si no
+     * es de Tierra real. El cliente recibe el tipo de dimensión del servidor,
+     * así que le alcanza para la curvatura sin un paquete propio.
+     */
+    public static double metrosPorBloque(net.minecraft.resources.ResourceLocation tipoDimension) {
+        if (tipoDimension == null || !tipoDimension.getNamespace().equals(MinecraftLodMod.MOD_ID)) return 0;
+        return metrosPorBloque(tipoDimension.getPath());
+    }
+
+    static double metrosPorBloque(String ruta) {
+        if (!ruta.startsWith("tierra_")) return 0;
+        try {
+            double m = Double.parseDouble(ruta.substring("tierra_".length()));
+            return m >= 1 && m <= 64 ? m : 0;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Radio del planeta en bloques para la curvatura del LOD en este nivel
+     * (6371 km / escala: 796 km a 1:8), o 0 si no es Tierra real.
+     */
+    public static double radioPlaneta(net.minecraft.world.level.Level nivel) {
+        if (nivel == null) return 0;
+        double m = nivel.dimensionTypeRegistration().unwrapKey().map(k -> metrosPorBloque(k.location())).orElse(0.0);
+        return m > 0 ? Proyeccion.RADIO_TIERRA_M / m : 0;
+    }
+
+    /**
+     * Relieve lejano que el horizonte real del LOD tiene en cuenta en Tierra
+     * real: 2 km (las montañas de 2 km detrás del horizonte asoman; las más
+     * altas se cortan antes, a cambio de no generar ~40 000 bloques de radio).
+     */
+    public static double relieveHorizonte(net.minecraft.world.level.Level nivel) {
+        double m = nivel == null ? 0
+                : nivel.dimensionTypeRegistration().unwrapKey().map(k -> metrosPorBloque(k.location())).orElse(0.0);
+        return m > 0 ? 2000 / m : com.example.minecraftlodmod.core.HorizonteCurvo.RELIEVE;
     }
 
     public static Path archivoDatos() {

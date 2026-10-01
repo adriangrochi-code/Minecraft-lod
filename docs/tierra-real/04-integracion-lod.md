@@ -13,10 +13,24 @@
    superficie muestreando densidades: **una consulta por columna en vez de
    decenas**. Con eso:
    - el horizonte entero (radio 8192 chunks) se arma mucho más rápido;
+
+   **Implementado en H5** como `generation/FuenteAltura` (solo `altura(x, z)`:
+   el bioma ya lo da la `BiomeSource`, y la altura es exacta por
+   construcción). Los tipos de mundo se registran con
+   `FuenteAltura.registrar` (Tierra real lo hace en `TierraReal`);
+   `GeneradorAproximado` la toma en su contexto y, si está, cada columna es
+   una consulta (`AlturaTierra.altura`, que reproduce la interpolación del
+   generador) en vez de la búsqueda en la densidad. El log del horizonte
+   cuenta "columnas por atajo".
    - los niveles más altos del LOD (9-10, vóxeles de 512-1024 bloques) del
      **planeta entero** se pueden armar al crear el mundo desde las teselas
      (a 1:8: ~5 000 × 2 500 columnas de nivel 10, segundos): horizonte
      instantáneo en cualquier lugar y, de yapa, un mapa del mundo.
+     **Decisión H5: no se hace.** El LOD dibuja hasta 8 192 chunks (131 000
+     bloques) y en Tierra real la curvatura esconde todo más allá de ~22 000
+     bloques desde el suelo (ver punto 3): del planeta (5 M bloques de ancho)
+     nunca se vería más que eso. Con el atajo, el horizonte que sí se ve se
+     arma rápido igual. Queda como idea para un mapa del mundo.
 3. **Curvatura coherente:** este tipo de mundo fija el radio de
    `core/HorizonteCurvo` en 6371 km / escala (796 km a 1:8) y el "horizonte
    real" (`sqrt(2Rh)`, sección 29) sale con ese radio. En multiplayer el
@@ -27,6 +41,17 @@
    `sqrt(2Rh) + sqrt(2R·hMax)` con hMax la altura máxima del terreno
    lejano sobre el mar (a 1:8: ~1 106 bloques → incluso desde el suelo se
    ven picos a ~44 000 bloques). Medirlo en H5.
+
+   **Implementado en H5:** el cliente reconoce el mundo por la clave de su
+   `dimension_type` (`minecraftlodmod:tierra_8` / `tierra_6`, que el servidor
+   ya le manda: no hace falta paquete propio) y usa radio = 6 371 km /
+   escala con la curvatura y el horizonte real **siempre prendidos** ahí
+   (`RenderLod.radioPlanetaActivo`; en los demás mundos sigue la config). El
+   relieve lejano del horizonte real es de 2 km en vez de 32 bloques
+   (`TierraReal.relieveHorizonte`, `HorizonteCurvo.radioChunks` con relieve):
+   a 1:8, desde el suelo, ~1 360 chunks (~21 700 bloques); montañas más
+   altas que 2 km detrás del horizonte se cortan antes, a cambio de no
+   generar los ~44 000 bloques de radio que pediría el Everest.
 
 ## Del LOD / cubico al generador
 

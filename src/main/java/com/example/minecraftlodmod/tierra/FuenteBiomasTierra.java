@@ -37,7 +37,7 @@ public final class FuenteBiomasTierra extends BiomeSource {
     ).apply(i, FuenteBiomasTierra::new)).validate(f -> {
         var faltan = ClasificadorBiomas.CLAVES.stream().filter(k -> !f.biomas.containsKey(k)).toList();
         return faltan.isEmpty() ? DataResult.success(f) : DataResult.error(() -> "Faltan biomas para: " + faltan);
-    });
+    }).stable(); // como los de vanilla: sin esto el mundo sale como "ajustes experimentales"
 
     /** A cuántos bloques se mira si hay mar, para las playas. */
     private static final int DISTANCIA_COSTA = 8;

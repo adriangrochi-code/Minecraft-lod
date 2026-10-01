@@ -65,7 +65,16 @@ public final class HorizonteCurvo {
 
     /** {@link #alcanceVisible} en chunks, entre {@code minimo} y {@code maximo}. */
     public static int radioChunks(double alturaOjos, double radio, int minimo, int maximo) {
-        double chunks = Math.ceil(alcanceVisible(alturaOjos, radio) / 16);
+        return radioChunks(alturaOjos, radio, RELIEVE, minimo, maximo);
+    }
+
+    /**
+     * Como {@link #radioChunks(double, double, int, int)} con otro relieve
+     * lejano (Tierra real: montañas de km detrás del horizonte).
+     */
+    public static int radioChunks(double alturaOjos, double radio, double relieve, int minimo, int maximo) {
+        double alcance = distanciaHorizonte(Math.max(2, alturaOjos), radio) + distanciaHorizonte(relieve, radio);
+        double chunks = Math.ceil(alcance / 16);
         return (int) Math.max(minimo, Math.min(maximo, chunks));
     }
 }

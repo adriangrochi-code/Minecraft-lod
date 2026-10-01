@@ -33,13 +33,13 @@ public final class SuperficieTierra implements DensityFunction.SimpleFunction {
     public static final String CILINDRICA = "cilindrica", AZIMUTAL = "azimutal";
     private static final double ELEVACION_SIN_DATOS = -4000;
 
-    public static final MapCodec<SuperficieTierra> CODEC_MAPA = RecordCodecBuilder.mapCodec(i -> i.group(
+    public static final MapCodec<SuperficieTierra> CODEC_MAPA = RecordCodecBuilder.<SuperficieTierra>mapCodec(i -> i.group(
             Codec.STRING.validate(p -> p.equals(CILINDRICA) || p.equals(AZIMUTAL)
                             ? com.mojang.serialization.DataResult.success(p)
                             : com.mojang.serialization.DataResult.error(() -> "Proyección desconocida: " + p))
                     .fieldOf("proyeccion").forGetter(SuperficieTierra::proyeccion),
             Codec.doubleRange(1, 64).fieldOf("metros_por_bloque").forGetter(SuperficieTierra::metrosPorBloque)
-    ).apply(i, SuperficieTierra::new));
+    ).apply(i, SuperficieTierra::new)).stable(); // como los de vanilla (si no, "ajustes experimentales")
     public static final KeyDispatchDataCodec<SuperficieTierra> CODEC = KeyDispatchDataCodec.of(CODEC_MAPA);
 
     private final String proyeccion;

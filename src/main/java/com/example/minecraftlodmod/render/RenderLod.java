@@ -743,10 +743,13 @@ public final class RenderLod {
         // Detalle y radio del auto-ajuste (los del preset si está apagado).
         int radioChunks = balance.radioChunks(c);
         int distanciaVanillaChunks = mc.options.getEffectiveRenderDistance();
-        if (ConfigLod.CLIENTE.curvatura.get() && ConfigLod.CLIENTE.horizonteReal.get()) {
+        boolean tierraReal = com.example.minecraftlodmod.tierra.TierraReal.radioPlaneta(mc.level) > 0;
+        if (radioPlanetaActivo() > 0 && (ConfigLod.CLIENTE.horizonteReal.get() || tierraReal)) {
             // Horizonte real: hasta dónde se ve la superficie curva desde los ojos, en vez del radio del
             // preset; el auto-ajuste lo sigue recortando en la misma proporción que al del preset.
-            int horizonte = HorizonteCurvo.radioChunks(camara.y - mc.level.getSeaLevel(), radioCurvatura(),
+            // En Tierra real va siempre (el planeta a escala es chico: lo de atrás del horizonte no se ve).
+            int horizonte = HorizonteCurvo.radioChunks(camara.y - mc.level.getSeaLevel(), radioPlanetaActivo(),
+                    com.example.minecraftlodmod.tierra.TierraReal.relieveHorizonte(mc.level),
                     distanciaVanillaChunks + 2, ParametrosCalidad.RADIO_MAX);
             radioChunks = (int) Math.round(horizonte * (double) radioChunks / Math.max(1, c.radioLodChunks()));
             GeneradorLocal.radioHorizonteCliente = horizonte;
@@ -1218,7 +1221,7 @@ public final class RenderLod {
         if (ConfigLod.CLIENTE.nubesLejanas.get()) {
             NubesLejanas.dibujar(mc, evento.getModelViewMatrix(), proyeccion, camara,
                     evento.getPartialTick().getGameTimeDeltaPartialTick(false), alcanceLodBloques,
-                    ConfigLod.CLIENTE.curvatura.get() ? radioCurvatura() : 0,
+                    radioPlanetaActivo(),
                     mc.options.getEffectiveRenderDistance() * 16.0);
         }
         VertexBuffer.unbind();
@@ -1269,7 +1272,7 @@ public final class RenderLod {
         }
         float far = Math.max(NEAR_LOD * 2, Math.max(calidad.radioLodChunks(), radioEnUso) * 16f * 1.5f);
         Matrix4f proyeccion = PlanCeldas.conPlanosDeProfundidad(new Matrix4f(evento.getProjectionMatrix()), NEAR_LOD, far);
-        double radioPlaneta = ConfigLod.CLIENTE.curvatura.get() ? radioCurvatura() : 0;
+        double radioPlaneta = radioPlanetaActivo();
         double inicioCurva = Minecraft.getInstance().options.getEffectiveRenderDistance() * 16.0;
         DesplazamientoCelda desplazamiento = DibujoVoxy.empezar(evento.getModelViewMatrix(), proyeccion, alcanceLodBloques,
                 radioPlaneta > 0 ? HorizonteCurvo.coeficiente(radioPlaneta) : 0f, (float) inicioCurva);
@@ -1326,6 +1329,17 @@ public final class RenderLod {
         return ConfigLod.CLIENTE.radioCurvaturaKm.get() * 1000.0;
     }
 
+    /**
+     * Radio de la curvatura en uso, en bloques (0 = sin curvatura): en un mundo
+     * Tierra real, el del planeta a su escala aunque la opción esté apagada
+     * ({@code docs/tierra-real/04-integracion-lod.md}); si no, el de la config.
+     */
+    static double radioPlanetaActivo() {
+        double tierra = com.example.minecraftlodmod.tierra.TierraReal.radioPlaneta(Minecraft.getInstance().level);
+        if (tierra > 0) return tierra;
+        return ConfigLod.CLIENTE.curvatura.get() ? radioCurvatura() : 0;
+    }
+
     /** Far de la proyección de vanilla que necesita el LOD con shaderpack (0 = no tocarlo). */
     public static float farParaShaders() {
         return farParaShaders;
@@ -1349,7 +1363,7 @@ public final class RenderLod {
         Uniform desplazamiento = tipo == TipoMalla.BLOQUE ? null : shader.CHUNK_OFFSET;
         // Curvatura: por vértice en el shader propio; si no lo tiene (colores planos, VulkanMod,
         // shaderpack), cada celda baja entera lo que corresponde a su centro.
-        double radioPlaneta = ConfigLod.CLIENTE.curvatura.get() ? radioCurvatura() : 0;
+        double radioPlaneta = radioPlanetaActivo();
         double inicioCurva = Minecraft.getInstance().options.getEffectiveRenderDistance() * 16.0;
         Uniform curvatura = desplazamiento != null ? shader.getUniform("Curvatura") : null;
         boolean curvaPorCelda = radioPlaneta > 0 && curvatura == null;

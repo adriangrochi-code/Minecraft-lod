@@ -81,3 +81,30 @@ la cifra famosa.)
   - Pendiente: los monumentos oceánicos se ubican a altura fija de vanilla
     (flotarían en mares de cientos de bloques); cobertura del suelo; menas
     por profundidad (H9).
+- **H5 (2026-10-01):** atajo `generation/FuenteAltura` en
+  `GeneradorAproximado`; curvatura con radio 6 371 km / escala y horizonte
+  real siempre prendidos en Tierra real (el cliente lo deduce del
+  `dimension_type`, sin paquete); relieve lejano de 2 km para el horizonte
+  real. Los niveles del planeta entero al crear el mundo **no se hacen**
+  (nunca se verían: `04-integracion-lod.md`). Medido con el cliente en Xvfb
+  (render por software, 4 núcleos), cumbre del Cervino y Alpes:
+  - con atajo: **0 evaluaciones de densidad**, 127 000-166 000 columnas por
+    atajo cada 30 s, ~1 000 chunks + ~420 nodos por región cada 30 s
+    (HUD: ~18 000 chunks aproximados/s en ráfagas);
+  - sin atajo (`-Dminecraftlodmod.sinAtajoAltura=true`): 1,3-1,6 M
+    evaluaciones de densidad cada 30 s, ~600 chunks + ~460 nodos. En Tierra
+    real la densidad es una sola bicúbica (`superficie - y`), así que la
+    búsqueda no es tan cara como en vanilla (~7 bicúbicas por columna
+    contra 4 del atajo); con el render por software usando la CPU no se
+    separa bien la diferencia. El atajo además da la superficie exacta del
+    generador, y gana de verdad cuando la densidad sume detalle (H8) y
+    cuevas (H9).
+  - Horizonte real desde la cumbre (474 bloques sobre el mar): ~2 800
+    chunks de radio (espiral por región de 94 nodos de nivel 5).
+  - **Aviso de "ajustes experimentales"** al crear o abrir el mundo: vanilla
+    lo muestra para todo Overworld no vanilla. Desactivado para Tierra real
+    (`tierra/mixin/MixinEstabilidadTierra`, como el Amplificado); también
+    los codecs propios van `.stable()`.
+  - **Pendiente de Pista B:** en las capturas de Xvfb no se ve el terreno
+    lejano (cielo bajo el horizonte desde el Cervino). Puede ser el render
+    por software (Mesa) o la curvatura: verificarlo en una PC real.

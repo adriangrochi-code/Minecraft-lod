@@ -280,7 +280,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   el archivo, el mundo sale como fondo de mar plano y el log lo dice.
 - Comandos de prueba: `/tierra ir <lat> <lon>`, `/tierra medir <lat> <lon>`.
 - Pendiente de Pista B: ver el mundo en el cliente (pantalla de crear mundo
-  con los 4 tipos, horizonte del LOD sobre Tierra real).
+  con los 4 tipos, horizonte del LOD sobre Tierra real). En Xvfb (render por
+  software) el mundo carga y se juega, el horizonte aproximado se genera con
+  el atajo (0 evaluaciones de densidad), pero **no se ve terreno lejano** en
+  las capturas desde la cumbre del Cervino: ¿Mesa o la curvatura de 796 km?
+  Probar en la PC con `/tierra ir 45.9763 7.6586` y mirar al sur.
 
 ## Mejoras notadas, no aplicadas todavía
 

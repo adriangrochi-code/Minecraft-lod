@@ -91,9 +91,13 @@ public final class GeneradorAproximado {
      *                        initialDensityWithoutJaggedness}: sin cuevas ni
      *                        picos dentados), mucho más barata que {@code densidad}
      */
+    /**
+     * @param fuenteAltura atajo del tipo de mundo ({@link FuenteAltura}, Tierra real), o null: con él la
+     *                     altura de cada columna es una consulta en vez de buscarla en la densidad
+     */
     private record Contexto(ServerLevel nivel, byte dimension, DensityFunction densidad,
                             DensityFunction densidadInicial, BiomeSource biomas, Climate.Sampler clima, int nivelMar,
-                            int minY, int maxY, int minSeccion, int maxSeccion) {
+                            int minY, int maxY, int minSeccion, int maxSeccion, FuenteAltura fuenteAltura) {
     }
 
     /**
@@ -492,7 +496,7 @@ public final class GeneradorAproximado {
         return new Contexto(nivel, GeneradorLocal.idDimension(nivel.dimension()), estado.router().finalDensity(),
                 estado.router().initialDensityWithoutJaggedness(),
                 gen.getBiomeSource(), estado.sampler(), gen.getSeaLevel(), nivel.getMinBuildHeight(),
-                nivel.getMaxBuildHeight(), nivel.getMinSection(), nivel.getMaxSection());
+                nivel.getMaxBuildHeight(), nivel.getMinSection(), nivel.getMaxSection(), FuenteAltura.de(nivel));
     }
 
     /**
@@ -608,6 +612,8 @@ public final class GeneradorAproximado {
 
     /** Evaluaciones de densidad (para el log: lo caro de la aproximación). */
     private static final java.util.concurrent.atomic.LongAdder EVALUACIONES = new java.util.concurrent.atomic.LongAdder();
+    /** Columnas resueltas con el atajo de {@link FuenteAltura} (sin evaluar densidad). */
+    private static final java.util.concurrent.atomic.LongAdder CONSULTAS_ATAJO = new java.util.concurrent.atomic.LongAdder();
 
     /**
      * @param rapida usar la estimación de superficie de vanilla (sin cuevas ni
@@ -622,6 +628,13 @@ public final class GeneradorAproximado {
      */
     private static int altura(Contexto ctx, int x, int z, int pista, boolean rapida,
                               java.util.function.BooleanSupplier ceder) {
+        if (ctx.fuenteAltura() != null) {
+            if (ceder.getAsBoolean()) {
+                throw CEDER;
+            }
+            CONSULTAS_ATAJO.increment();
+            return Math.clamp(ctx.fuenteAltura().altura(x, z), ctx.minY() - 1, ctx.maxY() - 1);
+        }
         int inicio = ctx.maxY() - 1;
         if (pista != Integer.MIN_VALUE && pista >= ctx.minY()) {
             inicio = Math.min(ctx.maxY() - 1, pista + MARGEN_PISTA);
@@ -793,14 +806,15 @@ public final class GeneradorAproximado {
         long n = hechos.getAndSet(0), nanos = nanosCalculo.getAndSet(0), regiones = regionesHechas.getAndSet(0);
         long cedidas = cesiones.getAndSet(0);
         long evaluaciones = EVALUACIONES.sumThenReset();
-        if (n > 0 || regiones > 0 || cedidas > 0 || evaluaciones > 0) {
+        long atajo = CONSULTAS_ATAJO.sumThenReset();
+        if (n > 0 || regiones > 0 || cedidas > 0 || evaluaciones > 0 || atajo > 0) {
             LOG.info("LOD horizonte aproximado: anillo {} de {}, {} chunks ({} /s), {} nodos por región "
                             + "(anillo {} de {}), {} ms de cálculo en el pool, {} veces cedió el turno a chunks reales, "
-                            + "{} evaluaciones de densidad",
+                            + "{} evaluaciones de densidad, {} columnas por atajo",
                     espiral.anillo(), espiral.radio(), n,
                     String.format("%.0f", n / ((ahora - ultimoLogNanos) / 1e9)), regiones,
                     espiralRegion == null ? 0 : espiralRegion.anillo(), espiralRegion == null ? 0 : espiralRegion.radio(),
-                    nanos / 1_000_000, cedidas, evaluaciones);
+                    nanos / 1_000_000, cedidas, evaluaciones, atajo);
         }
         ultimoLogNanos = ahora;
     }
