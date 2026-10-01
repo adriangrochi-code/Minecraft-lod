@@ -10,6 +10,22 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Sincronización vertical (0.26.0, cubico/):** probar con Sodium y con
+  VulkanMod en la PC (acá solo vanilla + OpenGL en Xvfb). Limitaciones
+  conocidas, para la próxima vuelta:
+  - la luz del cielo del cliente no conoce los bloques de arriba del rango
+    (Vertigo manda las "fuentes de luz del cielo"): al romper un bloque
+    cerca del borde puede aclararse un momento hasta que llega la luz del
+    servidor;
+  - entidades en secciones ocultas se ven flotando sobre el LOD;
+  - el LOD se dibuja antes y vanilla siempre queda encima (se limpia la
+    profundidad): un caso raro de una isla del LOD delante de terreno
+    vanilla se vería mal;
+  - al subir una sección se mandan (2·distancia+1)² secciones de golpe;
+    si tironea, repartirlo en varios ticks, las más cercanas primero;
+  - en multiplayer el LOD vertical necesita los datos LOD en el cliente
+    (hoy solo singleplayer, como el resto del LOD por red).
+
 - **Shaders de Voxy, etapa B (0.25.3 dejó la A):** `render/ShadersVoxy` ya
   arma y compila `voxy_opaque/translucent` del pack (verificado con
   Complementary r5.9.3 en Mesa). Falta, y hace falta verlo en la PC:

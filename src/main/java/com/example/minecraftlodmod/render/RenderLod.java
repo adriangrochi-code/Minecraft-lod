@@ -56,6 +56,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import com.example.minecraftlodmod.cubico.ClienteVertical;
+import com.example.minecraftlodmod.cubico.RangoSecciones;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -225,13 +227,15 @@ public final class RenderLod {
         Runtime rt = Runtime.getRuntime();
         LOG.info("LOD stats: fps={} | dibujo LOD {} ms/frame, {} llamadas/frame, {} vértices dibujados/frame | "
                         + "{} piezas, {} vértices ({} triángulos), VRAM LOD ~{} MB | mallas armadas {} ({} ms prom) "
-                        + "| ocultas por relieve {} ({} ms) | planes {} (máx {} ms) | cache RAM {} MB | luz cielo #{} | heap {} / {} MB",
+                        + "| ocultas por relieve {} ({} ms) | planes {} (máx {} ms) | cache RAM {} MB | secciones cliente {} ({} columnas parciales; {}) | luz cielo #{} | heap {} / {} MB",
                 mc.getFps(), String.format("%.2f", nanosDibujo / 1e6 / Math.max(1, framesDesdeEstadistica)),
                 llamadasUltimoFrame, verticesUltimoFrame, piezas, vertices, vertices / 2, bytesVram >> 20, mallas,
                 mallas == 0 ? 0 : String.format("%.1f", nanos / 1e6 / mallas),
                 piezasOcultas, String.format("%.1f", nanosOclusion / 1e6),
                 planesDesdeEstadistica, String.format("%.1f", nanosPlanMaximo / 1e6),
                 generador.store() == null ? 0 : generador.store().bytesEnCache() >> 20,
+                seccionesConBloques(mc), ClienteVertical.columnasParciales(),
+                com.example.minecraftlodmod.cubico.SincroVertical.ESTADISTICAS.resumenYReiniciar(),
                 String.format("%06X", colorLuzCielo(mc)), (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20);
         ultimaEstadisticaNanos = ahora;
         framesDesdeEstadistica = 0;
@@ -303,6 +307,10 @@ public final class RenderLod {
     /** Auto-ajuste según el cuello de botella (detalle, radio, agrupado de caras, oclusión). */
     private final BalanceCpuGpu balance;
     private int versionBalancePlan = -1;
+    /** Versión de los rangos de la sincronización vertical con que se armó el plan. */
+    private int versionVerticalPlan = -1;
+    /** Al subir o bajar llegan cientos de rangos en pocos cuadros: como mucho un plan por esto cada medio segundo. */
+    static final long REPLANIFICAR_VERTICAL_NANOS = 500_000_000L;
     /**
      * Un hilo con cola de PRIORIDAD por distancia a la cámara: las celdas se
      * arman del centro (el jugador) hacia afuera, aunque una lejana se haya
@@ -428,6 +436,8 @@ public final class RenderLod {
         long aparicionNanos;
         /** Malla nueva que espera, sin dibujarse, a cruzarse con las salientes que tapa. */
         boolean esperando;
+        /** Rangos verticales de sus columnas con que se armó (sincronización vertical); 0 = ninguno. */
+        long firmaVertical;
     }
 
     /**
@@ -697,7 +707,8 @@ public final class RenderLod {
         if (chunkX == chunkPlanX && chunkZ == chunkPlanZ && Math.abs(fovGrados - fovPlan) < 1 && !giro
                 && alturaDibujo == alturaPlan
                 && Math.abs(camara.y - yPlan) < REPLANIFICAR_ALTURA && ahora - ultimoPlanNanos < REPLANIFICAR_NANOS
-                && balance.version() == versionBalancePlan) {
+                && balance.version() == versionBalancePlan
+                && (ClienteVertical.version() == versionVerticalPlan || ahora - ultimoPlanNanos < REPLANIFICAR_VERTICAL_NANOS)) {
             return;
         }
         versionBalancePlan = balance.version();
@@ -748,6 +759,7 @@ public final class RenderLod {
         // Chunks que vanilla YA tiene cargados dentro de su distancia: solo esos se le
         // dejan; el resto lo sigue dibujando el LOD hasta que llegue (sin huecos).
         Set<Long> deVanilla = new HashSet<>();
+        Map<Long, RangoSecciones> parciales = new HashMap<>();
         Set<Long> consultados = new HashSet<>();
         long vanilla2 = (long) distanciaVanilla * distanciaVanilla;
         for (int dx = -distanciaVanilla; dx <= distanciaVanilla; dx++) {
@@ -756,13 +768,22 @@ public final class RenderLod {
                     long claveChunk = PlanCeldas.claveChunk(chunkX + dx, chunkZ + dz);
                     consultados.add(claveChunk);
                     if (vanillaLoDibujo(mc, chunkX + dx, chunkZ + dz)) {
-                        deVanilla.add(claveChunk);
+                        // Con la sincronización vertical, vanilla tiene solo parte de la columna:
+                        // el LOD dibuja el resto (LOD vertical, ver cubico/ClienteVertical).
+                        RangoSecciones parcial = ClienteVertical.rango(chunkX + dx, chunkZ + dz);
+                        if (parcial == null) {
+                            deVanilla.add(claveChunk);
+                        } else {
+                            parciales.put(claveChunk, parcial);
+                        }
                     }
                 }
             }
         }
         cargadoDesde.keySet().retainAll(consultados);
         Set<Long> cubiertos = Set.copyOf(deVanilla);
+        Map<Long, RangoSecciones> verticales = Map.copyOf(parciales);
+        versionVerticalPlan = ClienteVertical.version();
         // Con zoom, el detalle extra solo para lo que entra en el cono de la vista (+ margen).
         double aspecto = (double) mc.getWindow().getWidth() / Math.max(1, mc.getWindow().getHeight());
         double mediaApertura = Math.atan(Math.tan(Math.toRadians(fovGrados) / 2) * aspecto) + MARGEN_ZOOM;
@@ -803,8 +824,10 @@ public final class RenderLod {
             }
             // Una malla de otro tipo (terminó de armarse con el modo anterior después de
             // cambiar shaders o texturas) no se dibuja en ninguna pasada: se rearma.
+            long firma = celda.esGrande() ? 0 : firmaVertical(celda, verticales);
             boolean cambio = !celda.equals(estado.construidaCon)
-                    || (estado.tieneMalla && estado.tipo != tipoEsperado);
+                    || (estado.tieneMalla && estado.tipo != tipoEsperado)
+                    || firma != estado.firmaVertical;
             boolean incompleta = estado.construidaCon != null
                     && estado.chunksConDatos < chunksDibujables(celda)
                     && ahora - estado.construidaNanos > RECONSTRUIR_INCOMPLETA_NANOS;
@@ -814,10 +837,11 @@ public final class RenderLod {
                     celda.origenZ() + mitad - camara.z) > distanciaUnBuffer;
             if (!estado.enConstruccion && (cambio || incompleta) && encoladas < ENCOLADAS_POR_PLAN) {
                 estado.enConstruccion = true;
+                estado.firmaVertical = firma;
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(prioridad(celda, camara, miraX, miraZ), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                cubiertos, texturas, oclusion, unBuffer, bloque)));
+                                cubiertos, verticales, texturas, oclusion, unBuffer, bloque)));
             }
         }
         boolean fundir = ConfigLod.CLIENTE.fundidoNiveles.get();
@@ -838,7 +862,7 @@ public final class RenderLod {
 
     /** Hilo de mallas: lee los nodos del nivel elegido y arma los vértices de la celda. */
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
-                       int minSeccion, int maxSeccion, Set<Long> deVanilla,
+                       int minSeccion, int maxSeccion, Set<Long> deVanilla, Map<Long, RangoSecciones> verticales,
                        GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer, boolean bloque) {
         long inicioArmado = System.nanoTime();
         try {
@@ -849,7 +873,7 @@ public final class RenderLod {
             geometria.usarOclusionAmbiental(oclusion);
             int conDatos = celda.esGrande()
                     ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion)
-                    : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion, deVanilla);
+                    : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion, deVanilla, verticales);
             if (geometria.vertices() == 0) {
                 listas.add(new MallaLista(clave, celda, null, null, null, conDatos, TipoMalla.PLANA));
                 return;
@@ -969,7 +993,7 @@ public final class RenderLod {
      */
     private static int armarCelda(GeometriaLod geometria, PlanCeldas.Celda celda, RegionFileStore store,
                                   byte dimension, int minSeccion, int maxSeccion,
-                                  Set<Long> deVanilla) {
+                                  Set<Long> deVanilla, Map<Long, RangoSecciones> verticales) {
         int nivel = celda.nivel();
         int lado = SectionExtractor.LADO >> nivel;
         int total = SectionExtractor.voxelesPorNodo(nivel);
@@ -996,25 +1020,40 @@ public final class RenderLod {
                 // LOD, deciden sus vóxeles (null = sin datos: el corte se ve, es real).
                 int omitidas = 0;
                 boolean[] lod = new boolean[4];
+                // Vecinos que vanilla tiene solo en parte (sincronización vertical): por sección.
+                RangoSecciones[] vecinoParcial = new RangoSecciones[4];
                 int[][] lados = {{-1, 0, GeometriaLod.OMITIR_X_NEG}, {1, 0, GeometriaLod.OMITIR_X_POS},
                         {0, -1, GeometriaLod.OMITIR_Z_NEG}, {0, 1, GeometriaLod.OMITIR_Z_POS}};
                 for (int l = 0; l < 4; l++) {
                     int vx = chunkX + lados[l][0], vz = chunkZ + lados[l][1];
-                    if (deVanilla.contains(PlanCeldas.claveChunk(vx, vz))) {
+                    long claveVecino = PlanCeldas.claveChunk(vx, vz);
+                    if (deVanilla.contains(claveVecino)) {
                         omitidas |= lados[l][2];
                     } else {
+                        vecinoParcial[l] = verticales.get(claveVecino);
                         lod[l] = tieneDatos(store, dimension, vx, vz);
                     }
                 }
+                // LOD vertical: de esta columna, vanilla dibuja este rango; el LOD, el resto.
+                RangoSecciones propio = verticales.get(PlanCeldas.claveChunk(chunkX, chunkZ));
                 if (!real) {
                     armarAproximado(geometria, store, dimension, nivel, chunkX, chunkZ, dx, dz,
                             minSeccion, maxSeccion, omitidas);
                     continue;
                 }
                 for (int sy = minSeccion; sy < maxSeccion; sy++) {
+                    if (propio != null && propio.contiene(sy)) {
+                        continue; // la dibuja vanilla
+                    }
                     SuperVoxel[] grid = leerNodo.apply(new PosSeccion(chunkX, sy, chunkZ));
                     if (grid == SIN_NODO) {
                         continue;
+                    }
+                    int omitidasSeccion = omitidas;
+                    for (int l = 0; l < 4; l++) {
+                        if (vecinoParcial[l] != null && vecinoParcial[l].contiene(sy)) {
+                            omitidasSeccion |= lados[l][2]; // a ese lado, a esa altura, dibuja vanilla
+                        }
                     }
                     GreedyMesher.Vecinos vecinos = GreedyMesher.Vecinos.deGrillas(lado,
                             lod[0] ? existente(leerNodo.apply(new PosSeccion(chunkX - 1, sy, chunkZ))) : null,
@@ -1024,7 +1063,7 @@ public final class RenderLod {
                             lod[2] ? existente(leerNodo.apply(new PosSeccion(chunkX, sy, chunkZ - 1))) : null,
                             lod[3] ? existente(leerNodo.apply(new PosSeccion(chunkX, sy, chunkZ + 1))) : null);
                     geometria.agregarSeccion(grid, lado, dx * 16f, sy * 16f, dz * 16f, 16f / lado,
-                            omitidas, vecinos);
+                            omitidasSeccion, vecinos);
                 }
             }
         }
@@ -1643,6 +1682,48 @@ public final class RenderLod {
 
     private static final SuperVoxel AIRE =
             new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+
+    /** Secciones con algún bloque que tiene el cliente en su distancia de render (medición de la sincronización vertical). */
+    private static int seccionesConBloques(Minecraft mc) {
+        if (mc.level == null || mc.player == null) {
+            return 0;
+        }
+        int distancia = mc.options.getEffectiveRenderDistance();
+        int cx = mc.player.chunkPosition().x, cz = mc.player.chunkPosition().z;
+        int total = 0;
+        for (int x = cx - distancia; x <= cx + distancia; x++) {
+            for (int z = cz - distancia; z <= cz + distancia; z++) {
+                net.minecraft.world.level.chunk.LevelChunk chunk = mc.level.getChunkSource().getChunk(x, z,
+                        net.minecraft.world.level.chunk.status.ChunkStatus.FULL, false);
+                if (chunk != null) {
+                    for (net.minecraft.world.level.chunk.LevelChunkSection s : chunk.getSections()) {
+                        if (!s.hasOnlyAir()) {
+                            total++;
+                        }
+                    }
+                }
+            }
+        }
+        return total;
+    }
+
+    /** Huella de los rangos verticales de las columnas de la celda (0 si vanilla no tiene ninguna en parte). */
+    private static long firmaVertical(PlanCeldas.Celda celda, Map<Long, RangoSecciones> verticales) {
+        if (verticales.isEmpty()) {
+            return 0;
+        }
+        long firma = 0;
+        for (int dx = 0; dx < PlanCeldas.LADO_CELDA; dx++) {
+            for (int dz = 0; dz < PlanCeldas.LADO_CELDA; dz++) {
+                RangoSecciones r = verticales.get(PlanCeldas.claveChunk(celda.celdaX() * PlanCeldas.LADO_CELDA + dx,
+                        celda.celdaZ() * PlanCeldas.LADO_CELDA + dz));
+                if (r != null) {
+                    firma = firma * 1_000_003L + r.empaquetado() * 31 + dx * PlanCeldas.LADO_CELDA + dz + 1;
+                }
+            }
+        }
+        return firma;
+    }
 
     private static int chunksDibujables(PlanCeldas.Celda celda) {
         if (celda.esGrande()) {

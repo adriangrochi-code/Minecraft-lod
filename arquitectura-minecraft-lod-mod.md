@@ -824,3 +824,32 @@ complementario durante 0,4 s; hasta 32 salientes a la vez. En el mismo hito,
 la aproximación cercana se arma en niveles 1 y 2 (`TerrenoAproximado`,
 claves de nivel 15) porque los vóxeles de 8 bloques de cerca eran lo que más
 se notaba.
+
+## 31. Cubic chunks por etapas: sincronización vertical + LOD vertical — 2026-10-01
+
+Pedido: ganar memoria y CPU con mundos gigantes (a futuro, alturas mucho
+mayores, hasta un mundo 1:1) sin reescribir todo, como experimento medible.
+
+**Por qué no cubic chunks completo de una:** carga por columnas (tickets,
+`ChunkMap`), etapas de generación, mapas de altura, luz del cielo, formato
+Anvil, red y cliente asumen columnas; también Sodium, Iris, VulkanMod y los
+mods de generación. Vanilla además limita la altura de una dimensión a 4064.
+
+**Etapa 1 — sincronización vertical (implementada en 0.26.0, `cubico/`):**
+idea de Vertigo (Builderb0y, MIT; solo Fabric), escrita de nuevo para
+NeoForge. El servidor genera y carga columnas enteras como siempre; a cada
+cliente le manda de cada columna solo las secciones a ±N secciones de él
+(mixins: `PlayerChunkSender`, `ClientboundLevelChunkPacketData`,
+`ChunkHolder#broadcast`) y, al moverse, paquetes propios de cargar y vaciar
+secciones sueltas (bloques + luz) y el rango de cada columna (`RangoSecciones`,
+histéresis de una sección). Opt-in desde el cliente (opción experimental) y
+permitido por el servidor. **LOD vertical:** el cliente guarda el rango de
+cada columna (`ClienteVertical`) y `RenderLod` deja de tratar esas columnas
+como "de vanilla": arma solo sus secciones fuera del rango, con caras
+laterales por sección según el rango del vecino. Las islas flotantes y el
+relieve fuera del rango se siguen viendo. Gana memoria, red y mallas del
+cliente; no CPU ni memoria del servidor.
+
+**Etapa 2 (pendiente):** no generar ni cargar en el servidor lo lejano en
+vertical (empezando por la generación); con formato de guardado propio para
+pasar de 4064 de alto.

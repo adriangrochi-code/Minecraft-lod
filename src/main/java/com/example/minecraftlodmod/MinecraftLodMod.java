@@ -52,6 +52,8 @@ public class MinecraftLodMod {
         NeoForge.EVENT_BUS.register(generador);
         NeoForge.EVENT_BUS.register(protocolo);
         modEventBus.addListener(protocolo::registrar);
+        modEventBus.addListener(com.example.minecraftlodmod.cubico.SincroVertical::registrar);
+        NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.cubico.SincroVertical.class);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
             PaletaTexturas paleta = new PaletaTexturas();
@@ -71,6 +73,11 @@ public class MinecraftLodMod {
             NeoForge.EVENT_BUS.register(monitor);
             modEventBus.addListener(monitor::registrarCapa);
             modEventBus.addListener(monitor::alRecargarConfig);
+            NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.cubico.ClienteVertical.class);
+            // Cambió la config del cliente (pantalla o archivo): la preferencia vertical al servidor.
+            modEventBus.addListener((net.neoforged.fml.event.config.ModConfigEvent.Reloading e) ->
+                    net.minecraft.client.Minecraft.getInstance().execute(
+                            com.example.minecraftlodmod.cubico.ClienteVertical::enviarPreferencia));
         }
     }
 }

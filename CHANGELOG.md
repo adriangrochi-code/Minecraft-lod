@@ -6,6 +6,24 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.0 — Sincronización vertical (etapa 1 de cubic chunks) y LOD vertical
+- **Nueva opción experimental "Sincronización vertical"** (pestaña
+  Experimental, apagada): el servidor te manda de cada columna solo las
+  secciones de 16 bloques cercanas en altura ("Distancia vertical", 8 por
+  defecto); las de más arriba y más abajo te llegan como aire. Al subir o
+  bajar se mandan las que entran y se vacían las que salen. Menos memoria,
+  red y armado de mallas en el cliente (también con Sodium, que recibe datos
+  normales). Idea tomada de Vertigo (Builderb0y, MIT), escrita de nuevo
+  para NeoForge.
+- **LOD vertical:** lo que no está en el rango lo dibuja el LOD, así las
+  islas flotantes, las montañas altas y lo de abajo siguen viéndose (con
+  Vertigo desaparecen).
+- Medido en Xvfb (distancia de render 6, distancia vertical 3): el cliente
+  pasó de 1468 secciones con bloques a 30 volando a y=200 y a 448 a y=80;
+  bajar de 200 a 80 movió 1407 secciones (1,2 MB).
+- Necesita el mod en el servidor; el servidor puede prohibirla
+  (`permitirSincroVertical`). El log muestra `secciones cliente`.
+
 ## 0.25.7 — Mallas en varios hilos
 - En el video de la 0.25.3 (GTX 1060) la cola de mallas por armar llegaba a
   ~960 mientras se volaba: un solo hilo las armaba todas y lo cercano

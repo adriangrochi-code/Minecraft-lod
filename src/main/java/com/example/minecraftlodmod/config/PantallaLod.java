@@ -149,6 +149,9 @@ public final class PantallaLod extends Screen {
         paginas.add(new Pagina(pestana("experimental"), List.of(
                 List.of(interruptor("hudRendimiento", Impacto.BAJO, c.hudRendimiento),
                         interruptor("logDepuracion", Impacto.BAJO, c.logDepuracion)),
+                List.of(interruptor("sincroVertical", Impacto.VARIABLE, c.sincroVertical),
+                        entero("distanciaVertical", Impacto.MEDIO, 2, 32, 1, c.distanciaVertical,
+                                v -> Component.literal(v + " (" + v * 16 + " bloques)"))),
                 List.of(new Ciclo<>(texto("escalado"), texto("escalado.tooltip"), Impacto.VARIABLE, () -> modos,
                                 () -> CompatibilidadEscalado.efectivo(c.escalado.get(), modos), c.escalado::set,
                                 v -> texto("escalado." + v.name().toLowerCase(Locale.ROOT))),

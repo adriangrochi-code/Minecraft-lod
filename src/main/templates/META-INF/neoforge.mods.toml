@@ -18,6 +18,11 @@ config = "minecraftlodmod.mixins.json"
 [[mixins]]
 config = "minecraftlodmod-vulkan.mixins.json"
 
+# Sincronización vertical (cubico/, etapa 1 de cubic chunks): solo actúan con la opción
+# experimental prendida en el cliente.
+[[mixins]]
+config = "minecraftlodmod-cubico.mixins.json"
+
 [[accessTransformers]]
 file = "META-INF/accesstransformer.cfg"
 

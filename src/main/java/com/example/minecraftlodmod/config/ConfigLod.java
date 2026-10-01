@@ -40,6 +40,8 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue lodActivo;
         public final ModConfigSpec.BooleanValue hudRendimiento;
         public final ModConfigSpec.BooleanValue logDepuracion;
+        public final ModConfigSpec.BooleanValue sincroVertical;
+        public final ModConfigSpec.IntValue distanciaVertical;
         public final ModConfigSpec.BooleanValue ocultarTapado;
         public final ModConfigSpec.EnumValue<ModoEscalado> escalado;
         public final ModConfigSpec.IntValue fsrEscalaPorcentaje;
@@ -159,6 +161,13 @@ public final class ConfigLod {
             logDepuracion = b.comment("Escribir logs/minecraftlodmod-depuracion.log: una línea por segundo con el",
                             "rendimiento, la posición y lo que hace el mod, más eventos (tirones, cambios de config).")
                     .define("logDepuracion", false);
+            sincroVertical = b.comment("EXPERIMENTAL (etapa 1 de cubic chunks): el servidor manda de cada columna solo las",
+                            "secciones cercanas en altura; lo de más arriba y más abajo lo dibuja el LOD. Menos memoria, red y",
+                            "mallas en el cliente; sirve sobre todo en mundos muy altos. Necesita el mod en el servidor.")
+                    .define("sincroVertical", false);
+            distanciaVertical = b.comment("Sincronización vertical: secciones (de 16 bloques) arriba y abajo del jugador que",
+                            "se mandan con sus bloques reales.")
+                    .defineInRange("distanciaVertical", 8, 2, 32);
             b.pop();
 
             b.comment("Valores usados solo con preset = PERSONALIZADO (o guardados por la calibración).")
@@ -193,6 +202,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue radioServidoMaximo;
         public final ModConfigSpec.IntValue nodosPorSegundo;
         public final ModConfigSpec.IntValue rafagaNodos;
+        public final ModConfigSpec.BooleanValue permitirSincroVertical;
 
         Servidor(ModConfigSpec.Builder b) {
             b.push("generacion");
@@ -210,6 +220,9 @@ public final class ConfigLod {
                     .defineInRange("nodosPorSegundo", 1024, 16, 65536);
             rafagaNodos = b.comment("Ráfaga máxima de nodos por jugador (pedidos acumulados).")
                     .defineInRange("rafagaNodos", 2048, 64, 1 << 20);
+            permitirSincroVertical = b.comment("Permitir que los clientes con el mod pidan la sincronización vertical",
+                            "(solo las secciones cercanas en altura; opción experimental del cliente).")
+                    .define("permitirSincroVertical", true);
             b.pop();
         }
     }
