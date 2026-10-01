@@ -67,11 +67,24 @@ public final class RegionFileStore implements AutoCloseable {
     /** Carpeta de cada dimensión, calculada una vez. */
     private final Path[] carpetas = new Path[256];
 
-    private record Indice(RegionHeader header, long generacion) {
+    /**
+     * @param longitud       bytes válidos del archivo de índice (después puede haber un bloque
+     *                       de diario cortado, que la próxima escritura recorta)
+     * @param entradasDiario entradas en el diario desde la última foto completa
+     */
+    private record Indice(RegionHeader header, long generacion, long longitud, int entradasDiario) {
     }
 
     /** Marca en {@link #headers}: la región no tiene índice válido en disco. */
-    private static final Indice SIN_INDICE = new Indice(null, -1);
+    private static final Indice SIN_INDICE = new Indice(null, -1, 0, 0);
+
+    /**
+     * El diario del índice se vuelve a juntar en una foto completa cuando tiene más
+     * entradas que la mitad de los nodos, o sea más que la foto (y al menos estas;
+     * los nodos ya cuentan las entradas del diario): reescribir el índice entero queda
+     * amortizado en vez de pagarse en cada lote.
+     */
+    static final int DIARIO_MINIMO = 4096;
 
     /** No compactar archivos chicos: el espacio muerto no justifica reescribirlos. */
     static final long COMPACTAR_DESDE_BYTES = 1L << 20;
@@ -381,22 +394,38 @@ public final class RegionFileStore implements AutoCloseable {
                     cerrarCanal(datos); // se trunca: un canal viejo leería otra cosa (y en Windows bloquea)
                 }
                 long tamanoArchivo;
+                int n = nuevos.size();
+                long[] claves = new long[n], offsets = new long[n], tamanos = new long[n];
                 // Sin índice válido (región nueva, o de otro algoritmo): empezar el archivo de cero.
                 StandardOpenOption modo = existente != null ? StandardOpenOption.APPEND : StandardOpenOption.TRUNCATE_EXISTING;
                 try (FileChannel canal = FileChannel.open(datos, StandardOpenOption.CREATE,
                         StandardOpenOption.WRITE, modo)) {
                     long offset = canal.size();
+                    int i = 0;
                     for (Map.Entry<Long, byte[]> nodo : nuevos.entrySet()) {
                         header.registrarNodo(nodo.getKey(), offset, nodo.getValue().length);
+                        claves[i] = nodo.getKey();
+                        offsets[i] = offset;
+                        tamanos[i] = nodo.getValue().length;
+                        i++;
                         escribirCompleto(canal, ByteBuffer.wrap(nodo.getValue()));
                         offset += nodo.getValue().length;
                     }
+                    n = i;
                     // Los datos tienen que estar en disco ANTES que el índice que los referencia.
                     canal.force(false);
                     tamanoArchivo = offset;
                 }
-                escribirIndice(region, header, generacion);
-                headers.put(region, new Indice(header, generacion));
+                Indice escrito;
+                if (existente == null || existente.entradasDiario() + n > Math.max(DIARIO_MINIMO, header.cantidadNodos() / 2)) {
+                    escrito = new Indice(header, generacion, escribirIndice(region, header, generacion), 0);
+                } else {
+                    long longitud = agregarAlDiario(region, existente.longitud(), claves, offsets, tamanos, n);
+                    escrito = longitud < 0
+                            ? new Indice(header, generacion, escribirIndice(region, header, generacion), 0)
+                            : new Indice(header, generacion, longitud, existente.entradasDiario() + n);
+                }
+                headers.put(region, escrito);
 
                 long vivos = header.bytesVivos();
                 if (tamanoArchivo >= COMPACTAR_DESDE_BYTES && vivos * 2 < tamanoArchivo) {
@@ -450,13 +479,17 @@ public final class RegionFileStore implements AutoCloseable {
             }
             canal.force(false);
         }
-        escribirIndice(region, compacto, nueva);
-        headers.put(region, new Indice(compacto, nueva));
+        headers.put(region, new Indice(compacto, nueva, escribirIndice(region, compacto, nueva), 0));
         cerrarCanal(datosDe(region, generacion));
         Files.deleteIfExists(datosDe(region, generacion));
     }
 
-    private void escribirIndice(ClaveRegion region, RegionHeader header, long generacion) throws IOException {
+    /**
+     * Foto completa del índice (archivo nuevo + move atómico), sin diario.
+     *
+     * @return bytes del archivo
+     */
+    private long escribirIndice(ClaveRegion region, RegionHeader header, long generacion) throws IOException {
         Path indice = archivoDe(region);
         Path temporal = indice.resolveSibling(indice.getFileName() + ".tmp");
         try (FileChannel canal = FileChannel.open(temporal, StandardOpenOption.CREATE,
@@ -466,6 +499,34 @@ public final class RegionFileStore implements AutoCloseable {
             canal.force(false);
         }
         moverAtomico(temporal, indice);
+        return 8 + header.bytesSerializados();
+    }
+
+    /**
+     * Agrega las entradas nuevas al final del índice como un bloque de diario, en vez de
+     * reescribirlo entero. Lo que haya después de {@code longitudValida} (un bloque
+     * cortado por un corte de luz) se recorta antes.
+     *
+     * @return la longitud nueva del índice, o -1 si el archivo no está (hay que escribir la foto)
+     */
+    private long agregarAlDiario(ClaveRegion region, long longitudValida, long[] claves, long[] offsets,
+                                 long[] tamanos, int n) throws IOException {
+        Path indice = archivoDe(region);
+        if (!Files.exists(indice)) {
+            return -1;
+        }
+        try (FileChannel canal = FileChannel.open(indice, StandardOpenOption.WRITE)) {
+            if (canal.size() < longitudValida) {
+                return -1; // más corto de lo que se leyó: alguien lo tocó; foto nueva
+            }
+            if (canal.size() > longitudValida) {
+                canal.truncate(longitudValida);
+            }
+            canal.position(longitudValida);
+            long escritos = RegionHeader.escribirDiario(canal, claves, offsets, tamanos, n);
+            canal.force(false);
+            return longitudValida + escritos;
+        }
     }
 
     private byte[] buscarEnMemoria(ClaveRegion region, long claveNodo) {
@@ -506,7 +567,9 @@ public final class RegionFileStore implements AutoCloseable {
             if (header.hashFuente != hashFuente || !Files.exists(datosDe(region, generacion))) {
                 return null; // generado con otro algoritmo/fuente, o datos perdidos: se regenera
             }
-            return new Indice(header, generacion);
+            long foto = 8 + header.bytesSerializados();
+            RegionHeader.DiarioLeido diario = header.leerDiario(entrada);
+            return new Indice(header, generacion, foto + diario.bytes(), diario.entradas());
         } catch (IOException | RuntimeException e) {
             // Índice corrupto o de otra versión de formato: se trata como ausente
             // y se reescribe en el próximo guardado, en vez de romper la carga.

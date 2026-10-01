@@ -40,6 +40,8 @@ public final class RegionHeader {
      * arreglos (235 ms con el candado de la región tomado, en el perfil).
      */
     private final Long2LongOpenHashMap tablaOffsets;
+    /** Suma de los tamaños registrados, llevada al día en cada registro (antes se recorría la tabla). */
+    private long bytesVivos;
 
     static final int BITS_TAMANO = 24;
     static final long MAX_TAMANO = (1L << BITS_TAMANO) - 1;
@@ -68,10 +70,12 @@ public final class RegionHeader {
         this.hashFuente = origen.hashFuente;
         this.tablaOffsets = new Long2LongOpenHashMap(origen.tablaOffsets);
         this.tablaOffsets.defaultReturnValue(-1);
+        this.bytesVivos = origen.bytesVivos;
     }
 
     public void registrarNodo(long claveNodo, long offset, long tamano) {
-        tablaOffsets.put(claveNodo, empaquetar(offset, tamano));
+        long anterior = tablaOffsets.put(claveNodo, empaquetar(offset, tamano));
+        bytesVivos += tamano - (anterior < 0 ? 0 : anterior & MAX_TAMANO);
     }
 
     /** @return {offset, tamaño} o null si el nodo no está cacheado en esta región. */
@@ -178,7 +182,7 @@ public final class RegionHeader {
             long clave = entrada.readLong();
             long offset = entrada.readLong();
             long tamano = entrada.readLong();
-            header.tablaOffsets.put(clave, empaquetar(offset, tamano));
+            header.registrarNodo(clave, offset, tamano);
         }
         return header;
     }
@@ -212,7 +216,7 @@ public final class RegionHeader {
             long clave = buf.getLong();
             long offset = buf.getLong();
             long tamano = buf.getLong();
-            header.tablaOffsets.put(clave, empaquetar(offset, tamano));
+            header.registrarNodo(clave, offset, tamano);
         }
         return header;
     }
@@ -224,11 +228,101 @@ public final class RegionHeader {
 
     /** Suma de los tamaños de todos los nodos registrados (los bytes vivos del archivo). */
     public long bytesVivos() {
-        long total = 0;
-        for (long ubicacion : tablaOffsets.values()) {
-            total += ubicacion & MAX_TAMANO;
+        return bytesVivos;
+    }
+
+    /** Bytes que ocupa este header serializado ({@link #serializarHeader()} / {@link #escribirEn}). */
+    public long bytesSerializados() {
+        return 4 + 1 + 4 + 4 + 1 + 8 + 4 + (long) tablaOffsets.size() * 24;
+    }
+
+    // ------------------------------------------------------------------ diario
+
+    /*
+     * Diario del índice (append-only): después del header, cero o más bloques
+     *
+     *   cantidad: 4 bytes | cantidad × (clave: 8 | offset: 8 | tamaño: 8) | crc32: 4 bytes
+     *
+     * con el CRC32 de las entradas. Cada lote de escritura agrega un bloque en
+     * vez de reescribir el header entero (que con regiones grandes era 1,5 MB
+     * por región y por lote). Un bloque cortado por un corte de luz, o con el
+     * CRC mal, termina el diario: lo anterior vale, eso y lo que siga se
+     * ignora (y quien escribe después lo recorta). Un header sin bloques es el
+     * formato de antes: se lee igual.
+     */
+
+    /** Entradas por bloque: bloques chicos (≤ 48 KB) aunque un lote traiga miles de nodos. */
+    static final int ENTRADAS_POR_BLOQUE = 2048;
+    private static final int MAXIMO_POR_BLOQUE_LEIDO = 1 << 20;
+
+    /**
+     * Escribe las entradas {@code [0, n)} como bloques de diario.
+     *
+     * @return bytes escritos
+     */
+    public static long escribirDiario(java.nio.channels.WritableByteChannel canal, long[] claves, long[] offsets,
+                                      long[] tamanos, int n) throws java.io.IOException {
+        long escritos = 0;
+        for (int desde = 0; desde < n; desde += ENTRADAS_POR_BLOQUE) {
+            int cuantas = Math.min(ENTRADAS_POR_BLOQUE, n - desde);
+            ByteBuffer buf = ByteBuffer.allocate(4 + cuantas * 24 + 4).order(ByteOrder.BIG_ENDIAN);
+            buf.putInt(cuantas);
+            for (int i = desde; i < desde + cuantas; i++) {
+                empaquetar(offsets[i], tamanos[i]); // valida el rango antes de escribir nada
+                buf.putLong(claves[i]).putLong(offsets[i]).putLong(tamanos[i]);
+            }
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(buf.array(), 4, cuantas * 24);
+            buf.putInt((int) crc.getValue());
+            escritos += buf.capacity();
+            vaciar(buf, canal);
         }
-        return total;
+        return escritos;
+    }
+
+    /** Resultado de leer un diario: bytes válidos (sin el resto cortado) y entradas aplicadas. */
+    public record DiarioLeido(long bytes, int entradas) {
+    }
+
+    /**
+     * Aplica a este header los bloques de diario que siguen en {@code entrada}, hasta el
+     * final o hasta el primer bloque incompleto o con el CRC mal.
+     */
+    public DiarioLeido leerDiario(java.io.InputStream entrada) throws java.io.IOException {
+        long bytes = 0;
+        int entradas = 0;
+        byte[] cabecera = new byte[4];
+        while (true) {
+            if (entrada.readNBytes(cabecera, 0, 4) < 4) {
+                break;
+            }
+            int cuantas = ByteBuffer.wrap(cabecera).getInt();
+            if (cuantas <= 0 || cuantas > MAXIMO_POR_BLOQUE_LEIDO) {
+                break;
+            }
+            byte[] cuerpo = new byte[cuantas * 24 + 4];
+            if (entrada.readNBytes(cuerpo, 0, cuerpo.length) < cuerpo.length) {
+                break;
+            }
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(cuerpo, 0, cuantas * 24);
+            ByteBuffer b = ByteBuffer.wrap(cuerpo).order(ByteOrder.BIG_ENDIAN);
+            if (b.getInt(cuantas * 24) != (int) crc.getValue()) {
+                break;
+            }
+            for (int i = 0; i < cuantas; i++) {
+                long offset = b.getLong(i * 24 + 8), tamano = b.getLong(i * 24 + 16);
+                if (offset < 0 || offset > MAX_OFFSET || tamano < 0 || tamano > MAX_TAMANO) {
+                    return new DiarioLeido(bytes, entradas); // CRC bien pero datos imposibles: el bloque entero no
+                }
+            }
+            for (int i = 0; i < cuantas; i++) {
+                registrarNodo(b.getLong(i * 24), b.getLong(i * 24 + 8), b.getLong(i * 24 + 16));
+            }
+            bytes += 4 + cuerpo.length;
+            entradas += cuantas;
+        }
+        return new DiarioLeido(bytes, entradas);
     }
 
     /** Claves de todos los nodos registrados (copia, para iterar sin exponer la tabla interna). */

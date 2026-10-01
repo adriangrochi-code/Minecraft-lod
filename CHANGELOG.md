@@ -6,6 +6,20 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.25.5 — Índice de regiones append-only
+- Cada lote de escritura (cada 3 s) reescribía entero el índice de cada
+  región tocada, y en este mundo hay índices de hasta 1,5 MB: mucho disco
+  con la aproximación tocando muchas regiones (se nota en discos mecánicos).
+  Ahora cada lote agrega al final solo sus entradas nuevas (un bloque de
+  diario con CRC). Cuando el diario crece más que el índice, se reescribe
+  entero una vez: el costo queda repartido.
+- Un corte de luz a mitad de un bloque no rompe nada: el bloque cortado o
+  dañado se ignora (esos nodos se regeneran) y se recorta en la próxima
+  escritura.
+- Los mundos existentes cargan igual (un índice sin diario es el formato
+  anterior). Si volvés a una versión anterior, esa no lee el diario: los
+  nodos de los últimos lotes se regeneran, sin romper nada.
+
 ## 0.25.4 — Menos tirones: disco, recolector de basura y prioridades
 Revisión con el perfilador (JFR) buscando tirones y caídas de rendimiento.
 - **El juego esperaba al disco:** el hilo que guarda el LOD tenía tomado el

@@ -67,6 +67,7 @@ magic: 4 bytes | version: 1 byte | region_x,z: 4 bytes c/u | dimension_id: 1 byt
 ```
 
 - RLE por nodo (aprovecha corridas largas de terreno natural); Deflate/GZIP solo a nivel de archivo completo, no por nodo, para no penalizar la lectura parcial.
+- **Índice en disco append-only (0.25.5):** `r.X.Z.idx` = generación (8 bytes) + el header de arriba como foto completa + bloques de diario `cantidad: 4 | cantidad × (clave 8 | offset 8 | tamaño 8) | crc32: 4`. Cada lote de escritura agrega un bloque en vez de reescribir el índice (antes, 1,5 MB por región y por lote en regiones grandes); cuando el diario supera la mitad de los nodos se reescribe la foto (move atómico), así el costo queda amortizado. Un bloque cortado o con CRC mal termina el diario y se recorta en la próxima escritura. Un índice sin bloques es el formato anterior.
 - Mismo serializador para disco y red — en red se omite el header repetido (ambas partes ya conocen la región/nodo pedido).
 - Cache en RAM como LRU chico (lo visible + margen); disco (SSD) como fuente de verdad de todo lo demás, con lectura asíncrona y escritura diferida (write-behind, batch cada 2-5s).
 
