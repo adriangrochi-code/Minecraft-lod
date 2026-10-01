@@ -8,7 +8,7 @@ Cada hito cierra con build + tests completos + commit (checklist de
 | H0 | Verificar datos/licencias; sección 33 de la arquitectura con estas decisiones | — | — |
 | H1 | Preparador de datos → `.lodt`, lector con caché, recorte de prueba en `src/test/resources` | tests de lectura/índice/caché | MB en disco, µs por consulta |
 | H2 | `Proyeccion` (las dos) + `FuenteTierra` (bicúbica) + `AlturaTierra` (sin detalle) | ida y vuelta lat/lon↔bloque; puntos conocidos | µs por columna (presupuesto < 0,5 µs) |
-| H3 | `DensidadTierra` + `noise_settings` + `dimension_type` + `world_preset` (piedra y agua, sin biomas) + fluido global agua (sin océanos de lava) + lecho de roca macizo hasta el fondo de la fosa | servidor dedicado: crear mundo, forceload | ms/chunk, **elevación en puntos conocidos** |
+| H3 | `SuperficieTierra` + `noise_settings` + `dimension_type` + `world_preset` (piedra y agua, sin biomas) + fluido global agua (sin océanos de lava) + lecho de roca macizo hasta el fondo de la fosa | servidor dedicado: crear mundo, forceload | ms/chunk, **elevación en puntos conocidos** |
 | H4 | `FuenteBiomasTierra` + `biomas.json` + reglas de superficie (pizarra profunda por profundidad) | biomas en puntos conocidos (Sahara, Amazonia, Groenlandia) | — |
 | H5 | Atajo `FuenteAltura` en `GeneradorAproximado` + niveles altos del planeta al crear el mundo + radio de curvatura (radio útil según horizonte) | test del atajo; horizonte en Xvfb | tiempo del horizonte completo |
 | H6 | Opciones de `cubico/` por defecto en este mundo; franja exacta | — | ms/chunk y heap con/sin |
@@ -23,10 +23,37 @@ Cada hito cierra con build + tests completos + commit (checklist de
 |---|---|---|---|
 | Everest | 27,99 N, 86,93 E | 8 849 m (grilla 30″: 8 354) | ~1 169 (grilla: 1 107) |
 | Mar Muerto (orilla) | 31,5 N, 35,5 E | -430 m | ~9 |
-| Fosa de las Marianas (mínimo de la grilla 30″) | 11,354 N, 142,429 E | -10 571 m (grilla) | -1 259 (fondo, sobre el lecho de roca; min_y -1 264) |
+| Fosa de las Marianas, abismo Sirena (mínimo de la grilla 30″) | 11,971 N, 144,371 E | -10 775 m (grilla) | -1 284 (fondo, sobre el lecho de roca; min_y -1 296) |
+| Fosa de las Marianas, Challenger Deep | 11,354 N, 142,429 E | -10 571 m (grilla) | -1 259 |
 | Aconcagua | 32,65 S, 70,01 O | 6 961 m | ~933 |
 | Nivel del mar (cualquier costa) | — | 0 m | 63 |
 
 (Con 30″ el dato promedia ~1 km: los picos salen más bajos que la cifra
 real. La prueba compara contra el valor de la grilla en ese punto, no contra
 la cifra famosa.)
+
+## Resultados
+
+- **H0–H2 (2026-10-01):** ver `02-datos.md` (verificación y medidas) y la
+  sección 33 de la arquitectura. 0,14 µs por columna (bicúbica).
+- **H3 (2026-10-01):** servidor dedicado con `level-type=minecraftlodmod:tierra_real_8`
+  y el `.lodt` global de 30″. `/tierra medir <lat> <lon>` (por RCON) en los
+  puntos conocidos, **todos iguales a lo esperado**:
+
+  | Lugar | esperada | generada |
+  |---|---|---|
+  | Marianas, abismo Sirena | -1284 | -1284, **lecho de roca, y debajo lecho de roca** |
+  | Marianas, Challenger Deep | -1259 | -1259 |
+  | Everest | 1106 | 1106 |
+  | Mar Muerto | 9 | 9 (inundado hasta y 62, ver abajo) |
+  | Aconcagua | 876 | 876 |
+  | Atlántico 0°, 30° O | -415 | -415 |
+  | Madrid | 122 | 122 |
+
+  Ruido: **44 ms por chunk** (1 433 chunks, Alpes y Atlántico; columnas de
+  2 672 de alto, sin franja). Heap tras GC con 450 chunks forzados: 884 MB.
+  - **Hallazgo:** las depresiones bajo el nivel del mar sin salida al mar
+    (Mar Muerto, Caspio, valle de la Muerte, Qattara) se llenan de agua
+    hasta y 62: el fluido global no sabe qué es océano. Arreglo en H8 (ríos
+    y lagos): una máscara de océano conectado en el `.lodt` y nivel de
+    agua local por columna en el selector de fluido.

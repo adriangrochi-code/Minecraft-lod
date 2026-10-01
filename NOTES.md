@@ -261,7 +261,9 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   también ignora `src/main/java/.../vulkanmod/render/chunk/build/` (y
   cualquier paquete `build`). Esa carpeta nunca se subió: `compileJava` falla
   con "package ...vulkanmod.render.chunk.build does not exist" en un clon
-  limpio. Arreglo: cambiar la línea a `/build/` y subir la carpeta. La rama
+  limpio. La rama `claude/tierra-real` ya cambió la línea a `/build/`
+  (pedido del usuario); **falta subir la carpeta** desde la máquina de la
+  sesión del LOD. La rama
   de Tierra real corrió sus tests con JUnit aparte (`tierra/` no depende de
   Minecraft) hasta que esto se arregle.
 
@@ -270,6 +272,18 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   **Resuelto (2026-09-29):** con la red ampliada, `./gradlew build` completo
   (incluye `test`) pasa contra NeoForge 21.1.252 (última 21.1.x publicada en
   maven.neoforged.net a esa fecha).
+
+## Tierra real (rama `claude/tierra-real`)
+
+- Diseño y resultados: `docs/tierra-real/` (hitos y medidas en `06-hitos.md`),
+  sección 33 de la arquitectura. Hechos H0–H3.
+- Datos: `.minecraft/minecraftlodmod/tierra/tierra.lodt`, preparado con
+  `java -cp <clases> com.example.minecraftlodmod.tierra.PreparadorDatos
+  ETOPO_2022_v1_30s_N90W180_surface.tif tierra.lodt` (657 MB, ~5 min). Sin
+  el archivo, el mundo sale como fondo de mar plano y el log lo dice.
+- Comandos de prueba: `/tierra ir <lat> <lon>`, `/tierra medir <lat> <lon>`.
+- Pendiente de Pista B: ver el mundo en el cliente (pantalla de crear mundo
+  con los 4 tipos, horizonte del LOD sobre Tierra real).
 
 ## Mejoras notadas, no aplicadas todavía
 

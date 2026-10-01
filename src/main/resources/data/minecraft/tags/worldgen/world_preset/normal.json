@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "minecraftlodmod:tierra_real_8",
+    "minecraftlodmod:tierra_real_6",
+    "minecraftlodmod:tierra_plana_8",
+    "minecraftlodmod:tierra_plana_6"
+  ]
+}

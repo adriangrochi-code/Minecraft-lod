@@ -179,5 +179,9 @@
   "minecraftlodmod.configuration.pixelesMaximos": "Max pixels per voxel",
   "minecraftlodmod.configuration.pixelesMaximos.tooltip": "LOD detail is chosen by how much of the screen each voxel covers, not by distance: with this cap no voxel looks bigger than this, however far or large it is (a 1 km voxel at 100 km looks as small as an 8-block one at 800). Neither the preset nor auto-tuning exceeds it: if performance falls short, they trim the radius. Lower = sharper and more expensive.",
   "minecraftlodmod.configuration.escaladoSoloSiGana": "Upscaling only if it gains FPS",
-  "minecraftlodmod.configuration.escaladoSoloSiGana.tooltip": "Every 2 minutes it measures a few seconds with and without upscaling and keeps it on only if frames are faster. Lowering the resolution only helps when the GPU is busy drawing pixels; when the CPU is the limit (most common in Minecraft), upscaling costs and turns itself off. The result goes to the log."
+  "minecraftlodmod.configuration.escaladoSoloSiGana.tooltip": "Every 2 minutes it measures a few seconds with and without upscaling and keeps it on only if frames are faster. Lowering the resolution only helps when the GPU is busy drawing pixels; when the CPU is the limit (most common in Minecraft), upscaling costs and turns itself off. The result goes to the log.",
+  "generator.minecraftlodmod.tierra_real_8": "Real Earth 1:8",
+  "generator.minecraftlodmod.tierra_plana_8": "Flat Earth 1:8",
+  "generator.minecraftlodmod.tierra_real_6": "Real Earth 1:6",
+  "generator.minecraftlodmod.tierra_plana_6": "Flat Earth 1:6"
 }

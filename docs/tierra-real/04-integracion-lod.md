@@ -4,7 +4,7 @@
 
 1. **Gratis, por diseño (`03-generador.md`):** `GeneradorAproximado` ya arma
    el horizonte evaluando `finalDensity` e `initialDensityWithoutJaggedness`
-   del generador del mundo. Con `DensidadTierra` dentro del router, el LOD
+   del generador del mundo. Con `SuperficieTierra` dentro del router, el LOD
    aproximado muestra la Tierra real sin cambiar una línea.
 2. **Atajo (lo que hace la diferencia):** interfaz `FuenteAltura` en
    `generation/` (`int altura(x, z)`, `Holder<Biome> bioma(x, z)`,

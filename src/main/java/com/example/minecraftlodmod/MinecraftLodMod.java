@@ -58,6 +58,8 @@ public class MinecraftLodMod {
         NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.cubico.GeneracionVertical.class);
         NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.cubico.SeccionesCompartidas.class);
         NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.cubico.SeccionesComprimidas.class);
+        com.example.minecraftlodmod.tierra.TierraReal.registrar(modEventBus);
+        NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.tierra.TierraReal.class);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
             PaletaTexturas paleta = new PaletaTexturas();

@@ -15,13 +15,16 @@ package com.example.minecraftlodmod.tierra;
  * usuario): el piso de la dimensión ({@link #minYDimension}) es el múltiplo de
  * 16 en o bajo el bloque más hondo de los datos ({@link #yFondoFosa}), y el
  * lecho de roca es macizo desde ese piso hasta el fondo de la fosa
- * ({@link #esLechoDeRoca}), sin el degradé de vanilla. Con ETOPO 30″ la fosa
- * de las Marianas es el mínimo de la grilla (-10 571 m en 11,354° N,
- * 142,429° E).
+ * ({@link #esLechoDeRoca}), sin el degradé de vanilla. Con ETOPO 30″ el mínimo de
+ * la grilla está en la fosa de las Marianas (abismo Sirena, -10 775 m en
+ * 11,971° N, 144,371° E; el Challenger Deep queda más arriba porque la grilla
+ * promedia ~1 km).
  */
 public final class AlturaTierra {
 
     public static final int NIVEL_MAR = 63;
+    /** Ancho de celda del ruido ({@code size_horizontal} 1 = 4 bloques) de los {@code noise_settings}. */
+    public static final int ANCHO_CELDA = 4;
 
     private final FuenteTierra fuente;
     private final Proyeccion proyeccion;
@@ -55,9 +58,21 @@ public final class AlturaTierra {
         return NIVEL_MAR + elevacionMetros(x, z) * factor;
     }
 
-    /** y del bloque sólido más alto de la columna (x, z), evaluada en el centro del bloque. */
+    /**
+     * y del bloque sólido más alto de la columna (x, z), igual que la genera
+     * el generador: {@code interpolated(flat_cache(...))} toma la superficie en
+     * las esquinas de celda (cada {@link #ANCHO_CELDA} bloques, en el centro
+     * del bloque de la esquina) e interpola lineal entre ellas. En un pico eso
+     * puede dar un bloque menos que {@link #alturaExacta} en ese punto.
+     */
     public int altura(int x, int z) {
-        return yBloqueSuperior(alturaExacta(x + 0.5, z + 0.5));
+        int x0 = Math.floorDiv(x, ANCHO_CELDA) * ANCHO_CELDA, z0 = Math.floorDiv(z, ANCHO_CELDA) * ANCHO_CELDA;
+        double fx = (x - x0) / (double) ANCHO_CELDA, fz = (z - z0) / (double) ANCHO_CELDA;
+        double h00 = alturaExacta(x0 + 0.5, z0 + 0.5), h10 = alturaExacta(x0 + ANCHO_CELDA + 0.5, z0 + 0.5);
+        double h01 = alturaExacta(x0 + 0.5, z0 + ANCHO_CELDA + 0.5);
+        double h11 = alturaExacta(x0 + ANCHO_CELDA + 0.5, z0 + ANCHO_CELDA + 0.5);
+        double h0 = h00 + (h10 - h00) * fx, h1 = h01 + (h11 - h01) * fx;
+        return yBloqueSuperior(h0 + (h1 - h0) * fz);
     }
 
     /** y del bloque más hondo de todo el mundo: el fondo de la fosa más honda de los datos. */

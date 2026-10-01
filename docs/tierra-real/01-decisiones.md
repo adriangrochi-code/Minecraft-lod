@@ -24,7 +24,7 @@ Relieve total: Everest 8 849 m + fosa de las Marianas ~10 935 m ≈ 19,8 km.
 |---|---|---|
 | 1 bloque | 8 m | 6 m |
 | Everest sobre el mar | ~1 106 bloques | ~1 475 bloques |
-| Fosa más profunda (real / grilla 30″) | ~1 367 / 1 322 bloques | ~1 823 / 1 762 bloques |
+| Fosa más profunda (real / grilla 30″) | ~1 367 / 1 347 bloques | ~1 823 / 1 796 bloques |
 | Relieve total | ~2 473 | ~3 298 |
 | Circunferencia (ecuador) | ~5,01 M bloques | ~6,68 M bloques |
 | Radio del disco (tierra plana) | ~2,50 M bloques | ~3,33 M bloques |
@@ -45,15 +45,16 @@ estructuras y reglas de vanilla que asumen ese nivel sigan andando.
 
 | | fondo de la fosa (y) | min_y | height | techo (max_y) |
 |---|---|---|---|---|
-| 1:8 | -1259 | -1264 | 2640 | 1376 |
-| 1:6 | -1699 | -1712 | 3456 | 1744 |
+| 1:8 | -1284 | -1296 | 2672 | 1376 |
+| 1:6 | -1733 | -1744 | 3488 | 1744 |
 
 **El fondo de la fosa de las Marianas apoya en el lecho de roca** (pedido
 del usuario, 2026-10-01). El punto más hondo de los datos (ETOPO 30″:
--10 571 m en 11,354° N, 142,429° E; la grilla promedia ~1 km, por eso no
-llega a los -10 935 m reales) da el bloque más hondo del mundo, `min_y` es
+-10 775 m en 11,971° N, 144,371° E, el abismo Sirena de la misma fosa; la
+grilla promedia ~1 km, por eso no llega a los -10 935 m del Challenger Deep,
+que en la grilla queda en -10 571 m) da el bloque más hondo del mundo, `min_y` es
 el múltiplo de 16 en o bajo ese bloque, y el lecho de roca es **macizo**
-desde `min_y` hasta el fondo de la fosa (6 bloques a 1:8, 13 a 1:6), sin el
+desde `min_y` hasta el fondo de la fosa (12 bloques a 1:8, 11 a 1:6), sin el
 degradé de vanilla. En el fondo de la fosa, lo siguiente bajo los pies es
 lecho de roca. La superficie se recorta al rango de los datos (la bicúbica
 no baja de la fosa). Código: `tierra/AlturaTierra` (`yFondoFosa`,

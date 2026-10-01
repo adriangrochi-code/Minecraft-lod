@@ -23,9 +23,16 @@ registrada con su codec). Así se reutilizan, sin tocarlos:
 - `AlturaTierra`: altura en bloques de una columna (x, z) = 63 +
   (elevación interpolada + detalle) / escala. **Esta es la única fuente de
   verdad de la superficie** para el generador y para el LOD.
-- `DensidadTierra` (DensityFunction): `(alturaTierra(x, z) - y) * k`,
-  positiva bajo la superficie. Con caché por columna (marcador de caché 2D
-  de vanilla) porque se evalúa en todas las esquinas de celda.
+- `SuperficieTierra` (DensityFunction `minecraftlodmod:tierra_superficie`,
+  implementada en H3): devuelve la altura continua; la densidad
+  `superficie - y` se arma en el JSON con piezas de vanilla:
+  `interpolated(add(flat_cache(tierra_superficie), y_clamped_gradient))`
+  (el gradiente va de -4064 a 4062, el rango que acepta vanilla, y vale
+  exactamente -y). `flat_cache` la evalúa una vez por esquina de celda (cada
+  4 bloques) e `interpolated` interpola: como la densidad es lineal en y, la
+  superficie generada es la bilineal de las esquinas, y
+  `AlturaTierra.altura(x, z)` calcula exactamente eso (en un pico puede dar
+  un bloque menos que la bicúbica en ese punto).
 - `FuenteBiomasTierra` (BiomeSource con codec propio): bioma por columna
   desde la grilla de clase + tabla `biomas.json` + altura (pisos térmicos:
   nieve sobre la línea de nieve según latitud).
@@ -35,17 +42,21 @@ registrada con su codec). Así se reutilizan, sin tocarlos:
 ## `noise_settings`
 
 - `noise`: `min_y`/`height` de `01-decisiones.md`; tamaño de celda vanilla.
-- `final_density`: `min(DensidadTierra, cuevas)` donde las cuevas de vanilla
+- `final_density`: `min(superficie - y, cuevas)` donde las cuevas de vanilla
   se **re-referencian a la profundidad bajo la superficie** (las de vanilla
   dependen de `y` absoluto en -64..320; hito propio, `06-hitos.md`). Primera
   versión: sin cuevas de ruido, solo carvers.
-- `initial_density_without_jaggedness`: la misma `DensidadTierra` → la
+- `initial_density_without_jaggedness`: la misma densidad sin interpolar → la
   superficie estimada es **exacta** (la usan la franja vertical y el LOD).
 - `sea_level`: 63; fluido por defecto: agua (los océanos salen solos).
 - `surface_rule`: las de vanilla por bioma (arena en costas, nieve, etc.),
   salvo el piso: **lecho de roca macizo de `min_y` al fondo de la fosa**
   (`AlturaTierra.esLechoDeRoca`, `01-decisiones.md`) en vez del degradé.
-- `aquifers_enabled`: sí; `ore_veins_enabled`: sí.
+- `aquifers_enabled` y `ore_veins_enabled`: **apagados en H3** (sus ruidos
+  del router están en 0 y dependen de `y` absoluto); se prenden con las
+  cuevas en H9. El fluido global es agua en toda la altura
+  (`tierra/mixin/MixinFluidoTierra`).
+- Bioma en H3: `minecraft:the_void` fijo (sin features: "piedra y agua").
 
 ## Detalle a escala de bloque
 

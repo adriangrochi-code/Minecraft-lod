@@ -76,6 +76,10 @@ Medido en H1 (2026-10-01):
   rugosa: el global, con ~70% de mar, debería quedar bastante por debajo.
   Preparar: ~1,8 s por 1,4 M de muestras (Deflate máximo, un hilo); el
   global de 30″ (933 M) son ~20 min, una sola vez. Paralelizar si molesta.
+- **Global de 30″ preparado (H3):** 43200×21600 muestras, 14 365 teselas,
+  **657 MB**, 5 min con Deflate en paralelo (4 núcleos). Elevación
+  -10 775..8 354 m: el mínimo es el abismo Sirena (fosa de las Marianas,
+  11,971° N, 144,371° E; confirmado contra el OPeNDAP de NCEI: -10 775,46 m).
 - Datos de prueba: ETOPO 2022 (NOAA NCEI), DOI 10.25921/fd45-gt74, uso libre.
 
 Fuentes: ncei.noaa.gov/products/etopo-global-relief-model, guía de usuario

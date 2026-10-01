@@ -3,9 +3,9 @@ package com.example.minecraftlodmod.tierra;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.Locale;
 
@@ -26,8 +26,13 @@ class AlturaTierraTest {
     private static FuenteTierra fuente;
 
     @BeforeAll
-    static void abrir() throws IOException, URISyntaxException {
-        Path p = Path.of(AlturaTierraTest.class.getResource("/tierra/himalaya-bengala-30s.lodt").toURI());
+    static void abrir(@TempDir Path dir) throws IOException {
+        // Copia a un archivo real: con NeoForge los recursos de test viven en un sistema de
+        // archivos que no da FileChannel.
+        Path p = dir.resolve("himalaya-bengala-30s.lodt");
+        try (var entrada = AlturaTierraTest.class.getResourceAsStream("/tierra/himalaya-bengala-30s.lodt")) {
+            java.nio.file.Files.copy(entrada, p);
+        }
         lector = LectorLodt.abrir(p, 64L << 20);
         fuente = new FuenteTierra(lector);
     }
@@ -72,6 +77,21 @@ class AlturaTierraTest {
     }
 
     @Test
+    void alturaInterpolaEntreEsquinasDeCeldaComoElGenerador() {
+        ProyeccionCilindrica p = new ProyeccionCilindrica(8);
+        AlturaTierra a = new AlturaTierra(fuente, p, 1.0);
+        int x0 = (int) p.x(27.9875, 86.9292) & ~3, z0 = (int) p.z(27.9875, 86.9292) & ~3;
+        for (int dz = 0; dz <= 4; dz += 4) {
+            for (int dx = 0; dx <= 4; dx += 4) {
+                // En las esquinas, la superficie exacta
+                assertEquals((int) Math.ceil(a.alturaExacta(x0 + dx + 0.5, z0 + dz + 0.5)) - 1, a.altura(x0 + dx, z0 + dz));
+            }
+        }
+        // Medido en el servidor (H3): cumbre del Everest generada en y 1106
+        assertEquals(1106, a.altura((int) Math.floor(p.x(27.9875, 86.9292)), (int) Math.floor(p.z(27.9875, 86.9292))));
+    }
+
+    @Test
     void elFondoMasHondoApoyaEnElLechoDeRoca() {
         for (double escala : new double[]{8, 6}) {
             ProyeccionCilindrica p = new ProyeccionCilindrica(escala);
@@ -94,13 +114,14 @@ class AlturaTierraTest {
 
     @Test
     void fosaDeLasMarianasConEtopo30() {
-        // Mínimo de la grilla global de 30″ (OPeNDAP, 11,354 N 142,429 E): -10 570,65 m → -10 571
-        int fondo8 = AlturaTierra.yBloque(-10571, 1 / 8.0);
-        assertEquals(-1259, fondo8);
-        assertEquals(-1264, AlturaTierra.minYDimension(fondo8));
-        int fondo6 = AlturaTierra.yBloque(-10571, 1 / 6.0);
-        assertEquals(-1699, fondo6);
-        assertEquals(-1712, AlturaTierra.minYDimension(fondo6));
+        // Mínimo de la grilla global de 30″ (abismo Sirena, fosa de las Marianas, 11,971 N
+        // 144,371 E): -10 775,46 m en el OPeNDAP de NCEI → -10 775 en el .lodt global
+        int fondo8 = AlturaTierra.yBloque(-10775, 1 / 8.0);
+        assertEquals(-1284, fondo8);
+        assertEquals(-1296, AlturaTierra.minYDimension(fondo8));
+        int fondo6 = AlturaTierra.yBloque(-10775, 1 / 6.0);
+        assertEquals(-1733, fondo6);
+        assertEquals(-1744, AlturaTierra.minYDimension(fondo6));
         assertEquals(-16, AlturaTierra.minYDimension(-16));
         assertEquals(-32, AlturaTierra.minYDimension(-17));
     }

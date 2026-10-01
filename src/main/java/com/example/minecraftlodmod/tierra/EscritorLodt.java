@@ -10,7 +10,7 @@ import java.nio.file.StandardOpenOption;
 
 /**
  * Escribe un {@code .lodt} (ver {@link FormatoLodt}) desde una fuente de
- * muestras, tesela por tesela: nunca tiene en memoria más que una tesela. Se
+ * muestras, fila de teselas por fila (en memoria, una fila; Deflate en paralelo). Se
  * escribe a un temporal y se renombra al final, así un archivo a medias nunca
  * queda con el nombre final.
  */
@@ -34,8 +34,9 @@ public final class EscritorLodt {
         int lado = cab.lado();
         int n = cab.cantidadTeselas();
         ByteBuffer indice = ByteBuffer.allocate(n * FormatoLodt.BYTES_ENTRADA_INDICE);
-        short[] elev = new short[lado * lado];
-        byte[] bioma = new byte[lado * lado];
+        int tx = cab.teselasX();
+        short[][] elev = new short[tx][lado * lado];
+        byte[][] bioma = new byte[tx][lado * lado];
         short[] ventanaElev = new short[lado * lado];
         byte[] ventanaBioma = new byte[lado * lado];
         int minima = Short.MAX_VALUE, maxima = Short.MIN_VALUE;
@@ -43,8 +44,9 @@ public final class EscritorLodt {
                 StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
             long pos = cab.bytesHastaTeselas();
             for (int tz = 0; tz < cab.teselasZ(); tz++) {
-                for (int tx = 0; tx < cab.teselasX(); tx++) {
-                    int col0 = tx * lado, fila0 = tz * lado;
+                // Una fila de teselas: se lee en orden (la fuente no es thread-safe) y se comprime en paralelo.
+                for (int t = 0; t < tx; t++) {
+                    int col0 = t * lado, fila0 = tz * lado;
                     int anchoV = Math.min(lado, cab.ancho() - col0);
                     int altoV = Math.min(lado, cab.alto() - fila0);
                     muestras.leer(col0, fila0, anchoV, altoV, ventanaElev, ventanaBioma);
@@ -52,18 +54,24 @@ public final class EscritorLodt {
                         minima = Math.min(minima, ventanaElev[i]);
                         maxima = Math.max(maxima, ventanaElev[i]);
                     }
+                    short[] e = elev[t];
+                    byte[] b = bioma[t];
                     for (int f = 0; f < lado; f++) {
                         int ff = Math.min(f, altoV - 1);
                         for (int c = 0; c < lado; c++) {
                             int cc = Math.min(c, anchoV - 1);
-                            elev[f * lado + c] = ventanaElev[ff * anchoV + cc];
-                            bioma[f * lado + c] = ventanaBioma[ff * anchoV + cc];
+                            e[f * lado + c] = ventanaElev[ff * anchoV + cc];
+                            b[f * lado + c] = ventanaBioma[ff * anchoV + cc];
                         }
                     }
-                    byte[] datos = FormatoLodt.codificarTesela(elev, bioma, lado);
-                    escribirTodo(canal, ByteBuffer.wrap(datos), pos);
-                    indice.putLong(pos).putInt(datos.length);
-                    pos += datos.length;
+                }
+                byte[][] datos = new byte[tx][];
+                java.util.stream.IntStream.range(0, tx).parallel()
+                        .forEach(t -> datos[t] = FormatoLodt.codificarTesela(elev[t], bioma[t], lado));
+                for (byte[] d : datos) {
+                    escribirTodo(canal, ByteBuffer.wrap(d), pos);
+                    indice.putLong(pos).putInt(d.length);
+                    pos += d.length;
                 }
             }
             cab = cab.conRango((short) minima, (short) maxima);

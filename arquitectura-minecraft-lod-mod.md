@@ -953,7 +953,7 @@ las decisiones que fijan el código.
 
 - **Generador:** el `NoiseBasedChunkGenerator` de vanilla con
   `noise_settings` propios y una función de densidad propia
-  (`(alturaTierra(x, z) - y) · k`), no un `ChunkGenerator` nuevo: cuevas,
+  (`tierra_superficie`; la densidad `superficie - y` se arma en el JSON), no un `ChunkGenerator` nuevo: cuevas,
   acuíferos, menas, estructuras, `cubico/` y `GeneradorAproximado` siguen
   andando sin tocarlos. `initial_density_without_jaggedness` es la misma
   densidad, así que la superficie estimada es exacta.
@@ -968,9 +968,9 @@ las decisiones que fijan el código.
   con la tesela en caché (presupuesto 0,5 µs; el resto es para el detalle
   de H8).
 - **Piso y techo:** el fondo de la fosa más honda de los datos (Marianas,
-  -10 571 m en la grilla de 30″) apoya en el lecho de roca: `min_y` es el
-  múltiplo de 16 en o bajo ese bloque y el lecho de roca es macizo hasta él.
-  1:8: `min_y` -1264, height 2640; 1:6: -1712, 3456. Entra en el límite de
+  abismo Sirena, -10 775 m en la grilla de 30″) apoya en el lecho de roca:
+  `min_y` es el múltiplo de 16 en o bajo ese bloque y el lecho de roca es
+  macizo hasta él. 1:8: `min_y` -1296, height 2672; 1:6: -1744, 3488. Entra en el límite de
   vanilla (4064): no hace falta formato de guardado propio.
 - **Proyecciones** (`tierra/Proyeccion`): equirectangular (norte -z, este
   +x) y azimutal equidistante centrada en el polo norte (el polo sur, el
