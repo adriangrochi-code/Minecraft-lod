@@ -21,6 +21,16 @@ public interface FuenteAltura {
     /** y del bloque sólido más alto de la columna (x, z), igual que lo genera el mundo. Thread-safe. */
     int altura(int x, int z);
 
+    /**
+     * Si la columna es una superficie simple (sólido abajo, aire arriba): ahí la
+     * franja vertical de {@code cubico/} puede recortar cerca de la superficie.
+     * Con grietas, túneles o voladizos (el borde de la Tierra plana) da false y
+     * la columna se genera entera.
+     */
+    default boolean simple(int x, int z) {
+        return true;
+    }
+
     List<Function<ServerLevel, FuenteAltura>> RESOLVEDORES = new CopyOnWriteArrayList<>();
 
     /** Registra quién sabe dar la fuente de un nivel (devuelve {@code null} si no es suyo). */

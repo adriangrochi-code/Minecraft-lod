@@ -52,6 +52,7 @@ public final class TierraReal {
 
     static {
         FUNCIONES.register("tierra_superficie", () -> SuperficieTierra.CODEC_MAPA);
+        FUNCIONES.register("tierra_borde", () -> BordeTierra.CODEC_MAPA);
         FUENTES_BIOMAS.register("tierra", () -> FuenteBiomasTierra.CODEC);
     }
 
@@ -73,7 +74,24 @@ public final class TierraReal {
         // Atajo del LOD aproximado: la altura de cada columna sale de los datos, sin buscarla en la densidad.
         com.example.minecraftlodmod.generation.FuenteAltura.registrar(nivel -> {
             AlturaTierra a = alturaDe(nivel);
-            return a == null ? null : a::altura;
+            if (a == null) return null;
+            BordeTierra borde = bordeDe(nivel);
+            if (borde == null) return a::altura;
+            return new com.example.minecraftlodmod.generation.FuenteAltura() {
+                @Override
+                public int altura(int x, int z) {
+                    double d = borde.distanciaAlBorde(x + 0.5, z + 0.5);
+                    if (d < 0) return a.altura(x, z);
+                    return FarlandsCongeladas.alturaColumna(d, borde.arco(x + 0.5, z + 0.5),
+                            a.alturaExacta(x + 0.5, z + 0.5), borde.minY(), borde.maxY());
+                }
+
+                @Override
+                public boolean simple(int x, int z) {
+                    // Las grietas empiezan justo en el borde: un chunk de margen.
+                    return borde.distanciaAlBorde(x + 0.5, z + 0.5) < -16;
+                }
+            };
         });
     }
 
@@ -160,6 +178,32 @@ public final class TierraReal {
         }
     }
 
+    // ------------------------------------------------------------------ borde del mundo
+
+    /** Tamaño por defecto del borde de vanilla: si es otro, lo cambió el usuario y no se toca. */
+    private static final double BORDE_VANILLA = 59_999_968;
+
+    /**
+     * Tierra plana: el borde del mundo de vanilla como límite duro pasando las
+     * farlands congeladas ({@code docs/tierra-real/05-borde.md}). Es cuadrado:
+     * en las esquinas siguen las farlands hasta el borde. Solo si el borde es
+     * el de vanilla (si el usuario lo cambió, no se toca); queda guardado.
+     */
+    @SubscribeEvent
+    public static void alIniciarServidor(net.neoforged.neoforge.event.server.ServerStartedEvent evento) {
+        // Después de que vanilla aplica el borde guardado en level.dat (al cargar el nivel todavía no).
+        ServerLevel nivel = evento.getServer().overworld();
+        BordeTierra borde = bordeDe(nivel);
+        if (borde == null) return;
+        var limite = nivel.getWorldBorder();
+        if (Math.abs(limite.getSize() - BORDE_VANILLA) > 1) return;
+        double lado = 2 * Math.ceil(borde.radioDisco() + FarlandsCongeladas.TRANSICION + FarlandsCongeladas.ANCHO_FARLANDS);
+        limite.setCenter(0, 0);
+        limite.setSize(lado);
+        LOG.info("[Tierra real] Tierra plana: borde del mundo en {} bloques de lado (disco de radio {})",
+                (long) lado, (long) borde.radioDisco());
+    }
+
     // ------------------------------------------------------------------ comandos de prueba
 
     /**
@@ -176,10 +220,21 @@ public final class TierraReal {
                         .then(Commands.argument("lat", DoubleArgumentType.doubleArg(-90, 90))
                                 .then(Commands.argument("lon", DoubleArgumentType.doubleArg(-180, 180))
                                         .executes(TierraReal::ir))))
+                .then(Commands.literal("columna")
+                        .then(Commands.argument("x", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
+                                .then(Commands.argument("z", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
+                                        .executes(TierraReal::columna))))
                 .then(Commands.literal("medir")
                         .then(Commands.argument("lat", DoubleArgumentType.doubleArg(-90, 90))
                                 .then(Commands.argument("lon", DoubleArgumentType.doubleArg(-180, 180))
                                         .executes(TierraReal::medir)))));
+    }
+
+    static BordeTierra bordeDe(ServerLevel nivel) {
+        if (nivel.getChunkSource().getGenerator() instanceof NoiseBasedChunkGenerator g) {
+            return BordeTierra.de(g.generatorSettings().value());
+        }
+        return null;
     }
 
     private static AlturaTierra alturaDe(ServerLevel nivel) {
@@ -245,6 +300,42 @@ public final class TierraReal {
         LOG.info("[Tierra real] {}", texto);
         fuente.sendSuccess(() -> Component.literal(texto), false);
         return real == esperada ? 1 : 0;
+    }
+
+    /**
+     * {@code /tierra columna <x> <z>}: genera la columna y lista sus tramos de
+     * sólido y aire de arriba abajo (para el borde, donde no hay latitud), junto
+     * con lo que da el atajo del LOD.
+     */
+    private static int columna(CommandContext<CommandSourceStack> c) {
+        CommandSourceStack fuente = c.getSource();
+        ServerLevel nivel = fuente.getLevel();
+        int x = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "x");
+        int z = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "z");
+        ChunkAccess chunk = nivel.getChunk(x >> 4, z >> 4);
+        StringBuilder tramos = new StringBuilder();
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos(x, 0, z);
+        int n = 0, desde = nivel.getMaxBuildHeight() - 1;
+        String actual = null;
+        for (int y = nivel.getMaxBuildHeight() - 1; y >= nivel.getMinBuildHeight() - 1; y--) {
+            String b = y < nivel.getMinBuildHeight() ? "fin" : chunk.getBlockState(p.setY(y)).getBlock().getName().getString();
+            if (!b.equals(actual)) {
+                if (actual != null && n++ < 24) tramos.append(String.format(Locale.ROOT, " %s %d..%d;", actual, desde, y + 1));
+                actual = b;
+                desde = y;
+            }
+        }
+        var atajo = com.example.minecraftlodmod.generation.FuenteAltura.de(nivel);
+        BordeTierra borde = bordeDe(nivel);
+        String texto = String.format(Locale.ROOT, "columna %d %d: %s%s; atajo y %s (simple %s), bioma %s;%s",
+                x, z, borde == null ? "" : String.format(Locale.ROOT, "%.0f bloques del borde del disco, ", borde.distanciaAlBorde(x + 0.5, z + 0.5)),
+                tramos.length() > 0 ? n + " tramos" : "-",
+                atajo == null ? "-" : String.valueOf(atajo.altura(x, z)), atajo == null ? "-" : String.valueOf(atajo.simple(x, z)),
+                nivel.getBiome(p.setY(nivel.getMaxBuildHeight() - 2)).unwrapKey().map(k -> k.location().toString()).orElse("?"),
+                tramos);
+        LOG.info("[Tierra real] {}", texto);
+        fuente.sendSuccess(() -> Component.literal(texto), false);
+        return n;
     }
 
     private static int aguaHasta(ChunkAccess chunk, BlockPos.MutableBlockPos p, ServerLevel nivel) {

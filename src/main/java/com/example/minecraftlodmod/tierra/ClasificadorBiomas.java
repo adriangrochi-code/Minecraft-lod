@@ -39,6 +39,8 @@ public final class ClasificadorBiomas {
 
     public static final String SIN_CLIMA = "sin_clima", PLAYA = "playa", PLAYA_FRIA = "playa_fria";
     public static final String NIEVE = "nieve", CUMBRE = "cumbre", ROCA_ALTA = "roca_alta";
+    /** Pasando el borde de la Tierra plana (grietas y farlands congeladas). */
+    public static final String FARLANDS = "farlands";
     private static final List<String> OCEANOS = List.of("oceano_calido", "oceano_templado", "oceano_normal",
             "oceano_frio", "oceano_helado");
     public static final double PLATAFORMA_M = -200;
@@ -52,7 +54,7 @@ public final class ClasificadorBiomas {
             c.add(o);
             c.add(o + "_profundo");
         }
-        c.addAll(List.of(SIN_CLIMA, PLAYA, PLAYA_FRIA, NIEVE, CUMBRE, ROCA_ALTA));
+        c.addAll(List.of(SIN_CLIMA, PLAYA, PLAYA_FRIA, NIEVE, CUMBRE, ROCA_ALTA, FARLANDS));
         CLAVES = List.copyOf(c);
     }
 

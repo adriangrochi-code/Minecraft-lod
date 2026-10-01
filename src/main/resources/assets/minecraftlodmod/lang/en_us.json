@@ -185,5 +185,6 @@
   "generator.minecraftlodmod.tierra_real_8": "Real Earth 1:8",
   "generator.minecraftlodmod.tierra_plana_8": "Flat Earth 1:8",
   "generator.minecraftlodmod.tierra_real_6": "Real Earth 1:6",
-  "generator.minecraftlodmod.tierra_plana_6": "Flat Earth 1:6"
+  "generator.minecraftlodmod.tierra_plana_6": "Flat Earth 1:6",
+  "biome.minecraftlodmod.farlands_congeladas": "Frozen Farlands"
 }

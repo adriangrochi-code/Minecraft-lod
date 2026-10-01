@@ -66,7 +66,7 @@ class ClasificadorBiomasTest {
 
     @Test
     void clavesCompletas() {
-        assertEquals(30 + 10 + 6, ClasificadorBiomas.CLAVES.size());
+        assertEquals(30 + 10 + 7, ClasificadorBiomas.CLAVES.size());
         assertTrue(ClasificadorBiomas.CLAVES.contains("Dfd"));
         assertTrue(ClasificadorBiomas.CLAVES.contains("oceano_helado_profundo"));
         for (int c = 1; c <= 30; c++) {

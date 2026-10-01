@@ -128,3 +128,24 @@ la cifra famosa.)
     fluir agua sobre una sección compartida (bug de `SeccionesCompartidas`,
     `copy()` de un contenedor de un valor comparte la paleta con el
     original; pedido a la sesión del LOD en `NOTES.md`).
+- **H7 (2026-10-01):** borde de la Tierra plana (`05-borde.md`). Servidor
+  dedicado, `tierra_plana_8`, `/tierra columna 0 <z>` a lo largo del borde
+  (disco de radio 2 501 889):
+
+  | Distancia al borde | Bioma | Columna |
+  |---|---|---|
+  | -100 | frozen_peaks | meseta en y 417, nieve sobre piedra |
+  | +50 / +500 | farlands_congeladas | nieve en 417, hielo compacto / azul hasta el lecho de roca |
+  | +900 | farlands_congeladas | en una grieta: suelo en y 252 |
+  | +1 500 | farlands_congeladas | pared hasta y 1235, túneles de 9 cada ~24 |
+  | +3 000 | farlands_congeladas | pared hasta y 1219, túneles |
+
+  - Atajo del LOD contra lo generado: 0-2 bloques (interpolación de celdas).
+  - Madrid en la Tierra plana: y 137 esperada = generada.
+  - Borde del mundo: 5 013 780 bloques.
+  - Ruido en las farlands: 62 ms por chunk (columna entera); forzar 650
+    chunks de golpe atrasa el servidor ~157 s.
+  - **Precisión a ±2,5 M:** del lado del servidor, la ida y vuelta lat/lon ↔
+    bloque en el borde pierde menos de 1/100 de bloque (test); un bloque de
+    diferencia se distingue. Lo del cliente (titileo de vértices, nubes,
+    partículas a 2,5 M) queda **pendiente de Pista B**: `/tp 0 1300 2503900`.

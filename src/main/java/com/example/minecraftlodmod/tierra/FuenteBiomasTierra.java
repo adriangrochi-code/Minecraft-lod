@@ -80,6 +80,10 @@ public final class FuenteBiomasTierra extends BiomeSource {
         AlturaTierra a = superficie.altura();
         if (a == null) return "oceano_normal_profundo";
         double cx = x + 0.5, cz = z + 0.5;
+        if (a.proyeccion() instanceof ProyeccionAzimutal azimutal
+                && Math.sqrt(cx * cx + cz * cz) >= azimutal.radioDisco()) {
+            return ClasificadorBiomas.FARLANDS;
+        }
         double elev = a.elevacionMetros(cx, cz);
         int clase = a.claseClima(cx, cz);
         boolean juntoAlMar = false;

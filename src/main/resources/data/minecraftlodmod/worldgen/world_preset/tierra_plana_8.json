@@ -56,7 +56,8 @@
             "playa_fria": "minecraft:snowy_beach",
             "nieve": "minecraft:snowy_slopes",
             "cumbre": "minecraft:jagged_peaks",
-            "roca_alta": "minecraft:stony_peaks"
+            "roca_alta": "minecraft:stony_peaks",
+            "farlands": "minecraftlodmod:farlands_congeladas"
           }
         },
         "settings": "minecraftlodmod:tierra_plana_8"

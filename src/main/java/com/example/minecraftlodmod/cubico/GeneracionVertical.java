@@ -301,6 +301,9 @@ public final class GeneracionVertical {
         int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE;
         for (int i = 0; i <= 16; i += 4) {
             for (int j = 0; j <= 16; j += 4) {
+                if (!fuente.simple(pos.getMinBlockX() + i, pos.getMinBlockZ() + j)) {
+                    return new int[]{Integer.MAX_VALUE, Integer.MIN_VALUE}; // sin franja: columna entera
+                }
                 int h = fuente.altura(pos.getMinBlockX() + i, pos.getMinBlockZ() + j);
                 min = Math.min(min, h);
                 max = Math.max(max, h);

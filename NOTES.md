@@ -306,6 +306,10 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   el atajo (0 evaluaciones de densidad), pero **no se ve terreno lejano** en
   las capturas desde la cumbre del Cervino: ¿Mesa o la curvatura de 796 km?
   Probar en la PC con `/tierra ir 45.9763 7.6586` y mirar al sur.
+- Pendiente de Pista B (H7): ver el borde de la Tierra plana en la PC
+  (`/tp 0 1300 2503900` en un mundo "Tierra plana 1:8"): las grietas, las
+  paredes de las farlands congeladas, el bioma (nieve, cielo frío) y la
+  precisión del render a 2,5 M bloques (titileo de vértices, nubes).
 
 ## Mejoras notadas, no aplicadas todavía
 
