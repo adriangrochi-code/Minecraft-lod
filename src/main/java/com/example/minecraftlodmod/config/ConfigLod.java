@@ -56,6 +56,8 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue nubesLejanas;
         public final ModConfigSpec.BooleanValue oclusionPantalla;
         public final ModConfigSpec.BooleanValue fundidoNiveles;
+        public final ModConfigSpec.BooleanValue nieblaLluvia;
+        public final ModConfigSpec.BooleanValue nieblaSinDatos;
         public final ModConfigSpec.DoubleValue neblinaAtmosferica;
         public final ModConfigSpec.BooleanValue curvatura;
         public final ModConfigSpec.IntValue radioCurvaturaKm;
@@ -101,6 +103,12 @@ public final class ConfigLod {
                             "solo en la fila de arriba y abajo la textura de la tierra, como un corte del terreno. Apagado:",
                             "la textura del costado se repite en cada bloque del vóxel (una línea de pasto por bloque).")
                     .define("texturasComoTerreno", true);
+            nieblaLluvia = b.comment("Con lluvia o tormenta, más neblina en el LOD y radio más chico (hasta la mitad):",
+                            "lo que la niebla tapa no se dibuja. Menos carga de GPU mientras llueve.")
+                    .define("nieblaLluvia", true);
+            nieblaSinDatos = b.comment("Niebla donde el LOD todavía no tiene datos (zonas sin cargar o armándose): en cada",
+                            "dirección, la niebla termina donde empieza lo que falta, así no se ven bordes ni huecos.")
+                    .define("nieblaSinDatos", true);
             fundidoNiveles = b.comment("Cuando una zona del LOD cambia de nivel de detalle, la malla vieja y la nueva se",
                             "cruzan con un tramado durante menos de medio segundo en vez de saltar de golpe, y la vieja",
                             "se sigue dibujando hasta que la nueva esté lista (sin huecos). Con colores planos, VulkanMod",

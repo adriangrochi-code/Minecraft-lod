@@ -336,6 +336,29 @@ public final class RenderLod {
     private double miraPlanX, miraPlanZ;
     /** Con zoom, girar más que esto replanifica (el detalle fino sigue a la mirada). */
     static final double REPLANIFICAR_GIRO = Math.toRadians(10);
+    /**
+     * Mientras el FOV se anima (catalejo, mods de zoom) no se replanifica en
+     * cada cuadro: se espera a que quede quieto este tiempo, o como mucho
+     * {@link #REPLANIFICAR_FOV_MAXIMO_NANOS} entre planes. Replanificar en cada
+     * cuadro de la animación era el tirón al usar el catalejo.
+     */
+    static final long FOV_QUIETO_NANOS = 150_000_000L, REPLANIFICAR_FOV_MAXIMO_NANOS = 400_000_000L;
+    private double fovVisto = 70;
+    /** Lluvia (0-1, en décimos) con que se armó el plan: si cambia, se replanifica con otro radio. */
+    private int lluviaPlan;
+    /** Cuánto se achica el radio del LOD con lluvia o tormenta plena (la neblina tapa lo de más allá). */
+    static final double RADIO_CON_LLUVIA = 0.5;
+    /** Neblina mínima con lluvia plena. */
+    static final float NEBLINA_LLUVIA = 0.85f;
+
+    /** Lluvia y tormenta, 0 a 1 (la tormenta cuenta doble); 0 si la opción está apagada o no hay mundo. */
+    private static float lluvia(Minecraft mc) {
+        if (mc.level == null || !ConfigLod.CLIENTE.nieblaLluvia.get()) {
+            return 0f;
+        }
+        return Math.min(1f, mc.level.getRainLevel(1f) * 0.7f + mc.level.getThunderLevel(1f) * 0.3f);
+    }
+    private long fovCambioNanos;
     /** Margen del cono con zoom, a cada lado, para que al girar un poco ya esté armado. */
     static final double MARGEN_ZOOM = Math.toRadians(10);
     /** Si la cámara sube o baja esto, se replanifica (la oclusión por relieve depende de la altura). */
@@ -621,17 +644,28 @@ public final class RenderLod {
         double fovNormal = mc.options.fov().get();
         boolean conZoom = fovGrados < fovNormal - 1;
         boolean giro = conZoom && angulo(miraX, miraZ, miraPlanX, miraPlanZ) > REPLANIFICAR_GIRO;
+        if (Math.abs(fovGrados - fovVisto) > 0.05) {
+            fovVisto = fovGrados;
+            fovCambioNanos = ahora;
+        }
+        boolean fovAnimandose = ahora - fovCambioNanos < FOV_QUIETO_NANOS;
+        if (fovAnimandose && chunkPlanX != Integer.MIN_VALUE && ahora - ultimoPlanNanos < REPLANIFICAR_FOV_MAXIMO_NANOS) {
+            return; // el plan nuevo se arma cuando el zoom termine de moverse
+        }
         ParametrosCalidad c = calidad;
         balance.usarBase(c);
         // Con escalado, el detalle se mide en píxeles del mundo (la resolución interna), no de la pantalla.
         int alturaDibujo = Escalado.alturaDelMundo(mc);
+        int lluviaAhora = Math.round(lluvia(mc) * 10);
         if (chunkX == chunkPlanX && chunkZ == chunkPlanZ && Math.abs(fovGrados - fovPlan) < 1 && !giro
+                && lluviaAhora == lluviaPlan
                 && alturaDibujo == alturaPlan
                 && Math.abs(camara.y - yPlan) < REPLANIFICAR_ALTURA && ahora - ultimoPlanNanos < REPLANIFICAR_NANOS
                 && balance.version() == versionBalancePlan) {
             return;
         }
         versionBalancePlan = balance.version();
+        lluviaPlan = lluviaAhora;
         alturaPlan = alturaDibujo;
         miraPlanX = miraX;
         miraPlanZ = miraZ;
@@ -652,6 +686,12 @@ public final class RenderLod {
             GeneradorLocal.radioHorizonteCliente = horizonte;
         } else {
             GeneradorLocal.radioHorizonteCliente = 0;
+        }
+        if (lluviaAhora > 0) {
+            // Con lluvia la neblina tapa lo lejano: no se dibuja lo que no se va a ver.
+            int minimo = mc.options.getEffectiveRenderDistance() + 4;
+            radioChunks = Math.max(Math.min(radioChunks, minimo),
+                    (int) Math.round(radioChunks * (1 - RADIO_CON_LLUVIA * lluviaAhora / 10.0)));
         }
         radioEnUso = radioChunks;
         double umbralPx = balance.umbralPx(c);
@@ -1031,6 +1071,8 @@ public final class RenderLod {
         verticesUltimoFrame = 0;
         avanzarFundidos(System.nanoTime());
         alcanceLodBloques = alcance(camara);
+        alcancePorSector = ConfigLod.CLIENTE.nieblaSinDatos.get()
+                ? nieblaSectores.alcances(mc.options.getEffectiveRenderDistance() * 16f + 48f) : null;
         if (shadersEnUso) {
             dibujarConShaderpack(mc, evento, camara);
             return;
@@ -1062,9 +1104,12 @@ public final class RenderLod {
         }
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         VertexBuffer.unbind();
-        AcabadoLod.aplicar(mc, proyeccion, alcanceLodBloques, mc.options.getEffectiveRenderDistance() * 16f,
-                ConfigLod.CLIENTE.neblinaAtmosferica.get().floatValue(),
-                ConfigLod.CLIENTE.oclusionPantalla.get() ? FUERZA_SSAO : 0f);
+        // Con lluvia la neblina se espesa (y el radio ya se achicó en el plan, ver lluviaPlan).
+        float neblina = Math.max(ConfigLod.CLIENTE.neblinaAtmosferica.get().floatValue(),
+                ConfigLod.CLIENTE.nieblaLluvia.get() ? NEBLINA_LLUVIA * lluvia(mc) : 0f);
+        AcabadoLod.aplicar(mc, proyeccion, evento.getModelViewMatrix(), alcanceLodBloques,
+                mc.options.getEffectiveRenderDistance() * 16f, neblina,
+                ConfigLod.CLIENTE.oclusionPantalla.get() ? FUERZA_SSAO : 0f, alcancePorSector);
         if (ConfigLod.CLIENTE.nubesLejanas.get()) {
             NubesLejanas.dibujar(mc, evento.getModelViewMatrix(), proyeccion, camara,
                     evento.getPartialTick().getGameTimeDeltaPartialTick(false), alcanceLodBloques,
@@ -1511,10 +1556,29 @@ public final class RenderLod {
         return PlanCeldas.LADO_CELDA * PlanCeldas.LADO_CELDA - Integer.bitCount(celda.mascaraOmitidos());
     }
 
-    /** Borde más lejano (esquina de celda) entre las celdas con malla. */
+    /** Alcance de la niebla por sector ({@link NieblaSectores}), recalculado en cada cuadro. */
+    private final NieblaSectores nieblaSectores = new NieblaSectores();
+    private float[] alcancePorSector;
+
+    /**
+     * Borde más lejano (esquina de celda) entre las celdas con malla. De paso
+     * cuenta, por sector, lo dibujado y la primera zona sin datos.
+     */
     private float alcance(Vec3 camara) {
         double maximo = 0;
+        nieblaSectores.reiniciar();
         for (EstadoCelda e : celdas.values()) {
+            PlanCeldas.Celda p = e.construidaCon != null ? e.construidaCon : e.plan;
+            if (p != null && !e.oculta) {
+                double mitad = p.ladoEnBloques() / 2.0;
+                double cx = p.origenX() + mitad - camara.x, cz = p.origenZ() + mitad - camara.z;
+                boolean sinDatos = e.construidaCon == null || (!e.tieneMalla && e.chunksConDatos == 0);
+                if (sinDatos) {
+                    nieblaSectores.faltante(cx, cz, mitad * Math.sqrt(2));
+                } else if (e.tieneMalla) {
+                    nieblaSectores.dibujada(cx, cz, mitad * Math.sqrt(2));
+                }
+            }
             if (!e.tieneMalla || e.construidaCon == null || e.oculta) {
                 continue;
             }

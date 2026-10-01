@@ -97,9 +97,10 @@ Al terminar un hito completo (no una tarea chica):
 ## Convenciones ya establecidas (no las reinventes)
 
 - **Versiones:** cada jar que se le entrega al usuario sube `mod_version` en
-  `gradle.properties` (0.MENOR.PARCHE: MENOR si trae funciones nuevas,
-  PARCHE si son solo arreglos) y agrega su entrada en `CHANGELOG.md`. Nunca
-  entregar dos jars distintos con el mismo número.
+  `gradle.properties` y agrega su entrada en `CHANGELOG.md`. Nunca entregar
+  dos jars distintos con el mismo número. Formato 0.MENOR.PARCHE: desde la
+  0.25.2 (pedido del usuario) se sube el PARCHE por defecto, aunque haya
+  funciones nuevas; el MENOR solo con cambios muy grandes.
 
 - Nombres de clases, métodos y comentarios en español, siguiendo el estilo
   ya usado en el código existente.

@@ -6,6 +6,22 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.25.2 — Catalejo sin tirones, niebla con lluvia y en zonas sin datos
+- **Tirón al usar el catalejo:** mientras el zoom se animaba, el LOD se
+  replanificaba entero en cada cuadro (plan, relieve, celdas a rearmar).
+  Ahora espera a que el FOV quede quieto, o como mucho replanifica cada
+  0,4 s mientras se mueve.
+- **Niebla con lluvia** (Calidad, prendida): con lluvia o tormenta el LOD
+  tiene más neblina y un radio más chico (hasta la mitad). Lo que la niebla
+  tapa no se dibuja: menos carga de GPU mientras llueve.
+- **Niebla en zonas sin datos** (Calidad, prendida): en cada dirección, la
+  niebla termina donde empieza la primera zona que el LOD todavía no tiene
+  (sin cargar o armándose), así no se ven bordes rectos ni huecos.
+- **Menos GPU en el acabado:** la oclusión ambiental en pantalla (SSAO) se
+  calcula a media resolución (4 veces menos píxeles) y se lleva a la
+  resolución completa con el promedio que ya hacía.
+- Las versiones ahora suben de a parche salvo cambios muy grandes.
+
 ## 0.25.1 — Interfaz con Vulkan y chunks huecos
 - **Con Vulkan no se veía la interfaz** (HUD, barra de objetos, mira, F3)
   si el Java no trae `jdk.attach` (el de Modrinth no lo trae): VulkanMod

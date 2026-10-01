@@ -2,6 +2,8 @@ package com.example.minecraftlodmod.render;
 
 import com.example.minecraftlodmod.MinecraftLodMod;
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -69,9 +71,11 @@ public final class AcabadoLod {
      * @param inicioNeblina     desde dónde empieza la neblina (el borde de vanilla), en bloques
      * @param neblina           intensidad de la neblina en el horizonte (0 = sin neblina, 1 = color del cielo)
      * @param fuerzaOclusion    intensidad del SSAO (0 = apagado)
+     * @param modelView         rotación de la cámara (para saber la dirección de cada píxel)
+     * @param alcancePorSector  dónde termina la niebla en cada dirección ({@link NieblaSectores}), o null
      */
-    public static void aplicar(Minecraft mc, Matrix4f proyeccion, float alcance, float inicioNeblina, float neblina,
-                               float fuerzaOclusion) {
+    public static void aplicar(Minecraft mc, Matrix4f proyeccion, Matrix4f modelView, float alcance,
+                               float inicioNeblina, float neblina, float fuerzaOclusion, float[] alcancePorSector) {
         if (ssao == null || acabado == null) {
             return;
         }
@@ -85,12 +89,15 @@ public final class AcabadoLod {
         RenderSystem.disableDepthTest();
         RenderSystem.depthMask(false);
         if (conOclusion) {
-            oclusion = asegurar(oclusion, ancho, alto, false);
+            // A media resolución: 4 veces menos píxeles, la parte más cara del acabado. El promedio
+            // de la segunda pasada lo lleva a la resolución completa.
+            int anchoAo = Math.max(1, ancho / 2), altoAo = Math.max(1, alto / 2);
+            oclusion = asegurar(oclusion, anchoAo, altoAo, false);
             oclusion.bindWrite(true);
             RenderSystem.disableBlend();
             RenderSystem.setShader(() -> ssao);
             RenderSystem.setShaderTexture(0, profundidad.getDepthTextureId());
-            ssao.safeGetUniform("InSize").set((float) ancho, (float) alto);
+            ssao.safeGetUniform("InSize").set((float) anchoAo, (float) altoAo);
             ssao.safeGetUniform("ProjMat").set(proyeccion);
             ssao.safeGetUniform("ProjInv").set(inversa);
             ssao.safeGetUniform("Fuerza").set(fuerzaOclusion);
@@ -114,12 +121,37 @@ public final class AcabadoLod {
         acabado.safeGetUniform("NieblaBorde").set(alcance * 0.8f, alcance);
         acabado.safeGetUniform("Neblina").set(inicioNeblina, alcance, neblina);
         acabado.safeGetUniform("ConOclusion").set(conOclusion ? 1f : 0f);
+        boolean conSectores = alcancePorSector != null;
+        if (conSectores) {
+            RenderSystem.setShaderTexture(2, texturaSectores(mc, alcancePorSector));
+            acabado.safeGetUniform("VistaInv").set(new Matrix4f(modelView).invert());
+        }
+        acabado.safeGetUniform("ConSectores").set(conSectores ? 1f : 0f);
         cuadrado();
 
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableBlend();
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
+    }
+
+    private static DynamicTexture sectores;
+    private static final ResourceLocation TEXTURA_SECTORES =
+            ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, "niebla_sectores");
+
+    /** Textura de 64×1 con el alcance de cada sector en bloques / 4, en 16 bits (R bajo, G alto). */
+    private static ResourceLocation texturaSectores(Minecraft mc, float[] alcances) {
+        if (sectores == null) {
+            sectores = new DynamicTexture(new NativeImage(NieblaSectores.SECTORES, 1, false));
+            mc.getTextureManager().register(TEXTURA_SECTORES, sectores);
+        }
+        NativeImage imagen = sectores.getPixels();
+        for (int s = 0; s < NieblaSectores.SECTORES; s++) {
+            int v = Math.min(0xFFFF, Math.round(alcances[s] / 4f));
+            imagen.setPixelRGBA(s, 0, 0xFF000000 | (v & 0xFF00) | (v & 0xFF));
+        }
+        sectores.upload();
+        return TEXTURA_SECTORES;
     }
 
     private static void cuadrado() {
