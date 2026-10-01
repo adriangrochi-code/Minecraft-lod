@@ -10,6 +10,7 @@
     "MixinChunkHolder",
     "MixinGeneradorRuido",
     "MixinNoiseChunk",
+    "MixinNoiseChunkSuperficie",
     "MixinPaqueteChunk",
     "MixinPlayerChunkSender"
   ],

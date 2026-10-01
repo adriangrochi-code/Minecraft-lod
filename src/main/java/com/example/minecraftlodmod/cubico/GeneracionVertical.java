@@ -107,11 +107,51 @@ public final class GeneracionVertical {
         }
         jugadores = foto;
         distanciaVista = evento.getServer().getPlayerList().getViewDistance();
-        if (evento.getServer().getTickCount() % 600 == 0) {
+        int tick = evento.getServer().getTickCount();
+        if (tick % 10 == 0 && ConfigLod.SPEC_SERVIDOR.isLoaded()) {
+            // Completar no depende de que la opción siga prendida: lo que quedó de relleno se completa igual.
+            for (ServerLevel nivel : evento.getServer().getAllLevels()) {
+                int[] pos = foto.get(nivel.dimension());
+                if (pos != null) {
+                    CompletadoVertical.revisar(nivel, pos, distanciaVista);
+                }
+            }
+        }
+        CompletadoVertical.tick(evento.getServer());
+        if (tick % 600 == 0) {
             String r = ESTADISTICAS.resumenYReiniciar();
             if (r != null) {
                 LOG.info("[LOD] Generación vertical (30 s): {}", r);
             }
+            r = CompletadoVertical.ESTADISTICAS.resumenYReiniciar();
+            if (r != null) {
+                LOG.info("[LOD] Completado vertical (30 s): {}", r);
+            }
+        }
+    }
+
+    /** {@code /lodcubico completar <radio> <seccionY>}: completa alrededor como si hubiera un jugador ahí (pruebas). */
+    @SubscribeEvent
+    public static void alRegistrarComandos(net.neoforged.neoforge.event.RegisterCommandsEvent evento) {
+        evento.getDispatcher().register(net.minecraft.commands.Commands.literal("lodcubico")
+                .requires(f -> f.hasPermission(2))
+                .then(net.minecraft.commands.Commands.literal("completar")
+                        .then(net.minecraft.commands.Commands.argument("radio", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 32))
+                                .then(net.minecraft.commands.Commands.argument("seccionY", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
+                                        .executes(c -> {
+                                            var fuente = c.getSource();
+                                            BlockPosLike p = new BlockPosLike(fuente.getPosition());
+                                            int n = CompletadoVertical.pedirAlrededor(fuente.getLevel(), p.cx, p.cz,
+                                                    com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "radio"),
+                                                    com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "seccionY"));
+                                            fuente.sendSuccess(() -> net.minecraft.network.chat.Component.literal(n + " columnas pedidas"), false);
+                                            return n;
+                                        })))));
+    }
+
+    private record BlockPosLike(int cx, int cz) {
+        BlockPosLike(net.minecraft.world.phys.Vec3 v) {
+            this((int) Math.floor(v.x) >> 4, (int) Math.floor(v.z) >> 4);
         }
     }
 
@@ -182,6 +222,9 @@ public final class GeneracionVertical {
 
     /** Después del llenado: las secciones debajo de la franja pasan a relleno sólido. */
     public static void despuesDeLlenar(ChunkAccess chunk, NoiseGeneratorSettings ajustes, long nanos) {
+        if (CompletadoVertical.esAparte(chunk)) {
+            return; // banda de un completado: la arma CompletadoVertical
+        }
         RangoSecciones r = ventana(chunk);
         ESTADISTICAS.chunk(r != null, nanos);
         if (r == null) {
