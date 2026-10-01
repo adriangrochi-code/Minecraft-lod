@@ -26,6 +26,7 @@ import org.lwjgl.opengl.GL20;
 import org.slf4j.Logger;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Contrato Voxy de los shaderpacks, etapa B (sección 27, punto 2b): el LOD se
@@ -37,9 +38,10 @@ import java.util.List;
  * <li>Color: framebuffer sobre los colortex del pack que pide {@code opaqueDrawBuffers}
  *     (los que escribe la etapa de gbuffers), sin tocar la profundidad de vanilla
  *     ({@code excludeLodsFromVanillaDepth}).</li>
- * <li>Profundidad propia del LOD: {@code vxDepthTexOpaque}, copiada a
- *     {@code vxDepthTexTrans} (el LOD todavía no tiene pasada translúcida);
+ * <li>Profundidad propia del LOD: {@code vxDepthTexOpaque}, y {@code vxDepthTexTrans}
+ *     = esa más el agua, dibujada después con {@code voxy_translucent} ({@link #empezarTranslucida});
  *     ambas llegan a todos los programas del pack ({@code MixinSamplersIris}).</li>
+ * <li>{@code customId}: tabla estado de bloque → id del {@code block.properties} del pack.</li>
  * <li>Matrices {@code vxProj}/{@code vxModelView} (con inversas y previas) y
  *     {@code vxRenderDistance} en chunks ({@code MixinUniformesIris}).</li>
  * <li>{@code VOXY} definido para todo el pack ({@code MixinShaderPackIris}).</li>
@@ -268,6 +270,10 @@ public final class DibujoVoxy {
     // ------------------------------------------------------------------ programa
 
     private static Programa programa;
+    /** voxy_translucent del pack (agua del LOD); null si el pack no lo trae o no compiló. */
+    private static Programa translucido;
+    /** Estado de bloque → {@code customId} del pack (block.properties), textura R32I. */
+    private static int texturaIds;
 
     /** El pack o la dimensión cambiaron: lo armado ya no sirve. */
     static void liberar() {
@@ -275,10 +281,66 @@ public final class DibujoVoxy {
             programa.liberar();
             programa = null;
         }
+        if (translucido != null) {
+            translucido.liberar();
+            translucido = null;
+        }
+        if (texturaIds != 0) {
+            GlStateManager._deleteTexture(texturaIds);
+            texturaIds = 0;
+        }
     }
 
-    /** Desde {@link ShadersVoxy}, con el voxy_opaque del pack ya compilado sin errores. */
-    static void preparar(IrisRenderingPipeline pipeline, String vertice, String fragmento, List<Integer> buffers) {
+    /** Lo que hace falta para armar un programa del contrato: fuentes compiladas y a qué colortex escribe. */
+    record Fuentes(String vertice, String fragmento, List<Integer> buffers) {
+    }
+
+    /** Ancho de la tabla de customId (texeles por fila). */
+    private static final int ANCHO_IDS = 4096;
+
+    /**
+     * Tabla estado de bloque → id del {@code block.properties} del pack (lo que el pack
+     * espera en {@code customId}; 0 = sin id). Los estados del LOD son de 16 bits.
+     */
+    private static int armarTablaIds() {
+        it.unimi.dsi.fastutil.objects.Object2IntMap<net.minecraft.world.level.block.state.BlockState> ids =
+                net.irisshaders.iris.shaderpack.materialmap.WorldRenderingSettings.INSTANCE.getBlockStateIds();
+        int total = Math.min(net.minecraft.world.level.block.Block.BLOCK_STATE_REGISTRY.size(), 0x10000);
+        int filas = Math.max(1, (total + ANCHO_IDS - 1) / ANCHO_IDS);
+        java.nio.IntBuffer datos = org.lwjgl.system.MemoryUtil.memAllocInt(ANCHO_IDS * filas);
+        int conId = 0;
+        try {
+            for (int i = 0; i < ANCHO_IDS * filas; i++) {
+                int id = 0;
+                if (i < total && ids != null) {
+                    net.minecraft.world.level.block.state.BlockState estado =
+                            net.minecraft.world.level.block.Block.BLOCK_STATE_REGISTRY.byId(i);
+                    if (estado != null && ids.containsKey(estado)) {
+                        id = Math.max(0, ids.getInt(estado));
+                        conId++;
+                    }
+                }
+                datos.put(i, id);
+            }
+            int textura = GlStateManager._genTexture();
+            GlStateManager._bindTexture(textura);
+            GlStateManager._texParameter(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            GlStateManager._texParameter(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            org.lwjgl.opengl.GL11.glTexImage2D(GL_TEXTURE_2D, 0, 0x8235 /* R32I */, ANCHO_IDS, filas, 0,
+                    0x8D94 /* RED_INTEGER */, 0x1404 /* INT */, datos);
+            GlStateManager._bindTexture(0);
+            LOG.info("LOD/Voxy: customId de {} estados de bloque (block.properties del pack)", conId);
+            return textura;
+        } finally {
+            org.lwjgl.system.MemoryUtil.memFree(datos);
+        }
+    }
+
+    /**
+     * Desde {@link ShadersVoxy}, con el voxy_opaque del pack ya compilado sin errores
+     * ({@code agua}: el voxy_translucent, o null si no está o no compiló).
+     */
+    static void preparar(IrisRenderingPipeline pipeline, Fuentes opaco, Fuentes agua, Map<Integer, String> mezcla) {
         liberar();
         if (!activoEnConfig()) {
             return;
@@ -289,11 +351,30 @@ public final class DibujoVoxy {
             return;
         }
         try {
-            programa = new Programa(pipeline, vertice, fragmento, Ints.toArray(buffers));
-            LOG.info("LOD/Voxy: el LOD se dibuja con voxy_opaque del pack (colortex {})", buffers);
+            texturaIds = armarTablaIds();
+            programa = new Programa(pipeline, opaco.vertice(), opaco.fragmento(), Ints.toArray(opaco.buffers()), null);
+            LOG.info("LOD/Voxy: el LOD se dibuja con voxy_opaque del pack (colortex {})", opaco.buffers());
         } catch (RuntimeException e) {
-            programa = null;
+            liberar();
             LOG.error("LOD/Voxy: no se pudo armar el programa del contrato; el LOD sigue con gbuffers_terrain", e);
+            return;
+        }
+        if (agua == null) {
+            LOG.info("LOD/Voxy: sin voxy_translucent: el agua del LOD va con voxy_opaque");
+            return;
+        }
+        try {
+            int[] buffers = Ints.toArray(agua.buffers());
+            int[][] mezclas = new int[buffers.length][];
+            for (int i = 0; i < buffers.length; i++) {
+                mezclas[i] = ContratoVoxy.mezcla(mezcla, i);
+            }
+            translucido = new Programa(pipeline, agua.vertice(), agua.fragmento(), buffers, mezclas);
+            LOG.info("LOD/Voxy: el agua del LOD se dibuja con voxy_translucent (colortex {}, mezcla {})",
+                    agua.buffers(), mezcla);
+        } catch (RuntimeException e) {
+            translucido = null;
+            LOG.error("LOD/Voxy: no se pudo armar voxy_translucent; el agua del LOD va con voxy_opaque", e);
         }
     }
 
@@ -315,6 +396,13 @@ public final class DibujoVoxy {
         if (nuevo || p.marco == null) {
             p.armarMarco(targets);
         }
+        Programa t = translucido;
+        if (t != null && (nuevo || t.marco == null)) {
+            t.armarMarco(targets);
+        }
+        coeficienteCurvaCuadro = coeficienteCurva;
+        inicioCurvaCuadro = inicioCurva;
+        translucidaEnCuadro = false;
         PROYECCION_PREVIA.set(PROYECCION);
         VISTA_PREVIA.set(VISTA);
         PROYECCION.set(proyeccion);
@@ -334,24 +422,58 @@ public final class DibujoVoxy {
         RenderSystem.depthFunc(GL_LEQUAL);
         RenderSystem.disableBlend();
         RenderSystem.enableCull();
-        GlStateManager._glUseProgram(p.id);
-        GL20.glUniform2f(p.curvatura, coeficienteCurva, inicioCurva);
-        p.samplers.update();
-        p.uniforms.update();
-        p.custom.push(p);
-        p.imagenes.update();
-        // Las vx* de este cuadro directo al programa propio: las de Iris se actualizan una vez por cuadro,
-        // antes de que el LOD fije las suyas (para los programas del pack alcanzan, llegan con un cuadro).
-        p.matriz(p.vxProj, PROYECCION);
-        p.matriz(p.vxProjInv, PROYECCION_INV);
-        p.matriz(p.vxProjPrev, PROYECCION_PREVIA);
-        p.matriz(p.vxModelView, VISTA);
-        p.matriz(p.vxModelViewInv, VISTA_INV);
-        p.matriz(p.vxModelViewPrev, VISTA_PREVIA);
-        if (p.vxRenderDistance >= 0) {
-            GL20.glUniform1i(p.vxRenderDistance, distanciaChunks);
+        return p.usar();
+    }
+
+    private static float coeficienteCurvaCuadro, inicioCurvaCuadro;
+    /** Si en este cuadro hubo pasada translúcida (su profundidad ya incluye lo opaco). */
+    private static boolean translucidaEnCuadro;
+    private static final int GL_BLEND = 0x0BE2;
+
+    /**
+     * Pasada del agua con voxy_translucent: la profundidad de lo opaco se copia a la de
+     * translúcidos y el agua se dibuja sobre ella, con la mezcla del json en sus colortex.
+     * null si el pack no tiene voxy_translucent (el agua va entonces con el opaco).
+     */
+    static DesplazamientoCelda empezarTranslucida() {
+        Programa p = programa;
+        Programa t = translucido;
+        if (t == null || t.marco == null) {
+            return null;
         }
-        return (x, y, z) -> GL20.glUniform3f(p.desplazamiento, x, y, z);
+        GlStateManager._glBindFramebuffer(GL_READ_FRAMEBUFFER, p.marco.getId());
+        GlStateManager._glBindFramebuffer(GL_DRAW_FRAMEBUFFER, t.marco.getId());
+        GlStateManager._glBlitFrameBuffer(0, 0, ancho, alto, 0, 0, ancho, alto, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        t.marco.bind();
+        translucidaEnCuadro = true;
+        RenderSystem.depthMask(true);
+        RenderSystem.depthFunc(GL_LEQUAL);
+        // Mezcla por salida (glBlendFuncSeparatei); al terminar se vuelve a la de Minecraft.
+        RenderSystem.disableBlend();
+        t.mezclaPrevia[0] = org.lwjgl.opengl.GL11.glGetInteger(0x80C9); // BLEND_SRC_RGB
+        t.mezclaPrevia[1] = org.lwjgl.opengl.GL11.glGetInteger(0x80C8); // BLEND_DST_RGB
+        t.mezclaPrevia[2] = org.lwjgl.opengl.GL11.glGetInteger(0x80CB); // BLEND_SRC_ALPHA
+        t.mezclaPrevia[3] = org.lwjgl.opengl.GL11.glGetInteger(0x80CA); // BLEND_DST_ALPHA
+        for (int i = 0; i < t.mezclas.length; i++) {
+            int[] m = t.mezclas[i];
+            if (m == null) {
+                org.lwjgl.opengl.GL30.glDisablei(GL_BLEND, i);
+            } else {
+                org.lwjgl.opengl.GL30.glEnablei(GL_BLEND, i);
+                org.lwjgl.opengl.GL40.glBlendFuncSeparatei(i, m[0], m[1], m[2], m[3]);
+            }
+        }
+        return t.usar();
+    }
+
+    /** Vuelve la mezcla global a la que Minecraft cree tener (GlStateManager no ve lo hecho por salida). */
+    private static void restaurarMezcla(Programa t) {
+        for (int i = 0; i < t.mezclas.length; i++) {
+            org.lwjgl.opengl.GL30.glDisablei(GL_BLEND, i);
+        }
+        org.lwjgl.opengl.GL11.glDisable(GL_BLEND);
+        org.lwjgl.opengl.GL14.glBlendFuncSeparate(t.mezclaPrevia[0], t.mezclaPrevia[1], t.mezclaPrevia[2],
+                t.mezclaPrevia[3]);
     }
 
     /** Cuadros dibujados con este programa (para el diagnóstico de los primeros). */
@@ -366,9 +488,14 @@ public final class DibujoVoxy {
         GlStateManager._glUseProgram(0);
         ProgramUniforms.clearActiveUniforms();
         ProgramSamplers.clearActiveSamplers();
-        GlStateManager._glBindFramebuffer(GL_READ_FRAMEBUFFER, p.marco.getId());
-        GlStateManager._glBindFramebuffer(GL_DRAW_FRAMEBUFFER, marcoTranslucido.getId());
-        GlStateManager._glBlitFrameBuffer(0, 0, ancho, alto, 0, 0, ancho, alto, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        if (translucidaEnCuadro) {
+            restaurarMezcla(translucido);
+        } else {
+            // Sin agua aparte: la profundidad de translúcidos es la de lo opaco.
+            GlStateManager._glBindFramebuffer(GL_READ_FRAMEBUFFER, p.marco.getId());
+            GlStateManager._glBindFramebuffer(GL_DRAW_FRAMEBUFFER, marcoTranslucido.getId());
+            GlStateManager._glBlitFrameBuffer(0, 0, ancho, alto, 0, 0, ancho, alto, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        }
         GlStateManager._glBindFramebuffer(GL_FRAMEBUFFER, p.marcoAnterior);
         RenderSystem.depthFunc(GL_LEQUAL);
     }
@@ -412,6 +539,10 @@ public final class DibujoVoxy {
         final IrisRenderingPipeline pipeline;
         final int id;
         final int[] buffers;
+        /** Mezcla por salida (null = sin mezcla); null en el opaco. */
+        final int[][] mezclas;
+        /** Mezcla global de Minecraft al armar el programa, para volver a ella. */
+        final int[] mezclaPrevia = new int[4];
         final ProgramUniforms uniforms;
         final ProgramSamplers samplers;
         final ProgramImages imagenes;
@@ -423,14 +554,16 @@ public final class DibujoVoxy {
         GlFramebuffer marco;
         int marcoAnterior;
 
-        Programa(IrisRenderingPipeline pipeline, String vertice, String fragmento, int[] buffers) {
+        Programa(IrisRenderingPipeline pipeline, String vertice, String fragmento, int[] buffers, int[][] mezclas) {
             this.pipeline = pipeline;
             this.buffers = buffers;
+            this.mezclas = mezclas;
             this.custom = pipeline.getCustomUniforms();
             id = GlStateManager.glCreateProgram();
-            // Mismo orden de atributos que el formato compacto (RenderLod.FORMATO_TEXTURA).
+            // Mismo orden de atributos que el formato del contrato (RenderLod.FORMATO_VOXY).
             GL20.glBindAttribLocation(id, 0, "PosSprite");
             GL20.glBindAttribLocation(id, 1, "Color");
+            GL20.glBindAttribLocation(id, 2, "Extra");
             int vs = shader(GL_VERTEX_SHADER, vertice);
             int fs = shader(GL_FRAGMENT_SHADER, fragmento);
             GlStateManager.glAttachShader(id, vs);
@@ -453,6 +586,7 @@ public final class DibujoVoxy {
             pipeline.addGbufferOrShadowSamplers(s, i, pipeline::getFlippedAfterPrepare, false, false, true, false);
             s.addDynamicSampler(() -> idTextura(PaletaTexturas.ATLAS), "lodvx_Atlas");
             s.addDynamicSampler(() -> idTextura(PaletaTexturas.TABLA_SPRITES), "lodvx_Sprites");
+            s.addDynamicSampler(() -> texturaIds, "lodvx_Ids");
             custom.mapholderToPass(u, this);
             uniforms = u.buildUniforms();
             samplers = s.build();
@@ -469,6 +603,28 @@ public final class DibujoVoxy {
             GlStateManager._glUseProgram(0);
         }
 
+        /** Pone el programa con sus uniforms, samplers y las vx* del cuadro; devuelve el desplazamiento por celda. */
+        DesplazamientoCelda usar() {
+            GlStateManager._glUseProgram(id);
+            GL20.glUniform2f(curvatura, coeficienteCurvaCuadro, inicioCurvaCuadro);
+            samplers.update();
+            uniforms.update();
+            custom.push(this);
+            imagenes.update();
+            // Las vx* de este cuadro directo al programa propio: las de Iris se actualizan una vez por cuadro,
+            // antes de que el LOD fije las suyas (para los programas del pack alcanzan, llegan con un cuadro).
+            matriz(vxProj, PROYECCION);
+            matriz(vxProjInv, PROYECCION_INV);
+            matriz(vxProjPrev, PROYECCION_PREVIA);
+            matriz(vxModelView, VISTA);
+            matriz(vxModelViewInv, VISTA_INV);
+            matriz(vxModelViewPrev, VISTA_PREVIA);
+            if (vxRenderDistance >= 0) {
+                GL20.glUniform1i(vxRenderDistance, distanciaChunks);
+            }
+            return (x, y, z) -> GL20.glUniform3f(desplazamiento, x, y, z);
+        }
+
         void matriz(int ubicacion, Matrix4f m) {
             if (ubicacion >= 0) {
                 GL20.glUniformMatrix4fv(ubicacion, false, m.get(matriz));
@@ -481,7 +637,7 @@ public final class DibujoVoxy {
                 marco.destroy();
             }
             marco = targets.createDHFramebuffer(pipeline.getFlippedAfterPrepare(), buffers);
-            marco.addDepthAttachment(profundidadOpaca);
+            marco.addDepthAttachment(mezclas != null ? profundidadTranslucida : profundidadOpaca);
         }
 
         void liberar() {

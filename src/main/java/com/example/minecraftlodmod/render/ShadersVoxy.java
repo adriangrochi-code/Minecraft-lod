@@ -128,6 +128,7 @@ public final class ShadersVoxy {
                 programa.samplers().keySet(), programa.taaOffset() != null ? "sí" : "no");
 
         StringBuilder resumen = new StringBuilder();
+        DibujoVoxy.Fuentes opaco = null, agua = null;
         for (String archivo : new String[]{"voxy_opaque.glsl", "voxy_translucent.glsl"}) {
             String codigo = fuenteVoxy(preproceso, carpeta, archivo);
             if (codigo == null) {
@@ -137,9 +138,14 @@ public final class ShadersVoxy {
             boolean ok = compilar(archivo, programa, tipos, codigo);
             resumen.append(archivo).append(ok ? " ok " : " con errores ");
             if (ok && archivo.equals("voxy_opaque.glsl")) {
-                // Etapa B: con la opción prendida, el LOD se dibuja con este programa (DibujoVoxy).
-                DibujoVoxy.preparar(pipeline, ultimoVertice, ultimoFragmento, programa.buffersOpacos());
+                opaco = new DibujoVoxy.Fuentes(ultimoVertice, ultimoFragmento, programa.buffersOpacos());
+            } else if (ok) {
+                agua = new DibujoVoxy.Fuentes(ultimoVertice, ultimoFragmento, programa.buffersTranslucidos());
             }
+        }
+        if (opaco != null) {
+            // Etapa B: con la opción prendida, el LOD se dibuja con estos programas (DibujoVoxy).
+            DibujoVoxy.preparar(pipeline, opaco, agua, programa.mezcla());
         }
         estado = resumen.toString().trim();
     }

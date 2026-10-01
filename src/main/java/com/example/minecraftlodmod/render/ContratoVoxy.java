@@ -109,6 +109,42 @@ public final class ContratoVoxy {
                 Collections.unmodifiableList(uniforms), Collections.unmodifiableMap(samplers));
     }
 
+    /** Factores de mezcla de OpenGL por nombre (los que usan los packs en {@code blending}). */
+    private static final Map<String, Integer> FACTORES = Map.ofEntries(
+            Map.entry("ZERO", 0), Map.entry("ONE", 1),
+            Map.entry("SRC_COLOR", 0x0300), Map.entry("ONE_MINUS_SRC_COLOR", 0x0301),
+            Map.entry("SRC_ALPHA", 0x0302), Map.entry("ONE_MINUS_SRC_ALPHA", 0x0303),
+            Map.entry("DST_ALPHA", 0x0304), Map.entry("ONE_MINUS_DST_ALPHA", 0x0305),
+            Map.entry("DST_COLOR", 0x0306), Map.entry("ONE_MINUS_DST_COLOR", 0x0307),
+            Map.entry("SRC_ALPHA_SATURATE", 0x0308));
+
+    /**
+     * Mezcla de la salida {@code salida} de voxy_translucent: la suya del json, si no la de
+     * {@code -1}. Devuelve los factores de OpenGL (fuente y destino de color, fuente y
+     * destino de alfa), o null = sin mezcla ({@code off}, o nada en el json).
+     *
+     * @throws IllegalArgumentException si el texto no son 2 o 4 factores conocidos
+     */
+    public static int[] mezcla(Map<Integer, String> mezcla, int salida) {
+        String modo = mezcla.getOrDefault(salida, mezcla.get(-1));
+        if (modo == null || modo.equalsIgnoreCase("off")) {
+            return null;
+        }
+        String[] partes = modo.trim().split("\\s+");
+        if (partes.length != 2 && partes.length != 4) {
+            throw new IllegalArgumentException("mezcla rara: " + modo);
+        }
+        int[] factores = new int[4];
+        for (int i = 0; i < 4; i++) {
+            Integer f = FACTORES.get(partes[partes.length == 2 ? i % 2 : i].toUpperCase(java.util.Locale.ROOT));
+            if (f == null) {
+                throw new IllegalArgumentException("factor de mezcla desconocido en: " + modo);
+            }
+            factores[i] = f;
+        }
+        return factores;
+    }
+
     /** Quita los comentarios {@code //} y {@code /* *}{@code /} (Iris los conserva al preprocesar). */
     static String sinComentarios(String texto) {
         StringBuilder s = new StringBuilder(texto.length());
@@ -228,6 +264,7 @@ public final class ContratoVoxy {
         }
         s.append("uniform sampler2D lodvx_Atlas;\n");
         s.append("uniform sampler2D lodvx_Sprites;\n");
+        s.append("uniform isampler2D lodvx_Ids;\n");
         return s.toString();
     }
 
@@ -246,6 +283,7 @@ public final class ContratoVoxy {
         s.append("""
                 in ivec4 PosSprite;
                 in vec4 Color;
+                in int Extra;
                 uniform vec3 lodvx_ChunkOffset;
                 uniform vec2 lodvx_Curvatura;
                 out vec3 lodvx_posLocal;
@@ -254,7 +292,10 @@ public final class ContratoVoxy {
                 out vec2 lodvx_uvTamano;
                 out vec3 lodvx_promedio;
                 out float lodvx_luzBloque;
+                out float lodvx_luzCielo;
                 flat out int lodvx_cara;
+                flat out int lodvx_estado;
+                flat out int lodvx_agua;
                 """);
         s.append("vec2 lodvx_taaOffset() ");
         s.append(p.taaOffset() != null ? p.taaOffset() : "{ return vec2(0.0); }");
@@ -276,6 +317,9 @@ public final class ContratoVoxy {
                     lodvx_cara = alfa & 7;
                     int sprite = PosSprite.w & 0x3FFF;
                     lodvx_luzBloque = float((PosSprite.w >> 14) & 3);
+                    lodvx_estado = Extra & 0xFFFF;
+                    lodvx_luzCielo = float((Extra >> 16) & 15);
+                    lodvx_agua = (Extra >> 20) & 1;
                     lodvx_uvOrigen = vec2(0.0);
                     lodvx_uvTamano = vec2(0.0);
                     lodvx_promedio = vec3(1.0);
@@ -319,7 +363,10 @@ public final class ContratoVoxy {
                 in vec2 lodvx_uvTamano;
                 in vec3 lodvx_promedio;
                 in float lodvx_luzBloque;
+                in float lodvx_luzCielo;
                 flat in int lodvx_cara;
+                flat in int lodvx_estado;
+                flat in int lodvx_agua;
                 #line 1
                 """);
         s.append(fuentePack);
@@ -327,8 +374,10 @@ public final class ContratoVoxy {
 
                 #line 100000
                 const uint LODVX_CARA[6] = uint[6](4u, 5u, 0u, 1u, 2u, 3u);
+                const float LODVX_ALFA_AGUA = 0.75;
                 void main() {
                     vec3 color = lodvx_color.rgb;
+                    float alfa = lodvx_agua != 0 ? LODVX_ALFA_AGUA : 1.0;
                     vec2 repeticion = vec2(0.0);
                     if (lodvx_uvTamano.x > 0.0) {
                         int eje = lodvx_cara / 2;
@@ -343,16 +392,21 @@ public final class ContratoVoxy {
                         vec4 tex = textureGrad(lodvx_Atlas, uv, dFdx(repeticion) * lodvx_uvTamano,
                                                dFdy(repeticion) * lodvx_uvTamano);
                         color *= mix(vec3(1.0), tex.rgb / max(lodvx_promedio, vec3(1.0 / 255.0)), tex.a);
+                        if (lodvx_agua != 0) {
+                            alfa = tex.a;
+                        }
                     }
                     VoxyFragmentParameters p;
-                    p.sampledColour = vec4(color, 1.0);
+                    p.sampledColour = vec4(color, alfa);
                     p.tile = vec2(0.0);
                     p.uv = fract(repeticion);
                     p.face = LODVX_CARA[clamp(lodvx_cara, 0, 5)];
                     p.modelId = 0u;
-                    p.lightMap = vec2((lodvx_luzBloque * 5.0 + 0.5) / 16.0, 15.5 / 16.0);
+                    p.lightMap = vec2((lodvx_luzBloque * 5.0 + 0.5) / 16.0, (lodvx_luzCielo + 0.5) / 16.0);
                     p.tinting = vec4(1.0);
-                    p.customId = 0u;
+                    ivec2 tamIds = textureSize(lodvx_Ids, 0);
+                    p.customId = uint(max(0, texelFetch(lodvx_Ids,
+                            ivec2(lodvx_estado % tamIds.x, min(lodvx_estado / tamIds.x, tamIds.y - 1)), 0).r));
                     voxy_emitFragment(p);
                 }
                 """);

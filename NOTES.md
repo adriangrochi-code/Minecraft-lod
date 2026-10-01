@@ -53,13 +53,12 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   Xvfb (llvmpipe) con un pack de prueba y con Complementary r5.9.3: arma,
   compila, sin errores de GL, el LOD sale con la luz, niebla y nubes del
   pack. Falta, y hace falta verlo en la PC:
-  - pasada translúcida (`voxy_translucent`, `translucentDrawBuffers`, mezcla
-    del json): hoy el agua del LOD va por la opaca y sale plana y opaca;
-    hay que separar el agua en su propia malla;
-  - `customId` del bloque (IdMap de Iris, `block.properties`): hoy 0, el
-    pack trata todo como bloque genérico (sin agua, hojas, emisivos);
-  - luz del cielo real en `lightMap` (hoy va 15 fijo) y
-    `excludeLodsFromVanillaDepth`;
+  - hecho en 0.26.9: agua en pasada translúcida (`voxy_translucent`, solo la
+    superficie), `customId` por estado (`block.properties` del pack, tabla
+    R32I) y luz de cielo horneada en `lightMap`. A juzgar en la PC: el fondo
+    marino se ve a través del agua en escalones de vóxeles grandes (cuadros
+    más claros y oscuros según la profundidad); ríos y cascadas en altura
+    quedan sin paredes de agua; `excludeLodsFromVanillaDepth` sigue sin usarse;
   - sombras del LOD (Complementary con `VOXY` usa colortex18 de sombra en
     pantalla; el LOD no está en el shadow map);
   - Iris 1.8 admite colortex0-15: con el contrato prendido se amplía a 32

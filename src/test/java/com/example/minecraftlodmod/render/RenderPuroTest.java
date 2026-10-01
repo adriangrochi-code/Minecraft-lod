@@ -538,4 +538,57 @@ class RenderPuroTest {
         assertEquals(4, franja);
         assertEquals(4, tierra);
     }
+
+    @Test
+    void conAguaSeparadaElAguaVaASuGrupoYElFormatoVoxyLlevaEstadoLuzYAgua() {
+        SuperVoxel agua = new SuperVoxel((byte) 40, (byte) 70, (byte) 200, (byte) SuperVoxel.LLENO,
+                SuperVoxel.Material.AGUA, (byte) 0, (short) 86).conLuzHorneada(12);
+        SuperVoxel piedra = new SuperVoxel((byte) 100, (byte) 110, (byte) 120, (byte) SuperVoxel.LLENO,
+                SuperVoxel.Material.SOLIDO, (byte) 0, (short) 1).conLuzHorneada(9);
+        GeometriaLod g = new GeometriaLod();
+        g.usarOclusionAmbiental(false);
+        g.separarAgua(true);
+        // Agua arriba de la piedra: la piedra queda con 5 caras al aire y su cara de arriba contra el agua.
+        SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        SuperVoxel[] grid = new SuperVoxel[8];
+        Arrays.fill(grid, aire);
+        grid[0] = piedra; // (0,0,0)
+        grid[2] = agua;   // (0,1,0), índice (x*lado+y)*lado+z
+        g.agregarSeccion(grid, 2, 0, 0, 0, 8);
+        int deAgua = g.verticesDeCara(GeometriaLod.GRUPO_AGUA);
+        assertEquals(4, deAgua, "El agua separada es solo su superficie (sin paredes que se vean a través)");
+        assertEquals(g.vertices() - deAgua, g.verticesOpacos());
+
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(deAgua * GeometriaLod.BYTES_VOXY);
+        g.escribirVoxy(b, GeometriaLod.GRUPO_AGUA);
+        assertEquals(b.capacity(), b.position());
+        b.flip().order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < deAgua; i++) {
+            b.position(i * GeometriaLod.BYTES_VOXY + 8);
+            assertEquals(40, b.get() & 0xFF, "Color sin sombra por cara: el pack ilumina");
+            b.position(i * GeometriaLod.BYTES_VOXY + 12);
+            int extra = b.getInt();
+            assertEquals(86, extra & 0xFFFF, "Estado de bloque para el customId");
+            assertEquals(1, (extra >> 20) & 1, "Marca de agua");
+        }
+
+        java.nio.ByteBuffer opacos = java.nio.ByteBuffer.allocate(g.verticesOpacos() * GeometriaLod.BYTES_VOXY);
+        g.escribirVoxy(opacos, -1);
+        assertEquals(opacos.capacity(), opacos.position(), "-1 = todo menos el agua");
+        opacos.flip().order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        int extra = opacos.getInt(12);
+        assertEquals(1, extra & 0xFFFF);
+        assertEquals(0, (extra >> 20) & 1);
+        assertEquals(GeometriaLod.extraVoxy(1, (extra >> 16) & 15, false), extra);
+    }
+
+    @Test
+    void sinSepararElAguaVaConSuCara() {
+        SuperVoxel agua = new SuperVoxel((byte) 40, (byte) 70, (byte) 200, (byte) SuperVoxel.LLENO,
+                SuperVoxel.Material.AGUA, (byte) 0, (short) 86).conLuzHorneada(12);
+        GeometriaLod g = new GeometriaLod();
+        g.agregarSeccion(new SuperVoxel[]{agua}, 1, 0, 0, 0, 16);
+        assertEquals(0, g.verticesDeCara(GeometriaLod.GRUPO_AGUA));
+        assertEquals(g.vertices(), g.verticesOpacos());
+    }
 }

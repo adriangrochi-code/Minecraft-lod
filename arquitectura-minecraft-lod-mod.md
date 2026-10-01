@@ -690,8 +690,16 @@ Los shaderpacks ya definen contratos para mods de LOD, que serían el paso (b):
   profundidad vale para el cuadro de Iris en que se dibujó. Iris 1.8 admite
   16 colortex y Complementary con `VOXY` usa 18 y 19: con el contrato se
   amplía a 32 (`MixinObjetivosIris`); si el pipeline igual falla, el pack se
-  recarga sin `VOXY` (`MixinPipelineIris`). Pendiente: pasada translúcida
-  (agua), `customId`, luz del cielo, sombras (NOTES.md).
+  recarga sin `VOXY` (`MixinPipelineIris`).
+  **0.26.9:** formato de vértice propio del contrato (`RenderLod.FORMATO_VOXY`,
+  16 B: el compacto con el color sin sombra por cara + un int con estado de
+  bloque, luz de cielo horneada y marca de agua). `customId` = tabla R32I
+  estado → id del `block.properties` del pack (`WorldRenderingSettings` de
+  Iris), `lightMap` con la luz de cielo real. El agua va a un grupo aparte
+  (`GeometriaLod.GRUPO_AGUA`, solo la superficie) y se dibuja con
+  `voxy_translucent` sobre una copia de la profundidad opaca, con la mezcla
+  del json por salida; sin ese archivo, con el opaco. Pendiente: sombras del
+  LOD (NOTES.md).
 
 Con Sodium/Embeddium, `LevelRenderer#isSectionCompiled` da false aun para
 secciones a la vista: ahí el LOD le cede un chunk a vanilla cuando lleva 2 s
