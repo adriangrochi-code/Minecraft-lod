@@ -152,10 +152,13 @@ public final class DibujoVoxy {
     private static int alto;
     private static GlFramebuffer marcoTranslucido;
 
-    /** Último {@link #empezar}; si el LOD deja de dibujar, su profundidad se vacía para no mostrar uno viejo. */
-    private static long ultimoDibujoNanos;
+    /**
+     * Cuadro (contador de Iris) del último {@link #empezar}: si el LOD deja de dibujar,
+     * su profundidad se vacía para no mostrar uno viejo. Por cuadros y no por tiempo:
+     * con poco FPS el dibujo del LOD solo puede tardar más que cualquier tope fijo.
+     */
+    private static int ultimoCuadro = -1;
     private static boolean vacia = true;
-    private static final long VIEJA_NANOS = 100_000_000L;
 
     /** Para los samplers del pack: siempre una textura válida (borrada a 1 = "sin LOD") aunque no se dibuje. */
     public static int profundidadOpaca() {
@@ -172,7 +175,7 @@ public final class DibujoVoxy {
         if (asegurarProfundidades(Math.max(ancho, 1), Math.max(alto, 1))) {
             vacia = false; // recién creadas: contenido indefinido
         }
-        if (!vacia && System.nanoTime() - ultimoDibujoNanos > VIEJA_NANOS) {
+        if (!vacia && net.irisshaders.iris.uniforms.SystemTimeUniforms.COUNTER.getAsInt() - ultimoCuadro > 1) {
             vaciar();
             vacia = true;
         }
@@ -269,7 +272,7 @@ public final class DibujoVoxy {
         VISTA.set(vista);
         VISTA.invert(VISTA_INV);
         distanciaChunks = (int) Math.ceil(alcanceBloques / 16f);
-        ultimoDibujoNanos = System.nanoTime();
+        ultimoCuadro = net.irisshaders.iris.uniforms.SystemTimeUniforms.COUNTER.getAsInt();
         vacia = false;
 
         p.marcoAnterior = GlStateManager.getBoundFramebuffer();
@@ -287,12 +290,29 @@ public final class DibujoVoxy {
         p.uniforms.update();
         p.custom.push(p);
         p.imagenes.update();
+        // Las vx* de este cuadro directo al programa propio: las de Iris se actualizan una vez por cuadro,
+        // antes de que el LOD fije las suyas (para los programas del pack alcanzan, llegan con un cuadro).
+        p.matriz(p.vxProj, PROYECCION);
+        p.matriz(p.vxProjInv, PROYECCION_INV);
+        p.matriz(p.vxProjPrev, PROYECCION_PREVIA);
+        p.matriz(p.vxModelView, VISTA);
+        p.matriz(p.vxModelViewInv, VISTA_INV);
+        p.matriz(p.vxModelViewPrev, VISTA_PREVIA);
+        if (p.vxRenderDistance >= 0) {
+            GL20.glUniform1i(p.vxRenderDistance, distanciaChunks);
+        }
         return (x, y, z) -> GL20.glUniform3f(p.desplazamiento, x, y, z);
     }
+
+    /** Cuadros dibujados con este programa (para el diagnóstico de los primeros). */
+    private static int cuadros;
 
     /** Saca el programa, copia la profundidad a la de translúcidos y vuelve al framebuffer de antes. */
     static void terminar() {
         Programa p = programa;
+        if (++cuadros == 30) {
+            diagnosticar(p);
+        }
         GlStateManager._glUseProgram(0);
         ProgramUniforms.clearActiveUniforms();
         ProgramSamplers.clearActiveSamplers();
@@ -301,6 +321,23 @@ public final class DibujoVoxy {
         GlStateManager._glBlitFrameBuffer(0, 0, ancho, alto, 0, 0, ancho, alto, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
         GlStateManager._glBindFramebuffer(GL_FRAMEBUFFER, p.marcoAnterior);
         RenderSystem.depthFunc(GL_LEQUAL);
+    }
+
+    /** Una vez: estado del framebuffer, error de GL y un píxel de profundidad y color del LOD (al log). */
+    private static void diagnosticar(Programa p) {
+        int error = org.lwjgl.opengl.GL11.glGetError();
+        int estado = p.marco.getStatus();
+        GlStateManager._glBindFramebuffer(GL_READ_FRAMEBUFFER, p.marco.getId());
+        float[] profundidad = new float[1];
+        float[] color = new float[4];
+        int x = ancho / 2;
+        int y = alto / 3;
+        org.lwjgl.opengl.GL11.glReadPixels(x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, profundidad);
+        org.lwjgl.opengl.GL11.glReadBuffer(org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0);
+        org.lwjgl.opengl.GL11.glReadPixels(x, y, 1, 1, org.lwjgl.opengl.GL11.GL_RGBA, GL_FLOAT, color);
+        LOG.info("LOD/Voxy: cuadro {}: framebuffer 0x{} ({}x{}, buffers {}), error GL 0x{}, píxel ({},{}): profundidad {}, color {}",
+                cuadros, Integer.toHexString(estado), ancho, alto, java.util.Arrays.toString(p.buffers),
+                Integer.toHexString(error), x, y, profundidad[0], java.util.Arrays.toString(color));
     }
 
     /** Sin dibujar el LOD en este cuadro: la profundidad propia queda en "nada" (1.0). */
@@ -331,6 +368,8 @@ public final class DibujoVoxy {
         final CustomUniforms custom;
         final int desplazamiento;
         final int curvatura;
+        final int vxProj, vxProjInv, vxProjPrev, vxModelView, vxModelViewInv, vxModelViewPrev, vxRenderDistance;
+        private final float[] matriz = new float[16];
         GlFramebuffer marco;
         int marcoAnterior;
 
@@ -370,7 +409,20 @@ public final class DibujoVoxy {
             imagenes = i.build();
             desplazamiento = GL20.glGetUniformLocation(id, "lodvx_ChunkOffset");
             curvatura = GL20.glGetUniformLocation(id, "lodvx_Curvatura");
+            vxProj = GL20.glGetUniformLocation(id, "vxProj");
+            vxProjInv = GL20.glGetUniformLocation(id, "vxProjInv");
+            vxProjPrev = GL20.glGetUniformLocation(id, "vxProjPrev");
+            vxModelView = GL20.glGetUniformLocation(id, "vxModelView");
+            vxModelViewInv = GL20.glGetUniformLocation(id, "vxModelViewInv");
+            vxModelViewPrev = GL20.glGetUniformLocation(id, "vxModelViewPrev");
+            vxRenderDistance = GL20.glGetUniformLocation(id, "vxRenderDistance");
             GlStateManager._glUseProgram(0);
+        }
+
+        void matriz(int ubicacion, Matrix4f m) {
+            if (ubicacion >= 0) {
+                GL20.glUniformMatrix4fv(ubicacion, false, m.get(matriz));
+            }
         }
 
         /** Colortex del json (lo que escribe gbuffers, según el estado de alternancia del pack) + profundidad propia. */
