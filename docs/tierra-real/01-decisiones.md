@@ -60,6 +60,36 @@ Everest para construir; todo múltiplo de 16.)
 - Opciones de `cubico/` prendidas por defecto **solo en este tipo de mundo**
   (no hay islas flotantes reales: `recortarArriba` es seguro).
 
+## Riesgos encontrados en la revisión (resueltos abajo o en su hito)
+
+1. **Océanos de lava.** El selector de fluidos global de vanilla
+   (`NoiseBasedChunkGenerator.createFluidPicker`) pone lava bajo
+   `min(-54, sea_level)`. A 1:8 el fondo oceánico típico (~4 000 m) queda en
+   y ≈ -437: todo el océano bajo y = -54 saldría lava. **Decisión:** en este
+   tipo de mundo el fluido global es agua en toda la altura (mixin acotado a
+   los `noise_settings` de Tierra real); la lava solo la ponen los acuíferos
+   locales, referidos a la profundidad bajo la superficie. Entra en **H3**.
+2. **Reglas atadas a `y` absoluto.** Además de las cuevas (H9): el gradiente
+   de pizarra profunda (y 0–8 en las reglas de superficie) y la distribución
+   de menas (`height_range` absolutos). Sin cambios, todo fondo marino bajo
+   y = 0 es pizarra profunda y las montañas casi no tienen menas.
+   **Decisión:** reglas de superficie propias para la pizarra profunda
+   (por profundidad bajo `AlturaTierra`) en **H4**; menas re-referidas a la
+   profundidad en **H9**, junto con las cuevas.
+3. **Horizonte curvo corto.** Con R = 796 km (1:8), `sqrt(2Rh)` da ~1 800
+   bloques a 2 bloques de altura y ~12 600 (~790 chunks) a 100 bloques: la
+   mayor parte del radio del LOD queda bajo el horizonte y solo asoman
+   montañas o se ve volando. Es lo correcto; se documenta y en **H5** se
+   mide qué radio del LOD vale la pena según la altura de la cámara (no
+   generar lo que la curvatura tapa).
+4. **Estiramiento en la tierra plana.** La azimutal equidistante estira el
+   este-oeste por `c / sin c` (c = distancia angular al polo norte): ×17 a
+   80° S. Cada muestra de 30″ ocupa ~2 000 bloques de ancho en la
+   Antártida: ahí el detalle sintetizado (H8) hace casi todo el trabajo.
+5. **Presupuesto de `alturaTierra`.** < 0,5 µs con bicúbica (16 muestras) +
+   ruido de detalle es ajustado: se mide desde **H2** (sin detalle) y cada
+   hito que agregue costo repite la medición.
+
 ## Abiertas (las decide el usuario cuando lleguen)
 
 - Punto de aparición (ciudad o coordenadas): por ahora, elegible al crear el

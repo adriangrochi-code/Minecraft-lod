@@ -21,6 +21,12 @@
    `core/HorizonteCurvo` en 6371 km / escala (796 km a 1:8) y el "horizonte
    real" (`sqrt(2Rh)`, sección 29) sale con ese radio. En multiplayer el
    radio viaja en el paquete de configuración del LOD.
+   **Consecuencia:** con ese radio el horizonte geométrico es corto (~1 800
+   bloques a nivel del suelo, ~12 600 a 100 bloques de altura). El LOD no
+   debería armar ni subir lo que la curvatura tapa: el radio útil sale de
+   `sqrt(2Rh) + sqrt(2R·hMax)` con hMax la altura máxima del terreno
+   lejano sobre el mar (a 1:8: ~1 106 bloques → incluso desde el suelo se
+   ven picos a ~44 000 bloques). Medirlo en H5.
 
 ## Del LOD / cubico al generador
 

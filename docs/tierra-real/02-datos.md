@@ -1,6 +1,7 @@
 # 02 — Datos
 
-**Todo lo de licencias y tamaños: verificar en la página oficial antes de usar.**
+**Verificado el 2026-10-01 en las páginas oficiales (H0). Ver "Verificación"
+al final; lo que no se pudo confirmar está marcado.**
 
 ## Elevación (tierra + fondo del mar en un solo dato)
 
@@ -50,3 +51,17 @@ Minecraft va en un archivo de datos editable (`tierra/biomas.json`).
 
 Pantalla de crear mundo + `CREDITS` del jar: NOAA ETOPO, Beck et al.
 (Köppen), fuente de cobertura. Requisito de las licencias CC BY.
+
+## Verificación (H0, 2026-10-01)
+
+| Fuente | Confirmado | Corrección al paquete |
+|---|---|---|
+| ETOPO 2022 | 15″ en 288 teselas de 15°×15° (+62 teselas "bed"); **30″ y 60″ como archivo global único**, GeoTIFF y NetCDF, versiones `_surface` (superficie del hielo) y `_bed`. Alturas en metros sobre el geoide EGM2008 (≈ nivel del mar). Uso libre privado, académico y comercial (salvo navegación); el catálogo lo da como CC0-1.0. Citar DOI 10.25921/fd45-gt74 | Usar la versión **`_surface`** (la superficie del hielo es lo que se camina). Los tamaños de archivo no figuran en la página: medirlos al descargar en H1 (los GeoTIFF podrían ser float32, el doble que int16; el `.lodt` igual guarda int16) |
+| GEBCO | Ahora GEBCO_2026 (anual, en julio), 15″, NetCDF 4 GB comprimido / 7,0 GB; **dominio público**, citar al GEBCO Compilation Group | "Uso libre con atribución" → dominio público con cita |
+| Köppen-Geiger (Beck et al., V3, 2023, *Scientific Data* 10, 724) | CC BY 4.0, GeoTIFF en varias resoluciones (la más fina 1 km), períodos 1901–2099; trae `legend.txt` | Usar el período actual (1991–2020) |
+| ESA WorldCover | CC BY 4.0, 10 m, **~117 GB** el mapa global | Demasiado grande para agregarlo en la máquina del jugador: la agregación a 1 km se hace una sola vez de nuestro lado o se usa otra cobertura global de 300 m–1 km (**sin verificar**; elegir en H4). Atribución exacta: "© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium" |
+| Copernicus GLO-30 | no verificado (sigue como mejora futura) | — |
+
+Fuentes: ncei.noaa.gov/products/etopo-global-relief-model, guía de usuario
+de ETOPO 2022 (ngdc.noaa.gov), gebco.net, gloh2o.org/koppen,
+esa-worldcover.org/en/data-access.

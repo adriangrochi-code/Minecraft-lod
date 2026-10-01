@@ -61,3 +61,17 @@ El dato tiene una muestra cada ~116 bloques (30″ a 1:8):
 Objetivo: `alturaTierra` en < 0,5 µs con la tesela en caché (es lo que más
 se llama). Medir con el script del servidor dedicado de la otra sesión
 (ver `04-integracion-lod.md`, "Cómo medir").
+
+Se mide desde H2 (bicúbica sola, microbenchmark en tests) para saber cuánto
+presupuesto queda para el ruido de detalle de H8. Ideas si no alcanza:
+coeficientes bicúbicos precalculados por celda de muestra (cachés por
+tesela), y evaluar el detalle una vez por columna con el caché 2D.
+
+## Fluido y reglas que dependen de `y` absoluto
+
+- **Fluido global:** agua en toda la altura (ver riesgo 1 de
+  `01-decisiones.md`); sin esto los océanos profundos salen lava.
+- **Pizarra profunda:** regla de superficie propia por profundidad bajo la
+  superficie, no el gradiente vanilla de y 0–8 (H4).
+- **Menas:** las `height_range` de vanilla son absolutas; se re-refieren a la
+  profundidad en H9 junto con las cuevas.
