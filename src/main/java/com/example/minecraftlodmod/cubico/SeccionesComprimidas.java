@@ -8,7 +8,11 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.SimpleBitStorage;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -45,12 +49,16 @@ public final class SeccionesComprimidas {
     /** Chunks cargados del servidor por dimensión, en orden de recorrido. */
     private static final Map<ResourceKey<Level>, Long2ObjectLinkedOpenHashMap<LevelChunk>> CARGADOS = new HashMap<>();
     private static final Map<ResourceKey<Level>, Iterator<LevelChunk>> CURSORES = new HashMap<>();
+    /** Tick de carga de cada chunk: la luz de un chunk recién cargado puede estar en cola y escribirse directo. */
+    private static final it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap CARGADO_EN = new it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap();
+    private static final int TICKS_ANTES_DE_LUZ = 200;
 
     @SubscribeEvent
     public static void alCargarChunk(ChunkEvent.Load evento) {
         if (evento.getLevel() instanceof ServerLevel nivel && evento.getChunk() instanceof LevelChunk chunk) {
             CARGADOS.computeIfAbsent(nivel.dimension(), k -> new Long2ObjectLinkedOpenHashMap<>())
                     .put(chunk.getPos().toLong(), chunk);
+            CARGADO_EN.put(chunk.getPos().toLong(), nivel.getServer().getTickCount());
             CURSORES.remove(nivel.dimension()); // el iterador ya no vale
         }
     }
@@ -59,6 +67,7 @@ public final class SeccionesComprimidas {
     public static void alDescargarChunk(ChunkEvent.Unload evento) {
         if (evento.getLevel() instanceof ServerLevel nivel) {
             var mapa = CARGADOS.get(nivel.dimension());
+            CARGADO_EN.remove(evento.getChunk().getPos().toLong());
             if (mapa != null && mapa.remove(evento.getChunk().getPos().toLong()) != null) {
                 CURSORES.remove(nivel.dimension());
             }
@@ -69,6 +78,7 @@ public final class SeccionesComprimidas {
     public static void alParar(ServerStoppedEvent evento) {
         CARGADOS.clear();
         CURSORES.clear();
+        CARGADO_EN.clear();
     }
 
     /** Cada tick, desde {@link GeneracionVertical}: barrido con tope de tiempo. */
@@ -102,13 +112,21 @@ public final class SeccionesComprimidas {
         int cx = chunk.getPos().x;
         int cz = chunk.getPos().z;
         LevelChunkSection[] secciones = chunk.getSections();
+        LevelLightEngine luz = chunk.getLevel().getLightEngine();
+        long cargado = CARGADO_EN.getOrDefault(chunk.getPos().toLong(), Long.MAX_VALUE);
+        boolean luzEstable = chunk.getLevel().getServer().getTickCount() - cargado > TICKS_ANTES_DE_LUZ;
         for (int i = 0; i < secciones.length; i++) {
             LevelChunkSection s = secciones[i];
-            if (s.hasOnlyAir() || s.isRandomlyTicking()) {
-                continue;
-            }
             int sy = chunk.getSectionYFromSectionIndex(i);
             if (cerca(jugadores, cx, sy, cz, distanciaVista + 2, distancia)) {
+                continue;
+            }
+            // Luz: las capas visibles (las que se leen; el motor de luz copia antes de escribir).
+            if (luzEstable) {
+                comprimirLuz(luz.getLayerListener(LightLayer.SKY).getDataLayerData(SectionPos.of(cx, sy, cz)));
+                comprimirLuz(luz.getLayerListener(LightLayer.BLOCK).getDataLayerData(SectionPos.of(cx, sy, cz)));
+            }
+            if (s.hasOnlyAir() || s.isRandomlyTicking()) {
                 continue;
             }
             PalettedContainer<BlockState> estados = s.getStates();
@@ -124,6 +142,17 @@ public final class SeccionesComprimidas {
                 ESTADISTICAS.bytesOriginales.add(simple.getRaw().length * 8L);
                 ESTADISTICAS.bytesComprimidos.add(a.comprimir());
                 ESTADISTICAS.comprimidas.increment();
+            }
+        }
+    }
+
+    private static void comprimirLuz(DataLayer capa) {
+        if (capa instanceof LuzComprimible c && !c.minecraftlodmod$estaComprimida()) {
+            boolean nueva = !capa.isDefinitelyHomogenous();
+            int bytes = c.minecraftlodmod$comprimir();
+            if (bytes >= 0 && nueva) {
+                ESTADISTICAS.luzComprimida.increment();
+                ESTADISTICAS.bytesLuz.add(bytes);
             }
         }
     }
@@ -148,6 +177,13 @@ public final class SeccionesComprimidas {
         final LongAdder descomprimidas = new LongAdder();
         final LongAdder bytesOriginales = new LongAdder();
         final LongAdder bytesComprimidos = new LongAdder();
+        final LongAdder luzComprimida = new LongAdder();
+        final LongAdder bytesLuz = new LongAdder();
+        private final LongAdder luzDescomprimida = new LongAdder();
+
+        public void luzDescomprimida() {
+            luzDescomprimida.increment();
+        }
 
         public String resumenYReiniciar() {
             long c = comprimidas.sumThenReset();
@@ -155,11 +191,15 @@ public final class SeccionesComprimidas {
             long d = descomprimidas.sumThenReset();
             long o = bytesOriginales.sumThenReset();
             long k = bytesComprimidos.sumThenReset();
-            if (c == 0 && r == 0 && d == 0) {
+            long lc = luzComprimida.sumThenReset();
+            long lb = bytesLuz.sumThenReset();
+            long ld = luzDescomprimida.sumThenReset();
+            if (c == 0 && r == 0 && d == 0 && lc == 0 && ld == 0) {
                 return null;
             }
             return String.format("%d secciones comprimidas (%d → %d KB de datos de bloques en las nuevas),"
-                    + " %d recomprimidas, %d descomprimidas al usarlas", c, o >> 10, c == 0 ? 0 : (k >> 10), r, d);
+                    + " %d recomprimidas, %d descomprimidas al usarlas; luz: %d capas comprimidas (%d → %d KB),"
+                    + " %d descomprimidas", c, o >> 10, c == 0 ? 0 : (k >> 10), r, d, lc, lc * 2, lb >> 10, ld);
         }
     }
 }
