@@ -259,15 +259,10 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ### Pedido a la sesión del LOD (desde la rama `claude/tierra-real`, 2026-10-01)
 
-- **El repo no compila desde GitHub:** `.gitignore` tiene `build/`, que
-  también ignora `src/main/java/.../vulkanmod/render/chunk/build/` (y
-  cualquier paquete `build`). Esa carpeta nunca se subió: `compileJava` falla
-  con "package ...vulkanmod.render.chunk.build does not exist" en un clon
-  limpio. La rama `claude/tierra-real` ya cambió la línea a `/build/`
-  (pedido del usuario); **falta subir la carpeta** desde la máquina de la
-  sesión del LOD. La rama
-  de Tierra real corrió sus tests con JUnit aparte (`tierra/` no depende de
-  Minecraft) hasta que esto se arregle.
+- ~~El repo no compila desde GitHub~~ (`.gitignore` con `build/` ignoraba
+  `vulkanmod/render/chunk/build/`). **Resuelto 2026-10-01:** la sesión del LOD
+  ancló las rutas y subió la carpeta; `claude/tierra-real` lo juntó y
+  `./gradlew build` pasa desde un clon limpio (357 tests).
 
 
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~

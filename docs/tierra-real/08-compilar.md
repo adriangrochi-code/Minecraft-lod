@@ -1,5 +1,9 @@
 # 08 — Cómo compilar la rama `claude/tierra-real` (prioridad 1)
 
+> **Hecho (2026-10-01):** la rama juntó `claude/acceso-extra-xhb3yf` con la
+> carpeta subida y el test ya copia el recurso a un temporal; `./gradlew
+> build` pasa (357 tests). Queda como referencia.
+
 Verificado el 2026-10-01 desde un **clon limpio de GitHub**: con estos pasos
 `./gradlew compileJava` pasa y los 25 tests de `tierra/` dan 0 fallos.
 
