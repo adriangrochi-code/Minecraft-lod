@@ -16,6 +16,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   Xvfb (1280×720, misma vista): 4 px = 2,8 M vértices, 2 px = 4,4 M,
   1 px = 7,0 M. Si en la 1060 sobra, bajar el valor por defecto de
   "Píxeles máximos" a 2 px.
+- **Rocas y copas "flotantes" lejanas** (vista del punto bosque del mundo de
+  benchmark, hacia el oeste): capas grises con cielo entre ellas. No cambian
+  con el tope de píxeles ni con "Descartar cuevas". En Xvfb el auto-ajuste
+  recorta el radio (6 FPS) y quedan fuera de vista, así que no se pudo
+  aislar: revisar con radio fijo en la PC.
 - **Prioridad de chunks reales sobre la aproximación (0.24.1):** resuelto
   (`GenerationTaskScheduler.intentarEnviarDeFondo`/`hayPrioritariasEsperando`,
   cesión entre evaluaciones de densidad en `GeneradorAproximado`). Pendiente
