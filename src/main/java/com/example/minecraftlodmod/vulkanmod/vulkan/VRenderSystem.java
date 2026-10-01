@@ -129,7 +129,10 @@ public abstract class VRenderSystem {
     }
 
     public static void applyProjectionMatrix(Matrix4f mat) {
-        mat.get(projectionMatrix.buffer.asFloatBuffer());
+        // Minecraft LOD: sin el arreglo global de JOML (el Java de Modrinth no trae jdk.attach) las
+        // proyecciones llegan con la profundidad de OpenGL (-1..1) y Vulkan recortaba la mitad: la
+        // interfaz (HUD) y las entidades no se veían. toVulkanClip existía pero nadie lo llamaba.
+        (JOML_DEPTH_FIX_ACTIVE ? mat : toVulkanClip(mat)).get(projectionMatrix.buffer.asFloatBuffer());
     }
 
     public static void calculateMVP() {

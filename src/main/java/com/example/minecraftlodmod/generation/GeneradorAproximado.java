@@ -61,6 +61,14 @@ public final class GeneradorAproximado {
     static final int REVISIONES_POR_TICK = 8192;
     static final int RECENTRAR_CHUNKS = 64;
     /**
+     * Cada cuánto se vuelve a recorrer una espiral ya terminada. Quedaban
+     * huecos que nadie revisaba: chunks salteados por estar a la vista (iban a
+     * llegar reales) cuya extracción no llegó a hacerse (cola llena y chunk
+     * descargado), o tareas que fallaron. Volver a recorrer es barato: lo que
+     * ya tiene datos se saltea con una consulta al índice.
+     */
+    static final long REVISAR_ESPIRAL_NANOS = 60_000_000_000L;
+    /**
      * Chunks por tarea del pool. Con una tarea por chunk, el ritmo quedaba
      * atado a los ticks (tareas en vuelo × 20 por segundo) y no al costo real.
      */
@@ -105,6 +113,8 @@ public final class GeneradorAproximado {
     /** Chunks de un lote que cedió el turno a la extracción real: vuelven a la ventana en el próximo tick. */
     private final java.util.Queue<Long> devueltos = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private boolean espiralAgotada, avisoCompleto;
+    /** Cuándo se agotaron las espirales (para volver a recorrerlas, ver {@link #REVISAR_ESPIRAL_NANOS}). */
+    private long espiralAgotadaNanos, espiralRegionAgotadaNanos;
     private final AtomicLong hechos = new AtomicLong();
     private final AtomicLong hechosTotal = new AtomicLong();
     private final AtomicLong nanosCalculo = new AtomicLong();
@@ -174,9 +184,20 @@ public final class GeneradorAproximado {
             espiralRegion = radio > TerrenoAproximado.CHUNKS_POR_REGION_DESDE
                     ? new EspiralChunks(radio / NivelesGrandes.ladoEnSecciones(NivelesGrandes.NIVEL_MIN) + 2) : null;
             espiralRegionAgotada = false;
+            espiralRegionAgotadaNanos = 0;
             radioRegion = radio;
         }
         registrarAvance();
+        long ahoraNanos = System.nanoTime();
+        if (espiralAgotada && ahoraNanos - espiralAgotadaNanos > REVISAR_ESPIRAL_NANOS) {
+            espiral = new EspiralChunks(espiral.radio());
+            espiralAgotada = false;
+        }
+        if (espiralRegion != null && espiralRegionAgotada
+                && ahoraNanos - espiralRegionAgotadaNanos > REVISAR_ESPIRAL_NANOS) {
+            espiralRegion = new EspiralChunks(espiralRegion.radio());
+            espiralRegionAgotada = false;
+        }
         tareasEnVuelo = Math.max(0, tareasEnVuelo - terminadas.getAndSet(0));
         tareasRegionEnVuelo = Math.max(0, tareasRegionEnVuelo - regionesTerminadas.getAndSet(0));
         // Con el servidor cargado (pregeneración, mucha exploración) se sigue de a una tarea, sin
@@ -192,6 +213,7 @@ public final class GeneradorAproximado {
         while (candidatos.size() < VENTANA && revisados < REVISIONES_POR_TICK && !espiralAgotada) {
             if (!espiral.siguiente()) {
                 espiralAgotada = true;
+                espiralAgotadaNanos = System.nanoTime();
                 break;
             }
             revisados++;
@@ -310,8 +332,11 @@ public final class GeneradorAproximado {
             reintentoRegion = null;
             if (r == null) {
                 if (!espiralRegion.siguiente()) {
+                    if (espiralRegionAgotadaNanos == 0) {
+                        LOG.info("LOD: horizonte aproximado por región recorrido ({} chunks de radio)", radioRegion);
+                    }
                     espiralRegionAgotada = true;
-                    LOG.info("LOD: horizonte aproximado por región recorrido ({} chunks de radio)", radioRegion);
+                    espiralRegionAgotadaNanos = System.nanoTime();
                     return;
                 }
                 revisados++;

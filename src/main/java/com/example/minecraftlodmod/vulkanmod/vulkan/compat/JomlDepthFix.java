@@ -50,6 +50,11 @@ public final class JomlDepthFix {
     public static synchronized void install() {
         if (attempted) return;
         attempted = true;
+        if (Boolean.getBoolean("minecraftlodmod.sinDepthFix")) {
+            // Minecraft LOD: para reproducir el Java de Modrinth (sin jdk.attach) en las pruebas.
+            Initializer.LOGGER.warn("[depthFix] desactivado por -Dminecraftlodmod.sinDepthFix; keeping toVulkanClip fallback.");
+            return;
+        }
         try {
             Instrumentation inst = acquireInstrumentation();
             if (inst == null) {
