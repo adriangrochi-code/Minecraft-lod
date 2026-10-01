@@ -2,6 +2,7 @@
   "required": true,
   "minVersion": "0.8",
   "package": "com.example.minecraftlodmod.cubico.mixin",
+  "plugin": "com.example.minecraftlodmod.cubico.mixin.PluginCubico",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "AccesoChunk",
@@ -9,13 +10,15 @@
     "AccesoSeccionBloques",
     "MixinChunkHolder",
     "MixinDataLayer",
+    "MixinDatosPaleta",
     "MixinGeneradorRuido",
     "MixinLevelChunkCompartido",
     "MixinNoiseChunk",
     "MixinNoiseChunkSuperficie",
     "MixinPalettedContainer",
     "MixinPaqueteChunk",
-    "MixinPlayerChunkSender"
+    "MixinPlayerChunkSender",
+    "MixinThreadingDetector"
   ],
   "injectors": {
     "defaultRequire": 1
