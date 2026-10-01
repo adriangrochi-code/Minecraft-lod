@@ -227,6 +227,18 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Mejoras notadas, no aplicadas todavía
 
+- **Índice de región reescrito entero en cada lote (0.25.4, perfil):** cada
+  lote de escritura (cada 3 s) reescribe el `.idx` completo de cada región
+  tocada (+ fsync). Con regiones de 65 000 nodos son 1,5 MB por región por
+  lote: mucho disco con la aproximación tocando muchas regiones (en HDD,
+  como la A275, se nota). La solución de fondo es un índice append-only
+  (registro de entradas nuevas + compactación del índice junto con la de
+  datos); cambia el formato en disco (sección 5): pedir confirmación antes.
+- **Plan dentro del cuadro:** el primer plan al entrar tarda 86-126 ms en
+  Xvfb (JIT frío + relieve) y después 1-15 ms. Si en la PC sigue habiendo un
+  tirón al cruzar chunks, mover `planificar` a un hilo aparte (hoy lee
+  estado del render sin sincronizar: hay que separar entrada y salida).
+
 - **Bug corregido en `HierarchicalReducer` (visto con el primer render):**
   promediaba el aire como negro y descartaba la luz horneada, así que todo
   nivel ≥1 salía oscuro; además en empate aire/sólido ganaba el aire y las

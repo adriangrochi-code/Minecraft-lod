@@ -1,9 +1,10 @@
 package com.example.minecraftlodmod.storage;
 
+import it.unimi.dsi.fastutil.longs.Long2LongMap;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Header de un archivo de región (ver sección 5 del documento de
@@ -31,23 +32,52 @@ public final class RegionHeader {
     public final byte dimensionId;
     public final long hashFuente;
 
-    /** clave de nodo -> [offsetEnArchivo, tamanoEnBytes] */
-    private final Map<Long, long[]> tablaOffsets = new HashMap<>();
+    /**
+     * clave de nodo -> offset (40 bits altos) | tamaño (24 bits bajos), en un mapa de
+     * long a long sin objetos (fastutil, viene con Minecraft). Se consulta en cada
+     * lectura y en cada {@code contiene} de la generación: con {@code Map<Long, long[]>}
+     * cada consulta creaba un Long, y cargar un índice de 65 000 nodos creaba 65 000
+     * arreglos (235 ms con el candado de la región tomado, en el perfil).
+     */
+    private final Long2LongOpenHashMap tablaOffsets;
+
+    static final int BITS_TAMANO = 24;
+    static final long MAX_TAMANO = (1L << BITS_TAMANO) - 1;
+    static final long MAX_OFFSET = (1L << (64 - BITS_TAMANO)) - 1;
+
+    private static long empaquetar(long offset, long tamano) {
+        if (offset < 0 || offset > MAX_OFFSET || tamano < 0 || tamano > MAX_TAMANO) {
+            throw new IllegalArgumentException("Nodo fuera de rango: offset " + offset + ", tamaño " + tamano);
+        }
+        return offset << BITS_TAMANO | tamano;
+    }
 
     public RegionHeader(int regionX, int regionZ, byte dimensionId, long hashFuente) {
         this.regionX = regionX;
         this.regionZ = regionZ;
         this.dimensionId = dimensionId;
         this.hashFuente = hashFuente;
+        this.tablaOffsets = new Long2LongOpenHashMap();
+        this.tablaOffsets.defaultReturnValue(-1);
+    }
+
+    private RegionHeader(RegionHeader origen) {
+        this.regionX = origen.regionX;
+        this.regionZ = origen.regionZ;
+        this.dimensionId = origen.dimensionId;
+        this.hashFuente = origen.hashFuente;
+        this.tablaOffsets = new Long2LongOpenHashMap(origen.tablaOffsets);
+        this.tablaOffsets.defaultReturnValue(-1);
     }
 
     public void registrarNodo(long claveNodo, long offset, long tamano) {
-        tablaOffsets.put(claveNodo, new long[]{offset, tamano});
+        tablaOffsets.put(claveNodo, empaquetar(offset, tamano));
     }
 
     /** @return {offset, tamaño} o null si el nodo no está cacheado en esta región. */
     public long[] buscarNodo(long claveNodo) {
-        return tablaOffsets.get(claveNodo);
+        long ubicacion = tablaOffsets.get(claveNodo);
+        return ubicacion < 0 ? null : new long[]{ubicacion >>> BITS_TAMANO, ubicacion & MAX_TAMANO};
     }
 
     public boolean tieneNodo(long claveNodo) {
@@ -81,13 +111,76 @@ public final class RegionHeader {
         buf.putLong(hashFuente);
         buf.putInt(cantidadEntradas);
 
-        for (Map.Entry<Long, long[]> entrada : tablaOffsets.entrySet()) {
-            buf.putLong(entrada.getKey());
-            buf.putLong(entrada.getValue()[0]); // offset
-            buf.putLong(entrada.getValue()[1]); // tamaño
+        for (Long2LongMap.Entry entrada : tablaOffsets.long2LongEntrySet()) {
+            buf.putLong(entrada.getLongKey());
+            buf.putLong(entrada.getLongValue() >>> BITS_TAMANO); // offset
+            buf.putLong(entrada.getLongValue() & MAX_TAMANO); // tamaño
         }
 
         return buf.array();
+    }
+
+    /**
+     * Lo mismo que {@link #serializarHeader()} pero escrito por partes: un índice de
+     * 65 000 nodos son 1,5 MB, y armarlo entero en un arreglo en cada lote de escritura
+     * era una asignación "humongous" del GC (pausas) por región y por lote.
+     */
+    public void escribirEn(java.nio.channels.WritableByteChannel canal) throws java.io.IOException {
+        ByteBuffer buf = ByteBuffer.allocate(64 * 1024).order(ByteOrder.BIG_ENDIAN);
+        buf.put(MAGIC);
+        buf.put((byte) VERSION_ACTUAL);
+        buf.putInt(regionX);
+        buf.putInt(regionZ);
+        buf.put(dimensionId);
+        buf.putLong(hashFuente);
+        buf.putInt(tablaOffsets.size());
+        for (Long2LongMap.Entry entrada : tablaOffsets.long2LongEntrySet()) {
+            if (buf.remaining() < 24) {
+                vaciar(buf, canal);
+            }
+            buf.putLong(entrada.getLongKey());
+            buf.putLong(entrada.getLongValue() >>> BITS_TAMANO);
+            buf.putLong(entrada.getLongValue() & MAX_TAMANO);
+        }
+        vaciar(buf, canal);
+    }
+
+    private static void vaciar(ByteBuffer buf, java.nio.channels.WritableByteChannel canal) throws java.io.IOException {
+        buf.flip();
+        while (buf.hasRemaining()) {
+            canal.write(buf);
+        }
+        buf.clear();
+    }
+
+    /** Lee lo que escribió {@link #escribirEn} (o {@link #serializarHeader()}), por partes. */
+    public static RegionHeader leerDe(java.io.DataInput entrada) throws java.io.IOException {
+        byte[] magicLeido = new byte[4];
+        entrada.readFully(magicLeido);
+        for (int i = 0; i < 4; i++) {
+            if (magicLeido[i] != MAGIC[i]) {
+                throw new IllegalArgumentException("Archivo de región inválido: magic incorrecto");
+            }
+        }
+        int version = entrada.readUnsignedByte();
+        if (version != VERSION_ACTUAL) {
+            throw new IllegalArgumentException(
+                    "Versión de formato no soportada: " + version + " (esperada " + VERSION_ACTUAL + ")");
+        }
+        RegionHeader header = new RegionHeader(entrada.readInt(), entrada.readInt(), entrada.readByte(),
+                entrada.readLong());
+        int cantidadEntradas = entrada.readInt();
+        if (cantidadEntradas < 0) {
+            throw new IllegalArgumentException("Cantidad de nodos inválida: " + cantidadEntradas);
+        }
+        header.tablaOffsets.ensureCapacity(cantidadEntradas);
+        for (int i = 0; i < cantidadEntradas; i++) {
+            long clave = entrada.readLong();
+            long offset = entrada.readLong();
+            long tamano = entrada.readLong();
+            header.tablaOffsets.put(clave, empaquetar(offset, tamano));
+        }
+        return header;
     }
 
     public static RegionHeader deserializarHeader(byte[] datos) {
@@ -114,38 +207,33 @@ public final class RegionHeader {
         int cantidadEntradas = buf.getInt();
 
         RegionHeader header = new RegionHeader(regionX, regionZ, dimensionId, hashFuente);
+        header.tablaOffsets.ensureCapacity(cantidadEntradas);
         for (int i = 0; i < cantidadEntradas; i++) {
             long clave = buf.getLong();
             long offset = buf.getLong();
             long tamano = buf.getLong();
-            header.tablaOffsets.put(clave, new long[]{offset, tamano});
+            header.tablaOffsets.put(clave, empaquetar(offset, tamano));
         }
         return header;
     }
 
-    /**
-     * Copia con la misma tabla (las ubicaciones {offset, tamaño} se comparten:
-     * nunca se modifican después de registrarse). Mucho más barata que
-     * recorrer {@link #claves()} y volver a registrar cada nodo.
-     */
+    /** Copia de la tabla (arreglos planos): mucho más barata que volver a registrar cada nodo. */
     public RegionHeader copia() {
-        RegionHeader copia = new RegionHeader(regionX, regionZ, dimensionId, hashFuente);
-        copia.tablaOffsets.putAll(tablaOffsets);
-        return copia;
+        return new RegionHeader(this);
     }
 
     /** Suma de los tamaños de todos los nodos registrados (los bytes vivos del archivo). */
     public long bytesVivos() {
         long total = 0;
-        for (long[] ubicacion : tablaOffsets.values()) {
-            total += ubicacion[1];
+        for (long ubicacion : tablaOffsets.values()) {
+            total += ubicacion & MAX_TAMANO;
         }
         return total;
     }
 
     /** Claves de todos los nodos registrados (copia, para iterar sin exponer la tabla interna). */
-    public java.util.Set<Long> claves() {
-        return java.util.Set.copyOf(tablaOffsets.keySet());
+    public long[] claves() {
+        return tablaOffsets.keySet().toLongArray();
     }
 
     public int cantidadNodos() {

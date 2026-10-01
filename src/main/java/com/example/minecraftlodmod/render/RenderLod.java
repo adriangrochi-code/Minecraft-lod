@@ -73,7 +73,7 @@ import java.util.concurrent.atomic.LongAdder;
  *
  * Por frame, en la etapa {@code AFTER_SKY}:
  *  1. Sube a GPU hasta {@link #SUBIDAS_POR_FRAME} mallas que terminaron de
- *     armarse en el hilo de mallas.
+ *     armarse en el hilo de mallas (y no más de {@link #BYTES_SUBIDA_POR_FRAME}).
  *  2. Si la cámara cambió de chunk o de FOV, rehace el {@link PlanCeldas}
  *     y encola las celdas nuevas o cambiadas.
  *  3. Dibuja cada celda con su {@link VertexBuffer} y una proyección propia
@@ -100,6 +100,11 @@ public final class RenderLod {
     private static final Logger LOG = LogUtils.getLogger();
 
     static final int SUBIDAS_POR_FRAME = 4;
+    /**
+     * Tope de bytes de vértices subidos a GPU por cuadro (siempre entra al menos una
+     * malla): una tesela lejana grande pesa varios MB y cuatro juntas trababan el cuadro.
+     */
+    static final long BYTES_SUBIDA_POR_FRAME = 4L << 20;
     /** Máximo de celdas encoladas para armar por cada replanificación (las más cercanas primero). */
     static final int ENCOLADAS_POR_PLAN = 48;
     /** Cada cuánto se replanifica aunque la cámara no se mueva (para levantar chunks recién generados). */
@@ -195,6 +200,10 @@ public final class RenderLod {
     private int radioEnUso;
     private long verticesUltimoFrame;
 
+    /** Replanificaciones (hilo de render, dentro del cuadro) desde la última estadística, y la más larga. */
+    private int planesDesdeEstadistica;
+    private long nanosPlanMaximo;
+
     private void registrarEstadisticas(Minecraft mc) {
         framesDesdeEstadistica++;
         long ahora = System.nanoTime();
@@ -216,15 +225,18 @@ public final class RenderLod {
         Runtime rt = Runtime.getRuntime();
         LOG.info("LOD stats: fps={} | dibujo LOD {} ms/frame, {} llamadas/frame, {} vértices dibujados/frame | "
                         + "{} piezas, {} vértices ({} triángulos), VRAM LOD ~{} MB | mallas armadas {} ({} ms prom) "
-                        + "| ocultas por relieve {} ({} ms) | luz cielo #{} | heap {} / {} MB",
+                        + "| ocultas por relieve {} ({} ms) | planes {} (máx {} ms) | luz cielo #{} | heap {} / {} MB",
                 mc.getFps(), String.format("%.2f", nanosDibujo / 1e6 / Math.max(1, framesDesdeEstadistica)),
                 llamadasUltimoFrame, verticesUltimoFrame, piezas, vertices, vertices / 2, bytesVram >> 20, mallas,
                 mallas == 0 ? 0 : String.format("%.1f", nanos / 1e6 / mallas),
                 piezasOcultas, String.format("%.1f", nanosOclusion / 1e6),
+                planesDesdeEstadistica, String.format("%.1f", nanosPlanMaximo / 1e6),
                 String.format("%06X", colorLuzCielo(mc)), (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20);
         ultimaEstadisticaNanos = ahora;
         framesDesdeEstadistica = 0;
         nanosDibujo = 0;
+        planesDesdeEstadistica = 0;
+        nanosPlanMaximo = 0;
     }
 
     /** Lo que muestra el HUD de rendimiento y escribe el log de depuración. */
@@ -304,6 +316,8 @@ public final class RenderLod {
         return hilo;
     });
     private final AtomicLong secuenciaTareas = new AtomicLong();
+    /** Solo del hilo de mallas (uno solo): se reutiliza entre celdas ({@link GeometriaLod#reiniciar}). */
+    private final GeometriaLod geometriaMallas = new GeometriaLod();
 
     /** Tarea de armado ordenada por distancia a la cámara al encolarse (y por orden de llegada si empatan). */
     private record TareaMalla(double distancia2, long secuencia, Runnable accion)
@@ -562,7 +576,8 @@ public final class RenderLod {
     }
 
     private void subirMallasListas() {
-        for (int i = 0; i < SUBIDAS_POR_FRAME; i++) {
+        long subidos = 0;
+        for (int i = 0; i < SUBIDAS_POR_FRAME && subidos < BYTES_SUBIDA_POR_FRAME; i++) {
             MallaLista lista = listas.poll();
             if (lista == null) {
                 return;
@@ -611,6 +626,7 @@ public final class RenderLod {
                         }
                         estado.verticesCara[cara] += malla.drawState().vertexCount();
                         estado.bytesVertice = malla.drawState().format().getVertexSize();
+                        subidos += (long) malla.drawState().vertexCount() * estado.bytesVertice;
                         buffer.bind();
                         buffer.upload(malla); // cierra el MeshData
                         nuevos[p] = buffer;
@@ -677,6 +693,18 @@ public final class RenderLod {
         fovPlan = fovGrados;
         yPlan = camara.y;
         ultimoPlanNanos = ahora;
+        planesDesdeEstadistica++;
+        try {
+            planificar(mc, camara, store, chunkX, chunkZ, miraX, miraZ, fovNormal, alturaDibujo, lluviaAhora, ahora);
+        } finally {
+            nanosPlanMaximo = Math.max(nanosPlanMaximo, System.nanoTime() - ahora);
+        }
+    }
+
+    private void planificar(Minecraft mc, Vec3 camara, RegionFileStore store, int chunkX, int chunkZ,
+                            double miraX, double miraZ, double fovNormal, int alturaDibujo, int lluviaAhora,
+                            long ahora) {
+        ParametrosCalidad c = calidad;
         // Detalle y radio del auto-ajuste (los del preset si está apagado).
         int radioChunks = balance.radioChunks(c);
         int distanciaVanillaChunks = mc.options.getEffectiveRenderDistance();
@@ -799,7 +827,8 @@ public final class RenderLod {
                        GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer, boolean bloque) {
         long inicioArmado = System.nanoTime();
         try {
-            GeometriaLod geometria = new GeometriaLod();
+            GeometriaLod geometria = geometriaMallas;
+            geometria.reiniciar();
             geometria.usarTexturas(texturas);
             geometria.descartarCarasSinLuz(ConfigLod.CLIENTE.descartarCuevas.get());
             geometria.usarOclusionAmbiental(oclusion);
@@ -1406,9 +1435,12 @@ public final class RenderLod {
     /**
      * Relieve por región de 512 bloques, leído del nivel 5 guardado (una
      * grilla 16³ de vóxeles de 32 bloques por banda vertical). Se lee de a
-     * poco ({@link #LECTURAS_POR_PLAN}) y se refresca cada
+     * poco ({@link #LECTURAS_POR_PLAN}) en un hilo propio y se refresca cada
      * {@link #VIGENCIA_NANOS}: lo que todavía no se leyó cuenta como "sin
-     * datos", que nunca oculta nada. Solo hilo de render.
+     * datos", que nunca oculta nada. Antes se leía en el hilo de render, dentro
+     * del cuadro (disco + descompresión de hasta 32 regiones por plan, y cada
+     * 60 s vencían todas juntas): tirones al moverse. {@link #preparar} y
+     * {@link #suelos} son del hilo de render; las lecturas llegan solas.
      */
     private static final class CacheRelieve implements OclusionRelieve.Relieve {
         static final int LECTURAS_POR_PLAN = 32;
@@ -1417,8 +1449,10 @@ public final class RenderLod {
         private record Datos(float[] suelos, float tope, long leidoNanos) {
         }
 
-        private final Map<Long, Datos> regiones = new HashMap<>();
-        private byte dimension = -1;
+        private final Map<Long, Datos> regiones = new java.util.concurrent.ConcurrentHashMap<>();
+        private final Set<Long> enCurso = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        private volatile byte dimension = -1;
+        private java.util.concurrent.ExecutorService lector;
 
         void preparar(RegionFileStore store, byte dimension, int minSeccion, int maxSeccion,
                       double camX, double camZ, double radio) {
@@ -1435,23 +1469,49 @@ public final class RenderLod {
             long ahora = System.nanoTime();
             for (int rx = desdeX; rx <= hastaX; rx++) {
                 for (int rz = desdeZ; rz <= hastaZ; rz++) {
-                    Datos d = regiones.get(PlanCeldas.claveChunk(rx, rz));
-                    if (d == null || ahora - d.leidoNanos() > VIGENCIA_NANOS) {
+                    long clave = PlanCeldas.claveChunk(rx, rz);
+                    Datos d = regiones.get(clave);
+                    if ((d == null || ahora - d.leidoNanos() > VIGENCIA_NANOS) && !enCurso.contains(clave)) {
                         long dx = rx - centroX, dz = rz - centroZ;
                         faltan.add(new long[]{dx * dx + dz * dz, rx, rz});
                     }
                 }
             }
             faltan.sort(Comparator.comparingLong(f -> f[0]));
-            for (int i = 0; i < Math.min(LECTURAS_POR_PLAN, faltan.size()); i++) {
+            for (int i = 0; i < Math.min(LECTURAS_POR_PLAN - enCurso.size(), faltan.size()); i++) {
                 int rx = (int) faltan.get(i)[1], rz = (int) faltan.get(i)[2];
-                regiones.put(PlanCeldas.claveChunk(rx, rz), leer(store, dimension, rx, rz, minSeccion, maxSeccion, ahora));
+                long clave = PlanCeldas.claveChunk(rx, rz);
+                enCurso.add(clave);
+                lector().execute(() -> {
+                    try {
+                        Datos leido = leer(store, dimension, rx, rz, minSeccion, maxSeccion, System.nanoTime());
+                        if (this.dimension == dimension) {
+                            regiones.put(clave, leido);
+                        }
+                    } catch (RuntimeException e) {
+                        LOG.debug("LOD: no se pudo leer el relieve de la región {},{}", rx, rz, e);
+                    } finally {
+                        enCurso.remove(clave);
+                    }
+                });
             }
             // Las muy alejadas de la cámara ya no sirven: se sueltan.
             regiones.keySet().removeIf(k -> {
                 int rx = (int) k.longValue(), rz = (int) (k >> 32);
                 return rx < desdeX - 2 || rx > hastaX + 2 || rz < desdeZ - 2 || rz > hastaZ + 2;
             });
+        }
+
+        private java.util.concurrent.ExecutorService lector() {
+            if (lector == null) {
+                lector = java.util.concurrent.Executors.newSingleThreadExecutor(tarea -> {
+                    Thread hilo = new Thread(tarea, "LOD-Relieve");
+                    hilo.setDaemon(true);
+                    hilo.setPriority(Thread.MIN_PRIORITY);
+                    return hilo;
+                });
+            }
+            return lector;
         }
 
         private static Datos leer(RegionFileStore store, byte dimension, int rx, int rz, int minSeccion,

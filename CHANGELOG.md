@@ -6,6 +6,36 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.25.4 — Menos tirones: disco, recolector de basura y prioridades
+Revisión con el perfilador (JFR) buscando tirones y caídas de rendimiento.
+- **El juego esperaba al disco:** el hilo que guarda el LOD tenía tomado el
+  candado de cada región mientras forzaba la escritura al disco (`fsync`,
+  hasta 330 ms en el perfil) o compactaba el archivo. Cualquier lectura de
+  esa región esperaba: el hilo del servidor (bloqueado 150 ms en el perfil:
+  tirones de todo el juego en singleplayer), el de mallas y el relieve del
+  render. Ahora las lecturas no usan ese candado.
+- **Archivos abiertos una vez:** cada nodo leído abría y cerraba el archivo
+  de la región (en Windows, con el antivirus mirando cada apertura, caro).
+  Ahora los archivos de lectura quedan abiertos.
+- **Relieve fuera del cuadro:** la oclusión por relieve leía y descomprimía
+  hasta 32 regiones del disco dentro del cuadro, y cada 60 s vencían todas
+  juntas. Ahora se leen en un hilo aparte.
+- **Menos basura para el recolector** (pausas de 35-90 ms en el perfil):
+  índices de región sin objetos por nodo (cargar uno de 65 000 nodos tardaba
+  235 ms), escritos y leídos por partes en vez de arreglos de 1,5 MB; una
+  sola geometría reutilizada para armar mallas en vez de una nueva que crecía
+  hasta varios MB por celda; menos copias de vóxeles al generar y reducir.
+- **Generación con menos prioridad que el juego:** los hilos de generación
+  (que la aproximación usa al máximo) quedan por debajo del render y del
+  servidor; en Windows eso llega al sistema operativo.
+- **Subidas a la GPU con tope de tamaño** por cuadro (4 MB), no solo de
+  cantidad: cuatro teselas lejanas grandes juntas trababan el cuadro.
+- Servidor: la lista de chunks pendientes se recorre una vez por tick, no
+  ocho. HUD de rendimiento: el texto se arma una vez por segundo, no en cada
+  cuadro.
+- Log: las estadísticas del LOD dicen cuántas veces se replanificó y la más
+  larga (`planes N (máx X ms)`), que corre dentro del cuadro.
+
 ## 0.25.3 — Shaders de Voxy (paso 4, etapa A: diagnóstico)
 - Con Iris y un shaderpack que trae el contrato de Voxy (`voxy.json` +
   `voxy_opaque.glsl` / `voxy_translucent.glsl`, como Complementary r5.9),

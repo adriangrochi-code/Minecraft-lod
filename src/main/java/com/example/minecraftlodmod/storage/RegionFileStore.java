@@ -3,6 +3,7 @@ package com.example.minecraftlodmod.storage;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -166,6 +167,15 @@ public final class RegionFileStore implements AutoCloseable {
         return comprimido.length == 0 ? comprimido : CompresionNodos.descomprimir(comprimido);
     }
 
+    /**
+     * Sin el candado de la región salvo para cargar el índice la primera vez:
+     * el hilo de escritura lo tiene tomado mientras baja un lote a disco (con
+     * fsync y a veces compactando), y los lectores (el hilo de render entre
+     * ellos) se quedaban esperando al disco: tirones. El índice publicado es
+     * inmutable y el archivo de datos es append-only, así que una lectura con
+     * un índice un poco viejo sigue siendo válida; solo si la generación
+     * desapareció (compactación o invalidación) se reintenta con el índice nuevo.
+     */
     private byte[] leerComprimido(ClaveRegion region, long claveNodo) {
         byte[] enMemoria = buscarEnMemoria(region, claveNodo);
         if (enMemoria != null) {
@@ -180,13 +190,8 @@ public final class RegionFileStore implements AutoCloseable {
                 }
             }
         }
-        synchronized (candado(region)) {
-            // Re-chequear: una escritura pudo terminar mientras esperábamos el candado.
-            enMemoria = buscarEnMemoria(region, claveNodo);
-            if (enMemoria != null) {
-                return enMemoria;
-            }
-            Indice indice = indiceDe(region);
+        for (int intento = 0; ; intento++) {
+            Indice indice = intento == 0 ? indicePublicado(region) : indiceRecargado(region);
             if (indice == null) {
                 return null;
             }
@@ -194,13 +199,46 @@ public final class RegionFileStore implements AutoCloseable {
             if (ubicacion == null) {
                 return null;
             }
-            byte[] deDisco = leerDeDisco(region, indice.generacion(), ubicacion[0], (int) ubicacion[1]);
+            byte[] deDisco;
+            try {
+                deDisco = leerDeDisco(region, indice.generacion(), ubicacion[0], (int) ubicacion[1]);
+            } catch (UncheckedIOException e) {
+                if (intento > 0) {
+                    throw e;
+                }
+                // La generación cambió entre leer el índice y el archivo: el nodo puede haber
+                // vuelto a memoria (escritura en curso) o estar en la generación nueva.
+                enMemoria = buscarEnMemoria(region, claveNodo);
+                if (enMemoria != null) {
+                    return enMemoria;
+                }
+                continue;
+            }
             if (clave != SIN_CACHE) {
                 synchronized (cacheLectura) {
                     cacheLectura.poner(clave, deDisco);
                 }
             }
             return deDisco;
+        }
+    }
+
+    /** El índice ya publicado, sin candado; si todavía no se cargó, se carga con el candado. */
+    private Indice indicePublicado(ClaveRegion region) {
+        Indice publicado = headers.get(region);
+        if (publicado != null) {
+            return publicado == SIN_INDICE ? null : publicado;
+        }
+        synchronized (candado(region)) {
+            return indiceDe(region);
+        }
+    }
+
+    /** Vuelve a leer el índice del disco (el publicado apuntaba a datos que ya no están). */
+    private Indice indiceRecargado(ClaveRegion region) {
+        synchronized (candado(region)) {
+            headers.remove(region);
+            return indiceDe(region);
         }
     }
 
@@ -227,10 +265,8 @@ public final class RegionFileStore implements AutoCloseable {
         if (buscarEnMemoria(region, claveNodo) != null) {
             return true;
         }
-        synchronized (candado(region)) {
-            Indice indice = indiceDe(region);
-            return indice != null && indice.header().tieneNodo(claveNodo);
-        }
+        Indice indice = indicePublicado(region);
+        return indice != null && indice.header().tieneNodo(claveNodo);
     }
 
     /**
@@ -251,6 +287,7 @@ public final class RegionFileStore implements AutoCloseable {
             try {
                 Files.deleteIfExists(archivoDe(region));
                 if (indice != null) {
+                    cerrarCanal(datosDe(region, indice.generacion()));
                     Files.deleteIfExists(datosDe(region, indice.generacion()));
                 }
             } catch (IOException e) {
@@ -323,12 +360,15 @@ public final class RegionFileStore implements AutoCloseable {
 
     private void escribirRegion(ClaveRegion region) throws IOException {
         synchronized (candado(region)) {
-            ConcurrentHashMap<Long, byte[]> nuevos = pendientes.remove(region);
+            ConcurrentHashMap<Long, byte[]> nuevos = pendientes.get(region);
             if (nuevos == null || nuevos.isEmpty()) {
                 return;
             }
-            bytesPendientes.addAndGet(-bytesDe(nuevos));
+            // Visibles en enEscritura ANTES de salir de pendientes: los lectores (sin candado)
+            // miran pendientes, después enEscritura, después el índice; nunca ven un hueco.
             enEscritura.put(region, nuevos);
+            pendientes.remove(region);
+            bytesPendientes.addAndGet(-bytesDe(nuevos));
             try {
                 Indice existente = indiceDe(region);
                 long generacion = existente != null ? existente.generacion() : 0;
@@ -337,6 +377,9 @@ public final class RegionFileStore implements AutoCloseable {
                         : new RegionHeader(region.regionX(), region.regionZ(), region.dimensionId(), hashFuente);
                 Path datos = datosDe(region, generacion);
                 Files.createDirectories(datos.getParent());
+                if (existente == null) {
+                    cerrarCanal(datos); // se trunca: un canal viejo leería otra cosa (y en Windows bloquea)
+                }
                 long tamanoArchivo;
                 // Sin índice válido (región nueva, o de otro algoritmo): empezar el archivo de cero.
                 StandardOpenOption modo = existente != null ? StandardOpenOption.APPEND : StandardOpenOption.TRUNCATE_EXISTING;
@@ -376,6 +419,9 @@ public final class RegionFileStore implements AutoCloseable {
                     return llegados;
                 });
                 bytesPendientes.addAndGet(devueltos[0]);
+                // Un canal de lectura que quedó abierto sobre un archivo borrado impide en Windows
+                // volver a crearlo: se cierran todos y el próximo ciclo reintenta limpio.
+                cerrarCanales();
                 throw e;
             } finally {
                 enEscritura.remove(region);
@@ -406,17 +452,17 @@ public final class RegionFileStore implements AutoCloseable {
         }
         escribirIndice(region, compacto, nueva);
         headers.put(region, new Indice(compacto, nueva));
+        cerrarCanal(datosDe(region, generacion));
         Files.deleteIfExists(datosDe(region, generacion));
     }
 
     private void escribirIndice(ClaveRegion region, RegionHeader header, long generacion) throws IOException {
-        byte[] tabla = header.serializarHeader();
         Path indice = archivoDe(region);
         Path temporal = indice.resolveSibling(indice.getFileName() + ".tmp");
         try (FileChannel canal = FileChannel.open(temporal, StandardOpenOption.CREATE,
                 StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
             escribirCompleto(canal, ByteBuffer.allocate(8).putLong(generacion).flip());
-            escribirCompleto(canal, ByteBuffer.wrap(tabla));
+            header.escribirEn(canal); // por partes: sin un arreglo del tamaño del índice
             canal.force(false);
         }
         moverAtomico(temporal, indice);
@@ -452,13 +498,11 @@ public final class RegionFileStore implements AutoCloseable {
         if (!Files.exists(archivo)) {
             return null;
         }
-        try {
-            byte[] bytes = Files.readAllBytes(archivo);
-            ByteBuffer buffer = ByteBuffer.wrap(bytes);
-            long generacion = buffer.getLong();
-            byte[] tabla = new byte[bytes.length - 8];
-            buffer.get(tabla);
-            RegionHeader header = RegionHeader.deserializarHeader(tabla);
+        // Por partes (no readAllBytes): un índice grande era un arreglo "humongous" para el GC.
+        try (java.io.DataInputStream entrada = new java.io.DataInputStream(
+                new java.io.BufferedInputStream(Files.newInputStream(archivo), 64 * 1024))) {
+            long generacion = entrada.readLong();
+            RegionHeader header = RegionHeader.leerDe(entrada);
             if (header.hashFuente != hashFuente || !Files.exists(datosDe(region, generacion))) {
                 return null; // generado con otro algoritmo/fuente, o datos perdidos: se regenera
             }
@@ -471,12 +515,62 @@ public final class RegionFileStore implements AutoCloseable {
     }
 
     private byte[] leerDeDisco(ClaveRegion region, long generacion, long offset, int tamano) {
-        try (FileChannel canal = FileChannel.open(datosDe(region, generacion), StandardOpenOption.READ)) {
-            byte[] datos = new byte[tamano];
-            leerCompleto(canal, ByteBuffer.wrap(datos), offset);
+        Path archivo = datosDe(region, generacion);
+        byte[] datos = new byte[tamano];
+        try {
+            try {
+                leerCompleto(canalLectura(archivo), ByteBuffer.wrap(datos), offset);
+            } catch (ClosedChannelException e) {
+                // Otro hilo lo cerró (tope de canales, compactación): uno propio, sin cache.
+                try (FileChannel canal = FileChannel.open(archivo, StandardOpenOption.READ)) {
+                    leerCompleto(canal, ByteBuffer.wrap(datos), offset);
+                }
+            }
             return datos;
         } catch (IOException e) {
-            throw new UncheckedIOException("No se pudo leer " + datosDe(region, generacion), e);
+            throw new UncheckedIOException("No se pudo leer " + archivo, e);
+        }
+    }
+
+    /**
+     * Canales de lectura abiertos, uno por archivo de datos: abrir el archivo en cada
+     * nodo costaba una llamada al sistema por lectura (en Windows, con el antivirus
+     * revisando cada apertura, mucho más). Las lecturas posicionales de FileChannel
+     * son seguras entre hilos.
+     */
+    private final ConcurrentHashMap<Path, FileChannel> canales = new ConcurrentHashMap<>();
+    static final int MAX_CANALES = 96;
+
+    private FileChannel canalLectura(Path archivo) throws IOException {
+        FileChannel canal = canales.get(archivo);
+        if (canal != null && canal.isOpen()) {
+            return canal;
+        }
+        if (canales.size() >= MAX_CANALES) {
+            cerrarCanales(); // simple y raro: se vuelven a abrir los que hagan falta
+        }
+        FileChannel nuevo = FileChannel.open(archivo, StandardOpenOption.READ);
+        FileChannel previo = canales.put(archivo, nuevo);
+        if (previo != null && previo != canal) {
+            previo.close(); // otro hilo abrió el mismo a la vez
+        }
+        return nuevo;
+    }
+
+    private void cerrarCanal(Path archivo) {
+        FileChannel canal = canales.remove(archivo);
+        if (canal != null) {
+            try {
+                canal.close();
+            } catch (IOException ignorada) {
+                // solo lectura: nada que perder
+            }
+        }
+    }
+
+    private void cerrarCanales() {
+        for (Path archivo : canales.keySet()) {
+            cerrarCanal(archivo);
         }
     }
 
@@ -528,6 +622,10 @@ public final class RegionFileStore implements AutoCloseable {
                 Thread.currentThread().interrupt();
             }
         }
-        vaciar();
+        try {
+            vaciar();
+        } finally {
+            cerrarCanales();
+        }
     }
 }

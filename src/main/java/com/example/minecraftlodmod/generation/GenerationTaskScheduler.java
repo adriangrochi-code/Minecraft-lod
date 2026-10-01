@@ -3,6 +3,7 @@ package com.example.minecraftlodmod.generation;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 
@@ -48,6 +49,7 @@ import java.util.concurrent.Semaphore;
 public final class GenerationTaskScheduler {
 
     private final ForkJoinPool pool;
+    static final int PRIORIDAD_HILOS = Thread.NORM_PRIORITY - 2;
     private final Semaphore permisos;
     private int limiteActual;
     private final Semaphore permisosDeCola;
@@ -78,7 +80,15 @@ public final class GenerationTaskScheduler {
         if (maxTareasEnCola < 1) {
             throw new IllegalArgumentException("maxTareasEnCola debe ser al menos 1, fue: " + maxTareasEnCola);
         }
-        this.pool = new ForkJoinPool(hilosMaximos);
+        this.pool = new ForkJoinPool(hilosMaximos, pool -> {
+            ForkJoinWorkerThread hilo = ForkJoinPool.defaultForkJoinWorkerThreadFactory.newThread(pool);
+            hilo.setName("LOD-Generacion-" + hilo.getPoolIndex());
+            // Por debajo del hilo de render y del servidor: con el procesador lleno (generación
+            // aproximada usa todos los hilos que tiene), el juego va primero. En Windows la
+            // prioridad de Java llega al sistema operativo.
+            hilo.setPriority(PRIORIDAD_HILOS);
+            return hilo;
+        }, null, false);
         this.permisos = new Semaphore(hilosMaximos);
         this.limiteActual = hilosMaximos;
         this.permisosDeCola = new Semaphore(maxTareasEnCola);

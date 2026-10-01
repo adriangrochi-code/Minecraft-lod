@@ -65,6 +65,9 @@ public record SuperVoxel(
 
     /** Copia con el relleno indicado (0-{@link #LLENO}). */
     public SuperVoxel conRelleno(int relleno) {
+        if (relleno == relleno()) {
+            return this; // inmutable: sin copia si no cambia (la generación lo llama por cada vóxel)
+        }
         return new SuperVoxel(r, g, b, (byte) Math.max(0, Math.min(LLENO, relleno)), material, flags, estado);
     }
 
@@ -115,6 +118,9 @@ public record SuperVoxel(
     /** Copia con el bit de nevado puesto o sacado. */
     public SuperVoxel conNevado(boolean nevado) {
         byte nuevosFlags = (byte) (nevado ? flags | 0b0000_0010 : flags & ~0b0000_0010);
+        if (nuevosFlags == flags) {
+            return this;
+        }
         return new SuperVoxel(r, g, b, alturaLocal, material, nuevosFlags, estado);
     }
 
@@ -150,6 +156,9 @@ public record SuperVoxel(
     public SuperVoxel conLuzBloque(int cuantizada) {
         int q = Math.max(0, Math.min(3, cuantizada));
         byte nuevosFlags = (byte) ((flags & ~0b0000_1100) | (q << 2));
+        if (nuevosFlags == flags) {
+            return this;
+        }
         return new SuperVoxel(r, g, b, alturaLocal, material, nuevosFlags, estado);
     }
 

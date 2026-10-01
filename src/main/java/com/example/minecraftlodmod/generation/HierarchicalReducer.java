@@ -69,6 +69,9 @@ public final class HierarchicalReducer {
     /** Columnas (de 4) con algo visible que alcanzan para que el vóxel se vea desde arriba. */
     static final int COLUMNAS_VISIBLE = 2;
 
+    private static final SuperVoxel AIRE =
+            new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+
     private static SuperVoxel fusionarBloque(SuperVoxel[] entrada, int lado, int ox, int oy, int oz) {
         double sumaRelleno = 0; // por columna, en altos de hijo (0 a 2)
         int[] votosMaterial = new int[SuperVoxel.Material.TODOS.length];
@@ -99,7 +102,7 @@ public final class HierarchicalReducer {
 
         double rellenoMedio = sumaRelleno / 4;
         if (visibles * 2 < 8 && rellenoMedio < RELLENO_VISIBLE && enSuperficie < COLUMNAS_VISIBLE) {
-            return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+            return AIRE; // inmutable: compartido (la mayoría de lo reducido es aire)
         }
         short estado = estadoMasFrecuente(superficie, enSuperficie);
         int sumaR = 0, sumaG = 0, sumaB = 0, sumaLuz = 0, delEstado = 0, nevados = 0, luzBloque = 0;
@@ -119,17 +122,20 @@ public final class HierarchicalReducer {
             sumaB += v.b() & 0xFF;
             delEstado++;
         }
+        // Flags armados de una vez (antes: tres copias encadenadas por vóxel, conLuzHorneada,
+        // conLuzBloque y conNevado): luz horneada en los bits 4-7, luz de bloque en 2-3 y
+        // nieve en el 1 si cubre al menos la mitad de la superficie.
+        int flags = Math.round(sumaLuz / (float) enSuperficie) << 4 | luzBloque << 2
+                | (nevados * 2 >= enSuperficie ? 0b10 : 0);
         return new SuperVoxel(
                 (byte) (sumaR / delEstado),
                 (byte) (sumaG / delEstado),
                 (byte) (sumaB / delEstado),
                 (byte) Math.round(rellenoMedio / 2 * SuperVoxel.LLENO),
                 materialMasVotado(votosMaterial),
-                (byte) 0,
+                (byte) flags,
                 estado
-        ).conLuzHorneada(Math.round(sumaLuz / (float) enSuperficie))
-                .conLuzBloque(luzBloque)
-                .conNevado(nevados * 2 >= enSuperficie); // nieve si cubre al menos la mitad de la superficie
+        );
     }
 
     /** Estado más repetido entre (a lo sumo 4) vóxeles; en empate, el primero encontrado. */

@@ -102,6 +102,9 @@ public final class GeometriaLod {
         }
     }
 
+    /** Capacidad que {@link #reiniciar} conserva (más grande, vuelve a la inicial): ~12 MB de arreglos. */
+    static final int MAX_VERTICES_RETENIDOS = 1 << 19;
+
     private float[] posiciones = new float[3 * 1024];
     private int[] colores = new int[1024];
     /** Color sin luz horneada ni sombra por cara (para shaders, que iluminan solos). */
@@ -130,6 +133,32 @@ public final class GeometriaLod {
     private Texturas fuenteTexturas;
     private boolean descartarSinLuz;
     private boolean oclusionAmbiental;
+
+    /**
+     * Vacía la geometría conservando sus arreglos: el hilo de mallas usa siempre la
+     * misma. Antes cada celda creaba una nueva que crecía duplicando sus arreglos
+     * hasta varios MB (asignaciones "humongous" que disparaban pausas del GC).
+     */
+    public void reiniciar() {
+        if (colores.length > MAX_VERTICES_RETENIDOS) {
+            // Una celda enorme no deja decenas de MB retenidos para siempre.
+            posiciones = new float[3 * 1024];
+            colores = new int[1024];
+            coloresBase = new int[1024];
+            luces = new byte[1024];
+            lucesBloque = new byte[1024];
+            sprites = new int[1024];
+            caras = new byte[1024];
+            niveles = new byte[1024];
+        }
+        vertices = 0;
+        Arrays.fill(verticesPorCara, 0);
+        Arrays.fill(planoMin, Float.POSITIVE_INFINITY);
+        Arrays.fill(planoMax, Float.NEGATIVE_INFINITY);
+        fuenteTexturas = null;
+        descartarSinLuz = false;
+        oclusionAmbiental = false;
+    }
 
     /** Oscurecer rincones y bases de paredes (oclusión ambiental por vértice, sección 25 punto 5). */
     public void usarOclusionAmbiental(boolean usar) {

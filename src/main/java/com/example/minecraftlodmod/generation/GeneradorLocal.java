@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -239,8 +240,7 @@ public final class GeneradorLocal {
         if (pendientes.isEmpty() || store == null) {
             return;
         }
-        for (int i = 0; i < REINTENTOS_POR_TICK && !pendientes.isEmpty(); i++) {
-            Pendiente p = masCercanoAJugador(evento.getServer());
+        for (Pendiente p : masCercanosAJugador(evento.getServer(), REINTENTOS_POR_TICK)) {
             ServerLevel nivel = evento.getServer().getLevel(p.dimension());
             LevelChunk chunk = nivel == null ? null
                     : nivel.getChunkSource().getChunkNow(ChunkPos.getX(p.chunk()), ChunkPos.getZ(p.chunk()));
@@ -336,28 +336,51 @@ public final class GeneradorLocal {
         return pendientes.size();
     }
 
-    private Pendiente masCercanoAJugador(MinecraftServer servidor) {
-        Pendiente mejor = null;
-        double mejorDistancia = Double.MAX_VALUE;
+    /**
+     * Los {@code cuantos} pendientes de menor costo, en orden, en UNA pasada (antes
+     * era una pasada entera por reintento, con la mirada de cada jugador pedida de
+     * nuevo por cada pendiente: miles de chunks × 8 por tick en el hilo del servidor).
+     */
+    private List<Pendiente> masCercanosAJugador(MinecraftServer servidor, int cuantos) {
         var jugadores = servidor.getPlayerList().getPlayers();
+        int n = jugadores.size();
+        double[] px = new double[n], pz = new double[n], mx = new double[n], mz = new double[n];
+        Object[] dimensiones = new Object[n];
+        for (int j = 0; j < n; j++) {
+            ServerPlayer jugador = jugadores.get(j);
+            var mirada = jugador.getLookAngle();
+            px[j] = jugador.getX();
+            pz[j] = jugador.getZ();
+            mx[j] = mirada.x;
+            mz[j] = mirada.z;
+            dimensiones[j] = jugador.level().dimension();
+        }
+        Pendiente[] mejores = new Pendiente[cuantos];
+        double[] costos = new double[cuantos];
+        int llenos = 0;
         for (Pendiente p : pendientes) {
             double centroX = ChunkPos.getX(p.chunk()) * 16 + 8;
             double centroZ = ChunkPos.getZ(p.chunk()) * 16 + 8;
-            double distancia = jugadores.isEmpty() ? 0 : Double.MAX_VALUE;
-            for (ServerPlayer jugador : jugadores) {
-                if (jugador.level().dimension() == p.dimension()) {
+            double costo = n == 0 ? 0 : Double.MAX_VALUE;
+            for (int j = 0; j < n; j++) {
+                if (dimensiones[j] == p.dimension()) {
                     // Lo que el jugador mira primero (PrioridadVista), después el resto.
-                    var mirada = jugador.getLookAngle();
-                    distancia = Math.min(distancia, PrioridadVista.costo(centroX - jugador.getX(),
-                            centroZ - jugador.getZ(), mirada.x, mirada.z));
+                    costo = Math.min(costo, PrioridadVista.costo(centroX - px[j], centroZ - pz[j], mx[j], mz[j]));
                 }
             }
-            if (mejor == null || distancia < mejorDistancia) {
-                mejor = p;
-                mejorDistancia = distancia;
+            if (llenos == cuantos && costo >= costos[cuantos - 1]) {
+                continue;
             }
+            int i = llenos == cuantos ? cuantos - 1 : llenos++;
+            while (i > 0 && costos[i - 1] > costo) {
+                costos[i] = costos[i - 1];
+                mejores[i] = mejores[i - 1];
+                i--;
+            }
+            costos[i] = costo;
+            mejores[i] = p;
         }
-        return mejor;
+        return Arrays.asList(mejores).subList(0, llenos);
     }
 
     /**
@@ -412,14 +435,20 @@ public final class GeneradorLocal {
      * Guarda las grillas del horizonte por región ya leídas: un nodo de nivel
      * 5 consulta miles de secciones que caen en la misma grilla.
      */
-    private record NodoAproximado(int nivel, int x, int y, int z) {
-    }
-
-    private record AccesoStore(RegionFileStore store, byte dimension, Map<NodoAproximado, SuperVoxel[]> aproximadas)
+    private record AccesoStore(RegionFileStore store, byte dimension,
+                               it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<SuperVoxel[]> aproximadas)
             implements NivelesGrandes.Acceso {
 
         AccesoStore(RegionFileStore store, byte dimension) {
-            this(store, dimension, new HashMap<>());
+            this(store, dimension, new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>());
+        }
+
+        /**
+         * Nodo aproximado como long (nivel 4 bits, x y z 24 bits, y 12 bits): se consulta una
+         * vez por sección y con un record de clave cada consulta era un objeto (y un boxing).
+         */
+        static long claveAproximada(int nivel, int x, int y, int z) {
+            return (long) nivel << 60 | (x & 0xFFFFFFL) << 36 | (y & 0xFFFL) << 24 | (z & 0xFFFFFFL);
         }
 
         /** Grilla vacía: la zona se aproximó y esa banda quedó toda de aire. */
@@ -436,7 +465,7 @@ public final class GeneradorLocal {
                 int porNodo = NivelesGrandes.ladoEnSecciones(nivel);
                 int nx = Math.floorDiv(seccionX, porNodo), nz = Math.floorDiv(seccionZ, porNodo);
                 int ny = Math.floorDiv(seccionY, porNodo);
-                NodoAproximado clave = new NodoAproximado(nivel, nx, ny, nz);
+                long clave = claveAproximada(nivel, nx, ny, nz);
                 SuperVoxel[] grilla = aproximadas.get(clave);
                 if (grilla == null) {
                     RegionFileStore.ClaveRegion region = new RegionFileStore.ClaveRegion(dimension,

@@ -144,22 +144,18 @@ public final class MonitorRendimiento {
             return;
         }
         Font fuente = mc.font;
-        Component linea1 = Component.translatable("minecraftlodmod.hud.linea1",
-                entero(m.fps()), decimal(m.promedioMs()), decimal(m.peorMs()), entero(m.fpsUnoPorCientoBajo()),
-                entero(m.cpuJuego()), entero(m.cpuSistema()), m.ramUsadaMb(), m.ramMaximaMb(),
-                m.msServidor() < 0 ? "-" : decimal(m.msServidor()));
-        Component linea2 = m.lod() == null ? Component.empty() : Component.literal("v" + version() + "  ·  ")
-                .append(Component.translatable("minecraftlodmod.hud.linea2",
-                m.lod().activo() ? decimal(m.lod().msDibujo()) : "off", millones(m.lod().verticesDibujados()),
-                m.lod().piezas(), m.lod().vramMb(), m.lod().mallasEnCola(), entero(m.extraidosPorSegundo()),
-                m.pendientes(), entero(m.aproximadosPorSegundo()), pregeneracion(m.pregeneracion())))
-                .append(Component.translatable("minecraftlodmod.hud.limite", balance.diagnostico()));
-        // Con escala de interfaz grande las líneas no entran: se achica el texto hasta que entren.
-        Component[] lineas = linea2.getString().isEmpty() ? new Component[]{linea1} : new Component[]{linea1, linea2};
-        int anchoMaximo = 0;
-        for (Component linea : lineas) {
-            anchoMaximo = Math.max(anchoMaximo, fuente.width(linea));
+        if (m != hudDe) {
+            // Los datos cambian una vez por ventana: armar y medir el texto en cada cuadro era
+            // trabajo (y basura) por nada.
+            hudDe = m;
+            hudLineas = lineasHud(m);
+            hudAncho = 0;
+            for (Component linea : hudLineas) {
+                hudAncho = Math.max(hudAncho, fuente.width(linea));
+            }
         }
+        Component[] lineas = hudLineas;
+        int anchoMaximo = hudAncho;
         float escala = Math.min(1f, (g.guiWidth() - 8f) / Math.max(1, anchoMaximo));
         g.pose().pushPose();
         g.pose().scale(escala, escala, 1f);
@@ -173,6 +169,28 @@ public final class MonitorRendimiento {
             y += fuente.lineHeight + 2;
         }
         g.pose().popPose();
+    }
+
+    /** Texto del HUD de la última muestra ({@link #dibujarHud}). */
+    private Muestra hudDe;
+    private Component[] hudLineas;
+    private int hudAncho;
+
+    private Component[] lineasHud(Muestra m) {
+        Component linea1 = Component.translatable("minecraftlodmod.hud.linea1",
+                entero(m.fps()), decimal(m.promedioMs()), decimal(m.peorMs()), entero(m.fpsUnoPorCientoBajo()),
+                entero(m.cpuJuego()), entero(m.cpuSistema()), m.ramUsadaMb(), m.ramMaximaMb(),
+                m.msServidor() < 0 ? "-" : decimal(m.msServidor()));
+        if (m.lod() == null) {
+            return new Component[]{linea1};
+        }
+        Component linea2 = Component.literal("v" + version() + "  ·  ")
+                .append(Component.translatable("minecraftlodmod.hud.linea2",
+                m.lod().activo() ? decimal(m.lod().msDibujo()) : "off", millones(m.lod().verticesDibujados()),
+                m.lod().piezas(), m.lod().vramMb(), m.lod().mallasEnCola(), entero(m.extraidosPorSegundo()),
+                m.pendientes(), entero(m.aproximadosPorSegundo()), pregeneracion(m.pregeneracion())))
+                .append(Component.translatable("minecraftlodmod.hud.limite", balance.diagnostico()));
+        return new Component[]{linea1, linea2};
     }
 
     private static String pregeneracion(PregeneradorChunks.Estado e) {
