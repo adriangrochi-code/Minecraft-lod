@@ -663,6 +663,14 @@ Los shaderpacks ya definen contratos para mods de LOD, que serían el paso (b):
   (solo leyendo archivos del pack, sin código de Voxy) daría el LOD sin la
   niebla de borde y con iluminación completa en los packs que ya soportan
   Voxy. Requiere acceso a los render targets y uniforms de Iris.
+  **Etapa A implementada (0.25.3):** `render/ContratoVoxy` (lógica pura: json
+  laxo, GLSL de vértice y fragmento) + `render/ShadersVoxy` (lado Iris,
+  Iris como dependencia solo de compilación). Mixins sobre Iris
+  (`MixinShaderPackIris`, aplicados solo si Iris está, `PluginMixins`): los
+  archivos voxy se suman al grafo de includes de Iris y se preprocesan con
+  sus mismas definiciones más `VOXY`. Tipos de uniforms: primero las
+  declaraciones de los programas normales del pack, después los que registra
+  Iris. Compila y enlaza; todavía no dibuja (etapa B en NOTES.md).
 
 Con Sodium/Embeddium, `LevelRenderer#isSectionCompiled` da false aun para
 secciones a la vista: ahí el LOD le cede un chunk a vanilla cuando lleva 2 s

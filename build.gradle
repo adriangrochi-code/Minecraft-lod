@@ -25,6 +25,11 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 repositories {
     mavenCentral()
     maven { url = 'https://maven.su5ed.dev/releases' } // Forgified Fabric API (VulkanMod integrado)
+    // Iris, solo para compilar (render/ShadersVoxy y sus mixins; en el juego es opcional).
+    exclusiveContent {
+        forRepository { maven { url = 'https://api.modrinth.com/maven' } }
+        filter { includeGroup 'maven.modrinth' }
+    }
 }
 
 neoForge {
@@ -88,6 +93,7 @@ var reubicarVulkan = tasks.register('reubicarVulkan', com.github.jengelman.gradl
 }
 
 dependencies {
+    compileOnly "maven.modrinth:iris:1.8.12+1.21.1-neoforge"
     compileOnly files(reubicarVulkan)
     testImplementation files(reubicarVulkan)
 }

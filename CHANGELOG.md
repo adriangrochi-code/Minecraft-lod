@@ -6,6 +6,18 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.25.3 — Shaders de Voxy (paso 4, etapa A: diagnóstico)
+- Con Iris y un shaderpack que trae el contrato de Voxy (`voxy.json` +
+  `voxy_opaque.glsl` / `voxy_translucent.glsl`, como Complementary r5.9),
+  el LOD lee esos archivos con las opciones del pack aplicadas, los compila
+  con su propio vértice y anota el resultado en el log (`LOD/Voxy: ...`).
+  Las fuentes armadas quedan en `.minecraft/minecraftlodmod/voxy/`.
+- **Todavía no cambia cómo se ve:** el LOD se sigue dibujando con el
+  terreno del pack (`gbuffers_terrain`), igual que en la 0.25.2. Dibujar
+  con el código Voxy del pack es la etapa B.
+- Verificado: los dos programas de Complementary r5.9.3 compilan y enlazan
+  (Mesa, render por software).
+
 ## 0.25.2 — Catalejo sin tirones, niebla con lluvia y en zonas sin datos
 - **Tirón al usar el catalejo:** mientras el zoom se animaba, el LOD se
   replanificaba entero en cada cuadro (plan, relieve, celdas a rearmar).

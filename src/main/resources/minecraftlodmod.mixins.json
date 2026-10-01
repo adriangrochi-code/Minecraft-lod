@@ -2,13 +2,16 @@
   "required": true,
   "minVersion": "0.8",
   "package": "com.example.minecraftlodmod.render.mixin",
+  "plugin": "com.example.minecraftlodmod.render.mixin.PluginMixins",
   "compatibilityLevel": "JAVA_21",
   "client": [
     "AccesoLightTexture",
+    "AccesoShaderPackIris",
     "MixinGameRenderer",
     "MixinMinecraft",
     "MixinRenderTarget",
-    "MixinShaderInstance"
+    "MixinShaderInstance",
+    "MixinShaderPackIris"
   ],
   "injectors": {
     "defaultRequire": 1

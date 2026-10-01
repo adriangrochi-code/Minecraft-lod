@@ -10,6 +10,24 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Shaders de Voxy, etapa B (0.25.3 dejó la A):** `render/ShadersVoxy` ya
+  arma y compila `voxy_opaque/translucent` del pack (verificado con
+  Complementary r5.9.3 en Mesa). Falta, y hace falta verlo en la PC:
+  - definir `VOXY` para todo el pack (hoy solo para los archivos voxy; si se
+    define antes de tener lo siguiente, deferred/composite leen
+    `vxDepthTex*` vacías);
+  - framebuffer sobre los colortex de Iris según `opaqueDrawBuffers` /
+    `translucentDrawBuffers` y la mezcla del json;
+  - profundidad propia del LOD → `vxDepthTexOpaque/Trans` (samplers de Iris,
+    mixin de `IrisSamplers`), uniforms `vx*` (mixin de `CommonUniforms`) y
+    `excludeLodsFromVanillaDepth`;
+  - armar el programa con `ProgramUniforms`/`ProgramSamplers` de Iris como
+    su `IrisLodRenderProgram` (DH), dibujarlo en la fase de gbuffers;
+  - `customId` del bloque (IdMap de Iris, `block.properties`) y luz del
+    cielo real en `lightMap` (hoy va 15 fijo), color sin sombra de cara.
+  Probar con NVIDIA: Mesa acepta inicializadores no constantes en globales y
+  otros drivers podrían no hacerlo.
+
 - **Vóxeles que se notan (0.25.0):** juzgar en monitor real el fundido entre
   niveles (`FundidoNiveles.DURACION_NANOS` = 0,4 s; tramado Bayer 4×4) y si
   la aproximación fina cerca alcanza. Costo medido del tope de píxeles en

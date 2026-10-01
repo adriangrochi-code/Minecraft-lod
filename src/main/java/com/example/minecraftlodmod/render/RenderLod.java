@@ -535,6 +535,9 @@ public final class RenderLod {
                 && ConfigLod.CLIENTE.texturasLod.get();
         boolean usarOclusion = ConfigLod.CLIENTE.oclusionAmbiental.get();
         boolean usarShaders = ShadersIris.enUso();
+        if (usarShaders) {
+            ShadersVoxy.revisar(); // contrato Voxy del pack: por ahora solo diagnóstico en el log
+        }
         if (versionTexturas != versionTexturasVista || usarTexturas != texturasEnUso
                 || usarOclusion != oclusionEnUso || usarShaders != shadersEnUso) {
             versionTexturasVista = versionTexturas;
