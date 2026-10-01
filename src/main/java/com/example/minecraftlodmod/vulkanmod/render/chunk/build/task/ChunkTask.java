@@ -1,0 +1,47 @@
+package com.example.minecraftlodmod.vulkanmod.render.chunk.build.task;
+
+import com.example.minecraftlodmod.vulkanmod.render.chunk.RenderSection;
+import com.example.minecraftlodmod.vulkanmod.render.chunk.build.RenderRegion;
+import com.example.minecraftlodmod.vulkanmod.render.chunk.build.thread.BuilderResources;
+
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public abstract class ChunkTask {
+    public static final boolean BENCH = true;
+
+    protected static TaskDispatcher taskDispatcher;
+
+    public static BuildTask createBuildTask(RenderSection renderSection, RenderRegion renderRegion, boolean highPriority) {
+        return new BuildTask(renderSection, renderRegion, highPriority);
+    }
+
+    protected AtomicBoolean cancelled = new AtomicBoolean(false);
+    protected final RenderSection section;
+    public boolean highPriority = false;
+    public float distSq = 0;
+
+    ChunkTask(RenderSection renderSection) {
+        this.section = renderSection;
+    }
+
+    public abstract String name();
+
+    public abstract Result runTask(BuilderResources builderResources);
+
+    public RenderSection getSection() {
+        return this.section;
+    }
+
+    public void cancel() {
+        this.cancelled.set(true);
+    }
+
+    public static void setTaskDispatcher(TaskDispatcher dispatcher) {
+        taskDispatcher = dispatcher;
+    }
+    
+    public enum Result {
+        CANCELLED,
+        SUCCESSFUL
+    }
+}

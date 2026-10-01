@@ -90,6 +90,7 @@ public final class CompletadoVertical {
 
     private static final int MAX_TRABAJANDO = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 3));
     private static final int MEZCLAS_POR_TICK = 4;
+    private static final long NANOS_MEZCLA_POR_TICK = 4_000_000L;
     private static final int MAX_COLA = 4096;
 
     static boolean esAparte(Object chunk) {
@@ -172,8 +173,10 @@ public final class CompletadoVertical {
                         }
                     });
         }
-        // Las dos bandas de un pedido (arriba y abajo) llegan juntas; se mezclan de a pocas por tick.
-        for (int i = 0; i < MEZCLAS_POR_TICK && !LISTAS.isEmpty(); i++) {
+        // Las dos bandas de un pedido (arriba y abajo) llegan juntas; se mezclan y decoran con un tope de
+        // tiempo por tick (al menos una, así la cola siempre avanza).
+        long fin = System.nanoTime() + NANOS_MEZCLA_POR_TICK;
+        for (int i = 0; i < MEZCLAS_POR_TICK && !LISTAS.isEmpty() && (i == 0 || System.nanoTime() < fin); i++) {
             Banda b = LISTAS.poll();
             try {
                 mezclar(servidor, b);
@@ -287,7 +290,10 @@ public final class CompletadoVertical {
                 }
             }
         }
-        ESTADISTICAS.mezcla(cambiados, System.nanoTime() - t0);
+        long t1 = System.nanoTime();
+        int decorados = DecoracionVertical.decorar(nivel, chunk, b.rango.min(), b.rango.max());
+        ESTADISTICAS.decoracion(decorados, System.nanoTime() - t1);
+        ESTADISTICAS.mezcla(cambiados, t1 - t0);
         if (!ultima) {
             return;
         }
@@ -351,6 +357,13 @@ public final class CompletadoVertical {
         final LongAdder generado = new LongAdder();
         private final LongAdder nanosMezcla = new LongAdder();
         private final LongAdder bloques = new LongAdder();
+        private final LongAdder nanosDecoracion = new LongAdder();
+        private final LongAdder decorados = new LongAdder();
+
+        void decoracion(int bloquesPuestos, long nanos) {
+            decorados.add(bloquesPuestos);
+            nanosDecoracion.add(nanos);
+        }
 
         void mezcla(int cambiados, long nanos) {
             bloques.add(cambiados);
@@ -366,11 +379,14 @@ public final class CompletadoVertical {
             long g = generado.sumThenReset();
             long m = nanosMezcla.sumThenReset();
             long b = bloques.sumThenReset();
+            long nd = nanosDecoracion.sumThenReset();
+            long d = decorados.sumThenReset();
             if (c == 0) {
                 return null;
             }
-            return String.format("%d columnas completadas, %.1f ms de generación y %.1f ms de mezcla (hilo del"
-                    + " servidor) por columna, %d bloques cambiados, %d pendientes", c, g / 1e6 / c, m / 1e6 / c, b, pendientes());
+            return String.format("%d columnas completadas, %.1f ms de generación, %.1f ms de mezcla y %.1f ms de"
+                            + " decoración (hilo del servidor) por columna, %d bloques cambiados, %d puestos por features,"
+                            + " %d pendientes", c, g / 1e6 / c, m / 1e6 / c, nd / 1e6 / c, b, d, pendientes());
         }
     }
 }

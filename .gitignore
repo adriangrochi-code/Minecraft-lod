@@ -1,8 +1,8 @@
 /build/
-.gradle/
-run/
-runs/
-out/
+/.gradle/
+/run/
+/runs/
+/out/
 .idea/
 *.iml
 *.ipr

@@ -464,6 +464,12 @@ varía mucho según cuántas corridas RLE tenga). Lo desalojado no se pierde:
 sigue en disco (sección 5), así que un miss de este cache cuesta una lectura
 de SSD, no regenerar desde cero.
 
+**Actualización 0.26.6:** sobre `Long2ObjectLinkedOpenHashMap` (fastutil)
+en vez de `LinkedHashMap<Long, byte[]>`, y el límite cuenta datos +
+`COSTO_ENTRADA` (48 B) por entrada: los nodos promedian ~43 B y el costo
+fijo no contado hacía que el cache ocupara ~3× su presupuesto (medido 145 MB
+"usados" vs ~450 MB reales; heap del juego 1133 → 856 MB).
+
 **2. Backpressure en `generation/GenerationTaskScheduler.java` (implementado):**
 `maxTareasEnCola` acota cuántas tareas pueden estar pendientes/en ejecución a
 la vez. Sin este tope, un jugador moviéndose rápido podría hacer que el
@@ -938,8 +944,16 @@ luz, guardado, red y otros mods lo asumen); se achica lo que guarda cada secció
   vanilla) y `Configuration` se comparte por valor. No se aplica con
   FerriteCore (`PluginCubico`). Medido: heap 712 → 621 MB.
 
-**Pendiente:** features sobre lo completado (vegetación de cuevas frondosas,
-dripstone, líquenes; necesitan vecinos); lo que queda fijo por contenedor
+- Features sobre lo completado (0.26.7, `DecoracionVertical`): mismo orden y
+  siembra que `ChunkGenerator#applyBiomeDecoration` (accesor a
+  `featuresPerStep`), pasos LOCAL_MODIFICATIONS (sin geodas),
+  UNDERGROUND_STRUCTURES, UNDERGROUND_DECORATION, FLUID_SPRINGS,
+  VEGETAL_DECORATION y TOP_LAYER_MODIFICATION, sobre el `ServerLevel` vivo;
+  `MixinLevelFiltro` descarta las escrituras fuera de la banda y del chunk y
+  quita el aviso a vecinos. Medido: vegetación de cuevas como la generación
+  completa (musgo 2989/2866, lianas 291/291), 3,6 ms por columna.
+
+**Pendiente:** lo que queda fijo por contenedor
 (`PalettedContainer` 40 B, detector 40 B, `Data`, paleta de un valor: ~150 B);
 compresión de secciones lejanas en el cliente (hoy todo es servidor).
 

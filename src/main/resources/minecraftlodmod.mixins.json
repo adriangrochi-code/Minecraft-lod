@@ -6,12 +6,15 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "AccesoLightTexture",
+    "AccesoPipelineIris",
     "AccesoShaderPackIris",
     "MixinGameRenderer",
     "MixinMinecraft",
     "MixinRenderTarget",
+    "MixinSamplersIris",
     "MixinShaderInstance",
-    "MixinShaderPackIris"
+    "MixinShaderPackIris",
+    "MixinUniformesIris"
   ],
   "injectors": {
     "defaultRequire": 1

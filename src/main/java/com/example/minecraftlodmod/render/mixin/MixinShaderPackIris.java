@@ -42,9 +42,17 @@ public abstract class MixinShaderPackIris implements FuentesPackIris {
         return minecraftlodmod$definiciones;
     }
 
-    /** Iris reasigna las definiciones del entorno dos veces; la última es la que usa al preprocesar. */
+    /**
+     * Iris reasigna las definiciones del entorno dos veces; la última es la que usa al preprocesar.
+     * Con el contrato Voxy prendido se suma {@code VOXY} para todos los programas del pack: así
+     * deferred/composite leen la profundidad del LOD ({@code vxDepthTex*}, ver DibujoVoxy).
+     */
     @ModifyVariable(method = CONSTRUCTOR, at = @At("STORE"), argsOnly = true)
     private ImmutableList<StringPair> minecraftlodmod$guardarDefiniciones(ImmutableList<StringPair> definiciones) {
+        if (com.example.minecraftlodmod.render.DibujoVoxy.activoEnConfig()
+                && definiciones.stream().noneMatch(d -> d.key().equals("VOXY"))) {
+            definiciones = ImmutableList.<StringPair>builder().addAll(definiciones).add(new StringPair("VOXY", "")).build();
+        }
         minecraftlodmod$definiciones = definiciones;
         return definiciones;
     }

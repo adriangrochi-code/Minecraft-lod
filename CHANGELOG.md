@@ -6,6 +6,39 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.7 — Vegetación de cuevas en lo que se completa al bajar
+- Con `cubico.generacionVertical`, la banda que se completa cuando un
+  jugador se acerca ahora también recibe sus features: musgo, arcilla,
+  azaleas, lianas y hojas de las cuevas frondosas, liquen brillante,
+  dripstone, sculk, mazmorras, manantiales, y en islas (si se recortó
+  arriba) árboles y pasto. Mismo orden y misma semilla que la generación de
+  vanilla, así cada feature cae donde habría caído; corre sobre el mundo
+  vivo con un filtro que descarta lo que caiga fuera de la banda (nada se
+  duplica arriba). Menas, lagos, geodas y estructuras no se repiten (ya
+  estaban sobre el relleno).
+- Medido contra la misma zona generada completa (y -64..0, 49 columnas):
+  musgo 2989 vs 2866, lianas 291 vs 291, azaleas 82 vs 79, arcilla 13418 vs
+  13869; bloques iguales 99,20% → 99,37%. Toda la lava con luz 15. Costo:
+  3,6 ms por columna en el hilo del servidor (el completado se reparte con
+  un tope de 4 ms por tick).
+
+## 0.26.6 — La caché RAM del LOD respeta el presupuesto de verdad
+- **Arreglo importante de memoria:** la caché RAM del LOD contaba solo los
+  datos de cada nodo (~43 B en promedio), pero cada entrada arrastraba
+  ~100 B más (entrada del mapa, clave `Long`, tabla, cabecera del array).
+  Medido en singleplayer: decía 145 MB y ocupaba ~450 MB, unas 3 veces el
+  presupuesto elegido (en la A275 con el preset Mínimo, ~300 MB en vez de
+  100). Ahora usa un mapa de claves `long` sin objetos por entrada y el
+  presupuesto cuenta datos + 48 B por entrada: lo que muestra el HUD es lo
+  que ocupa.
+- Medido (singleplayer en Xvfb, mismo recorrido): heap del juego 1133 →
+  856 MB (-24%).
+- Con el mismo número de MB entran menos nodos que antes (antes se pasaba
+  del límite); para la misma RAM real entran ~1,5 veces más.
+- Arreglo del repo: el `.gitignore` ignoraba `vulkanmod/render/chunk/build/`
+  (la regla `build/` atrapaba cualquier paquete con ese nombre) y el código
+  no compilaba desde un clon limpio de GitHub.
+
 ## 0.26.5 — Contenedores de sección más livianos (cliente y servidor)
 - Cada contenedor de paleta (bloques y biomas de cada sección) traía un
   detector de acceso desde varios hilos con su propio `Semaphore` y
