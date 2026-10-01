@@ -57,3 +57,27 @@ la cifra famosa.)
     hasta y 62: el fluido global no sabe qué es océano. Arreglo en H8 (ríos
     y lagos): una máscara de océano conectado en el `.lodt` y nivel de
     agua local por columna en el selector de fluido.
+- **H4 (2026-10-01):** `FuenteBiomasTierra` (`minecraftlodmod:tierra`) +
+  `ClasificadorBiomas` (Köppen, elevación, latitud: mares por latitud y
+  profundidad, playas, pisos de nieve) y reglas de superficie de vanilla con
+  el lecho de roca propio y la **pizarra profunda a más de 64 bloques bajo
+  la superficie** (`stone_depth`, no y absoluto). Medido en el servidor:
+
+  | Lugar | clima | bioma | superficie |
+  |---|---|---|---|
+  | Sahara (23 N, 13 E) | BWh | desert | arena |
+  | Amazonia (3 S, 60 O) | Af | jungle | pasto, hojas de jungla |
+  | Groenlandia (72 N, 40 O) | EF | frozen_peaks | nieve, hielo |
+  | Londres | Cfb | forest | roble, abedul |
+  | Siberia (60 N, 100 E) | Dfc | taiga | abeto |
+  | Alpes (46,5 N, 8 E; 2 935 m) | ET | snowy_plains | pasto |
+  | Atlántico ecuatorial / Ártico | — | deep_lukewarm / deep_frozen_ocean | arena / grava |
+
+  - Las cuevas bajo tierra firme salían inundadas hasta y 62 (fluido global
+    agua): ahora el fluido global es agua solo en columnas cuyo suelo está
+    bajo el nivel del mar, con caché por columna (sin la caché el ruido
+    subía de 44 a 120 ms por chunk: vanilla lo consulta en cada bloque de
+    aire y agua).
+  - Pendiente: los monumentos oceánicos se ubican a altura fija de vanilla
+    (flotarían en mares de cientos de bloques); cobertura del suelo; menas
+    por profundidad (H9).

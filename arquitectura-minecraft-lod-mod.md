@@ -972,6 +972,13 @@ las decisiones que fijan el código.
   `min_y` es el múltiplo de 16 en o bajo ese bloque y el lecho de roca es
   macizo hasta él. 1:8: `min_y` -1296, height 2672; 1:6: -1744, 3488. Entra en el límite de
   vanilla (4064): no hace falta formato de guardado propio.
+- **Biomas** (H4): fuente `minecraftlodmod:tierra` (`FuenteBiomasTierra`)
+  desde el clima de Köppen (Beck et al. 2023, 1 km, guardado en el byte de
+  bioma del `.lodt`), la elevación y la latitud (`ClasificadorBiomas`); la
+  tabla clave → bioma va en el `world_preset`. Reglas de superficie de
+  vanilla, salvo el lecho de roca (macizo hasta la fosa) y la pizarra
+  profunda (a más de 64 bloques bajo la superficie, no por y). El fluido
+  global es agua solo bajo el mar; bajo tierra firme, aire.
 - **Proyecciones** (`tierra/Proyeccion`): equirectangular (norte -z, este
   +x) y azimutal equidistante centrada en el polo norte (el polo sur, el
   borde del disco, a ~2,5 M bloques a 1:8).

@@ -8,6 +8,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -68,6 +69,33 @@ class GeoTiffTest {
                 }
             }
         }
+    }
+
+    @Test
+    void leeByteConLzwCambiandoDeAnchoDeCodigo() throws IOException {
+        Path p = dir.resolve("k.tif");
+        // 300×40 con valores variados: la tabla pasa de 511 entradas (códigos de 9 y 10 bits)
+        TiffDePrueba.byteLzw(p, ByteOrder.LITTLE_ENDIAN, 300, 40, -180, 90, 1 / 120.0,
+                (c, f) -> (c * 7 + f * 13 + (c * f) % 11) % 31);
+        try (GeoTiff t = GeoTiff.abrir(p)) {
+            float[] v = new float[300 * 40];
+            t.leerVentana(0, 0, 300, 40, v);
+            for (int f = 0; f < 40; f++) {
+                for (int c = 0; c < 300; c++) {
+                    assertEquals((c * 7 + f * 13 + (c * f) % 11) % 31, v[f * 300 + c], 0f, "(" + c + ", " + f + ")");
+                }
+            }
+        }
+    }
+
+    @Test
+    void lzwRepiteCadenaRecienAgregada() throws IOException {
+        // "aaaa…": el caso del código que todavía no está en la tabla (KwKwK)
+        byte[] datos = new byte[1000];
+        java.util.Arrays.fill(datos, (byte) 7);
+        byte[] salida = new byte[1000];
+        GeoTiff.descomprimirLzw(TiffDePrueba.lzw(datos), salida);
+        assertArrayEquals(datos, salida);
     }
 
     @Test

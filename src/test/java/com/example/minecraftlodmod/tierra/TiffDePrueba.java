@@ -60,6 +60,59 @@ final class TiffDePrueba {
         escribir(archivo, orden, ancho, alto, 16, 2, 1, 2, ancho, filasTira, bloques, false, lonEsquina, latEsquina, paso);
     }
 
+    /** uint8 en tiras de 5 filas, LZW, sin predictor (como el mapa de Köppen, que va en teselas). */
+    static void byteLzw(Path archivo, ByteOrder orden, int ancho, int alto,
+                        double lonEsquina, double latEsquina, double paso, IntBinaryOperator valor) throws IOException {
+        int filasTira = 5;
+        List<byte[]> bloques = new ArrayList<>();
+        for (int f0 = 0; f0 < alto; f0 += filasTira) {
+            int filas = Math.min(filasTira, alto - f0);
+            byte[] crudo = new byte[filas * ancho];
+            for (int f = 0; f < filas; f++) {
+                for (int c = 0; c < ancho; c++) crudo[f * ancho + c] = (byte) valor.applyAsInt(c, f0 + f);
+            }
+            bloques.add(lzw(crudo));
+        }
+        escribir(archivo, orden, ancho, alto, 8, 1, 5, 1, ancho, filasTira, bloques, false, lonEsquina, latEsquina, paso);
+    }
+
+    /** Codificador LZW de TIFF (como libtiff: cambio de ancho temprano), para probar el decodificador. */
+    static byte[] lzw(byte[] datos) {
+        java.util.HashMap<Long, Integer> tabla = new java.util.HashMap<>();
+        ByteArrayOutputStream salida = new ByteArrayOutputStream();
+        int[] estado = {0, 0}; // acumulador, bits en el acumulador
+        java.util.function.BiConsumer<Integer, Integer> poner = (codigo, ancho) -> {
+            estado[0] = estado[0] << ancho | codigo;
+            estado[1] += ancho;
+            while (estado[1] >= 8) {
+                salida.write(estado[0] >>> (estado[1] - 8) & 0xFF);
+                estado[1] -= 8;
+            }
+            estado[0] &= (1 << estado[1]) - 1;
+        };
+        int ancho = 9, siguiente = 258;
+        poner.accept(256, ancho);
+        int w = datos[0] & 0xFF;
+        for (int i = 1; i < datos.length; i++) {
+            int b = datos[i] & 0xFF;
+            Integer c = tabla.get((long) w << 8 | b);
+            if (c != null) {
+                w = c;
+                continue;
+            }
+            poner.accept(w, ancho);
+            tabla.put((long) w << 8 | b, siguiente++);
+            if (siguiente >= 1 << ancho) ancho++;
+            w = b;
+        }
+        poner.accept(w, ancho);
+        siguiente++;
+        if (siguiente >= 1 << ancho) ancho++;
+        poner.accept(257, ancho);
+        if (estado[1] > 0) salida.write(estado[0] << (8 - estado[1]) & 0xFF);
+        return salida.toByteArray();
+    }
+
     interface ValorFlotante {
         float en(int col, int fila);
     }

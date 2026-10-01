@@ -47,9 +47,12 @@ public final class TierraReal {
 
     private static final DeferredRegister<MapCodec<? extends DensityFunction>> FUNCIONES =
             DeferredRegister.create(Registries.DENSITY_FUNCTION_TYPE, MinecraftLodMod.MOD_ID);
+    private static final DeferredRegister<MapCodec<? extends net.minecraft.world.level.biome.BiomeSource>> FUENTES_BIOMAS =
+            DeferredRegister.create(Registries.BIOME_SOURCE, MinecraftLodMod.MOD_ID);
 
     static {
         FUNCIONES.register("tierra_superficie", () -> SuperficieTierra.CODEC_MAPA);
+        FUENTES_BIOMAS.register("tierra", () -> FuenteBiomasTierra.CODEC);
     }
 
     private static final Object CANDADO = new Object();
@@ -61,6 +64,7 @@ public final class TierraReal {
 
     public static void registrar(IEventBus busDelMod) {
         FUNCIONES.register(busDelMod);
+        FUENTES_BIOMAS.register(busDelMod);
     }
 
     public static Path archivoDatos() {
@@ -174,12 +178,18 @@ public final class TierraReal {
             }
         }
         int debajo = real - 1;
+        String bioma = nivel.getBiome(p.setY(Math.max(real, esperada) + 1)).unwrapKey()
+                .map(k -> k.location().toString()).orElse("?");
+        if (nivel.getChunkSource().getGenerator().getBiomeSource() instanceof FuenteBiomasTierra fb) {
+            bioma = fb.claveDe(x, z) + " → " + bioma;
+        }
         String piso = real == Integer.MIN_VALUE ? "-" : chunk.getBlockState(p.setY(debajo)).getBlock().getName().getString();
         String texto = String.format(Locale.ROOT,
-                "medir %.4f %.4f: x %d z %d, elevación %.1f m, esperada y %d, real y %d (%s; debajo: %s), agua hasta y %d, chunk %.0f ms",
-                lat, lon, x, z, a.elevacionMetros(x + 0.5, z + 0.5), esperada, real,
+                "medir %.4f %.4f: x %d z %d, elevación %.1f m, bioma %s, esperada y %d, real y %d (%s; debajo: %s; 100 más abajo: %s), agua hasta y %d, chunk %.0f ms",
+                lat, lon, x, z, a.elevacionMetros(x + 0.5, z + 0.5), bioma, esperada, real,
                 real == Integer.MIN_VALUE ? "-" : chunk.getBlockState(p.setY(real)).getBlock().getName().getString(),
-                piso, aguaHasta(chunk, p, nivel), ms);
+                piso, real - 100 < nivel.getMinBuildHeight() ? "-" : chunk.getBlockState(p.setY(real - 100)).getBlock().getName().getString(),
+                aguaHasta(chunk, p, nivel), ms);
         LOG.info("[Tierra real] {}", texto);
         fuente.sendSuccess(() -> Component.literal(texto), false);
         return real == esperada ? 1 : 0;

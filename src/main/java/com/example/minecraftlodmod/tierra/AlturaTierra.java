@@ -50,6 +50,20 @@ public final class AlturaTierra {
         return Math.clamp(e, elevMinima, elevMaxima);
     }
 
+    public double latitud(double x, double z) {
+        return proyeccion.latitud(x, z);
+    }
+
+    /** Clase de clima (Köppen 1..30, 0 = sin dato/mar) de la muestra más cercana a (x, z). */
+    public int claseClima(double x, double z) {
+        return fuente.claseBioma(proyeccion.latitud(x, z), Proyeccion.normalizarLongitud(proyeccion.longitud(x, z)));
+    }
+
+    /** Metros reales por bloque de este mundo. */
+    public double metrosPorBloque() {
+        return proyeccion.metrosPorBloque();
+    }
+
     /**
      * Altura continua de la superficie en (x, z): la densidad del generador es
      * positiva (sólido) donde y &lt; alturaExacta.

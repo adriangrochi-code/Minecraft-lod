@@ -31,6 +31,18 @@ sintetiza** (`03-generador.md`), el dato da la forma grande.
 grilla de "clase de bioma" (1 byte). La tabla Köppen×cobertura → bioma de
 Minecraft va en un archivo de datos editable (`tierra/biomas.json`).
 
+**Hecho en H4 (2026-10-01):** por ahora la clase de bioma es **solo
+Köppen** (1..30, 0 = mar), del mapa 1991-2020 de 1 km de Beck et al. (V3):
+es la **misma grilla** que ETOPO 30″ (43200×21600 desde -180°, 90°), así que
+entra muestra por muestra (`PreparadorDatos --clima`; con otra grilla toma
+el píxel que contiene el centro de cada muestra). Suma 6 MB al `.lodt`
+global (663 MB). La cobertura del suelo (ciudades, humedales, cultivos)
+queda para después. La tabla clave → bioma no es un archivo aparte: va en el
+`world_preset` (campo `biomas` de la fuente `minecraftlodmod:tierra`), así
+se cambia con un datapack. Descarga: el zip de GeoTIFF (130 MB) está en
+figshare (`koppen_geiger_tif.zip`, archivo 61012822); figshare responde 202
+sin descargar a clientes sin `Accept: */*` y un User-Agent de navegador.
+
 ## Formato propio (`.lodt`, preprocesado una sola vez)
 
 - Herramienta de preparación (comando del servidor o tarea de gradle,
@@ -58,7 +70,7 @@ Pantalla de crear mundo + `CREDITS` del jar: NOAA ETOPO, Beck et al.
 |---|---|---|
 | ETOPO 2022 | 15″ en 288 teselas de 15°×15° (+62 teselas "bed"); **30″ y 60″ como archivo global único**, GeoTIFF y NetCDF, versiones `_surface` (superficie del hielo) y `_bed`. Alturas en metros sobre el geoide EGM2008 (≈ nivel del mar). Uso libre privado, académico y comercial (salvo navegación); el catálogo lo da como CC0-1.0. Citar DOI 10.25921/fd45-gt74 | Usar la versión **`_surface`** (la superficie del hielo es lo que se camina). Los tamaños de archivo no figuran en la página: medirlos al descargar en H1 (los GeoTIFF podrían ser float32, el doble que int16; el `.lodt` igual guarda int16) |
 | GEBCO | Ahora GEBCO_2026 (anual, en julio), 15″, NetCDF 4 GB comprimido / 7,0 GB; **dominio público**, citar al GEBCO Compilation Group | "Uso libre con atribución" → dominio público con cita |
-| Köppen-Geiger (Beck et al., V3, 2023, *Scientific Data* 10, 724) | CC BY 4.0, GeoTIFF en varias resoluciones (la más fina 1 km), períodos 1901–2099; trae `legend.txt` | Usar el período actual (1991–2020) |
+| Köppen-Geiger (Beck et al., V3, 2023, *Scientific Data* 10, 724) | CC BY 4.0 (texto de la página y metadatos de figshare), GeoTIFF uint8 con LZW, 1 km = 0,00833333° (la grilla de ETOPO 30″), períodos 1901–2099; trae `legend.txt` | Usar el período actual (1991–2020) |
 | ESA WorldCover | CC BY 4.0, 10 m, **~117 GB** el mapa global | Demasiado grande para agregarlo en la máquina del jugador: la agregación a 1 km se hace una sola vez de nuestro lado o se usa otra cobertura global de 300 m–1 km (**sin verificar**; elegir en H4). Atribución exacta: "© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium" |
 | Copernicus GLO-30 | no verificado (sigue como mejora futura) | — |
 

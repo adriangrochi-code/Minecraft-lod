@@ -17,10 +17,10 @@ import java.util.zip.Inflater;
  * 256×256, Deflate, predictor de punto flotante, float32) sin dependencias.
  *
  * Soporta: TIFF clásico (no BigTIFF) en los dos órdenes de bytes, teselas o
- * tiras, sin compresión o Deflate (8 y 32946), predictor 1/2/3, muestras
- * int16 / uint16 / int32 / float32 / float64, y la georreferencia por
+ * tiras, sin compresión, LZW (5; el mapa de Köppen) o Deflate (8 y 32946),
+ * predictor 1/2/3, muestras uint8 / int16 / uint16 / int32 / float32 / float64, y la georreferencia por
  * {@code ModelPixelScale} + {@code ModelTiepoint} (sin rotación). Lo demás
- * (LZW, JPEG, varias bandas) da error claro en vez de leer mal.
+ * (JPEG, varias bandas) da error claro en vez de leer mal.
  *
  * Lectura por ventanas ({@link #leerVentana}) con una caché chica de bloques
  * internos ya descomprimidos: el preparador recorre la grilla por teselas de
@@ -63,8 +63,8 @@ public final class GeoTiff implements AutoCloseable {
         if (opcional(tags, TAG_MUESTRAS_PIXEL, 1) != 1) {
             throw new IOException("GeoTIFF con más de una banda: no soportado");
         }
-        if (compresion != 1 && compresion != 8 && compresion != 32946) {
-            throw new IOException("Compresión TIFF " + compresion + " no soportada (solo ninguna o Deflate)");
+        if (compresion != 1 && compresion != 5 && compresion != 8 && compresion != 32946) {
+            throw new IOException("Compresión TIFF " + compresion + " no soportada (solo ninguna, LZW o Deflate)");
         }
         if (predictor < 1 || predictor > 3) {
             throw new IOException("Predictor TIFF " + predictor + " no soportado");
@@ -218,6 +218,10 @@ public final class GeoTiff implements AutoCloseable {
             ByteBuffer comprimido = leer(canal, offsetsBloque[indice], (int) tam, orden);
             if (compresion == 1) {
                 comprimido.get(0, crudo, 0, Math.min(crudo.length, (int) tam));
+            } else if (compresion == 5) {
+                byte[] entrada = new byte[(int) tam];
+                comprimido.get(0, entrada);
+                descomprimirLzw(entrada, crudo);
             } else {
                 Inflater inf = new Inflater();
                 try {
@@ -257,6 +261,7 @@ public final class GeoTiff implements AutoCloseable {
         if (formatoMuestra == 3) return bitsMuestra == 32 ? bb.getFloat(pos) : bb.getDouble(pos);
         boolean conSigno = formatoMuestra == 2;
         return switch (bitsMuestra) {
+            case 8 -> conSigno ? bb.get(pos) : bb.get(pos) & 0xFF;
             case 16 -> conSigno ? bb.getShort(pos) : bb.getShort(pos) & 0xFFFF;
             default -> conSigno ? bb.getInt(pos) : bb.getInt(pos) & 0xFFFFFFFFL;
         };
@@ -265,6 +270,7 @@ public final class GeoTiff implements AutoCloseable {
     /** Predictor 2 (diferencia horizontal) en enteros: suma con desborde del ancho de la muestra. */
     private double acumularEntero(double previo, double delta) {
         long suma = (long) previo + (long) delta;
+        if (bitsMuestra == 8) return formatoMuestra == 2 ? (byte) suma : suma & 0xFF;
         if (bitsMuestra == 16) return formatoMuestra == 2 ? (short) suma : suma & 0xFFFF;
         return formatoMuestra == 2 ? (int) suma : suma & 0xFFFFFFFFL;
     }
@@ -292,9 +298,78 @@ public final class GeoTiff implements AutoCloseable {
         }
     }
 
+    /**
+     * LZW de TIFF (TIFF 6.0, sección 13): códigos de 9 a 12 bits, el más
+     * significativo primero, 256 = limpiar, 257 = fin, y el cambio de ancho
+     * "temprano" (un código antes que en GIF), como libtiff.
+     */
+    static void descomprimirLzw(byte[] entrada, byte[] salida) throws IOException {
+        int[] prefijo = new int[4096];
+        byte[] sufijo = new byte[4096];
+        byte[] primero = new byte[4096];
+        int[] largo = new int[4096];
+        for (int i = 0; i < 256; i++) {
+            sufijo[i] = (byte) i;
+            primero[i] = (byte) i;
+            largo[i] = 1;
+            prefijo[i] = -1;
+        }
+        long bits = (long) entrada.length * 8;
+        long posBit = 0;
+        int ancho = 9, siguiente = 258, anterior = -1, pos = 0;
+        while (posBit + ancho <= bits && pos < salida.length) {
+            int codigo = 0;
+            for (int k = 0; k < ancho; k++, posBit++) {
+                codigo = codigo << 1 | (entrada[(int) (posBit >>> 3)] >>> (7 - (int) (posBit & 7))) & 1;
+            }
+            if (codigo == 257) break;
+            if (codigo == 256) {
+                ancho = 9;
+                siguiente = 258;
+                anterior = -1;
+                continue;
+            }
+            if (anterior == -1) {
+                if (codigo > 255) throw new IOException("LZW inválido");
+                salida[pos++] = (byte) codigo;
+                anterior = codigo;
+                continue;
+            }
+            int nuevo;
+            if (codigo < siguiente) {
+                pos = escribirCadena(codigo, prefijo, sufijo, largo, salida, pos);
+                nuevo = codigo;
+            } else if (codigo == siguiente) {
+                pos = escribirCadena(anterior, prefijo, sufijo, largo, salida, pos);
+                if (pos < salida.length) salida[pos++] = primero[anterior];
+                nuevo = -1;
+            } else {
+                throw new IOException("LZW inválido: código " + codigo);
+            }
+            if (siguiente < 4096) {
+                prefijo[siguiente] = anterior;
+                sufijo[siguiente] = primero[nuevo >= 0 ? nuevo : anterior];
+                primero[siguiente] = primero[anterior];
+                largo[siguiente] = largo[anterior] + 1;
+                siguiente++;
+                if (siguiente >= (1 << ancho) - 1 && ancho < 12) ancho++;
+            }
+            anterior = codigo;
+        }
+    }
+
+    private static int escribirCadena(int codigo, int[] prefijo, byte[] sufijo, int[] largo, byte[] salida, int pos) {
+        int n = largo[codigo];
+        int fin = Math.min(pos + n, salida.length);
+        for (int i = pos + n - 1, c = codigo; c >= 0; i--, c = prefijo[c]) {
+            if (i < fin) salida[i] = sufijo[c];
+        }
+        return fin;
+    }
+
     private static void tipoValido(int formato, int bits) throws IOException {
         boolean ok = (formato == 3 && (bits == 32 || bits == 64))
-                || ((formato == 1 || formato == 2) && (bits == 16 || bits == 32));
+                || ((formato == 1 || formato == 2) && (bits == 8 || bits == 16 || bits == 32));
         if (!ok) throw new IOException("Tipo de muestra TIFF no soportado: formato " + formato + ", " + bits + " bits");
     }
 
