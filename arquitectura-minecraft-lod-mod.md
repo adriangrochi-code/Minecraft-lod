@@ -931,10 +931,17 @@ luz, guardado, red y otros mods lo asumen); se achica lo que guarda cada secció
   Medido: ~17 MB de luz con datos → ~1 MB; luz guardada igual que sin
   compresión.
 
+- Costo fijo por contenedor (0.26.5, `MixinThreadingDetector`,
+  `MixinDatosPaleta`; cliente y servidor, cualquier mundo): el detector de
+  hilos de cada `PalettedContainer` ya no arma `Semaphore` ni `ReentrantLock`
+  (el dueño va en un campo bajo el monitor del detector; mismo error de
+  vanilla) y `Configuration` se comparte por valor. No se aplica con
+  FerriteCore (`PluginCubico`). Medido: heap 712 → 621 MB.
+
 **Pendiente:** features sobre lo completado (vegetación de cuevas frondosas,
-dripstone, líquenes; necesitan vecinos); los ~250 B fijos por contenedor
-(lo que más pesa ahora: ~170 MB en el mundo de prueba); el cliente (hoy todo
-es servidor).
+dripstone, líquenes; necesitan vecinos); lo que queda fijo por contenedor
+(`PalettedContainer` 40 B, detector 40 B, `Data`, paleta de un valor: ~150 B);
+compresión de secciones lejanas en el cliente (hoy todo es servidor).
 
 ## 33. Tipo de mundo "Tierra real" — 2026-10-01
 
