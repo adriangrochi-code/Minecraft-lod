@@ -68,9 +68,19 @@ public abstract class MixinDataLayer implements LuzComprimible {
         return d == null ? new DataLayer(this.defaultValue) : new DataLayer(d.clone());
     }
 
-    @Inject(method = "getData", at = @At("HEAD"))
+    @Inject(method = "getData", at = @At("HEAD"), cancellable = true)
     private void minecraftlodmod$antesDeDatos(CallbackInfoReturnable<byte[]> cir) {
-        // getData se usa para escribir (set) y para paquetes/guardado: se descomprime y deja de valer lo comprimido.
+        // Fuera de set, vanilla solo lee lo que devuelve getData (guardar el chunk, paquetes, luz de cielo de
+        // la sección de abajo): si está comprimida, una copia temporal y la capa sigue comprimida.
+        byte[] c = minecraftlodmod$comprimido;
+        if (c != null && this.data == null) {
+            cir.setReturnValue(minecraftlodmod$inflar(c));
+        }
+    }
+
+    @Inject(method = "set(II)V", at = @At("HEAD"))
+    private void minecraftlodmod$antesDeEscribir(int indice, int valor, CallbackInfo ci) {
+        // Escribir: descomprimir de verdad y descartar lo comprimido (deja de valer).
         if (minecraftlodmod$comprimido != null) {
             minecraftlodmod$descomprimir();
             minecraftlodmod$comprimido = null;
@@ -99,10 +109,18 @@ public abstract class MixinDataLayer implements LuzComprimible {
         if (c == null) {
             return this.data != null ? this.data : new byte[DataLayer.SIZE];
         }
+        d = minecraftlodmod$inflar(c);
+        this.data = d;
+        SeccionesComprimidas.ESTADISTICAS.luzDescomprimida();
+        return d;
+    }
+
+    @Unique
+    private static byte[] minecraftlodmod$inflar(byte[] c) {
         Inflater i = minecraftlodmod$DESCOMPRESOR.get();
         i.reset();
         i.setInput(c);
-        d = new byte[DataLayer.SIZE];
+        byte[] d = new byte[DataLayer.SIZE];
         try {
             int n = 0;
             while (n < d.length && !i.finished()) {
@@ -111,8 +129,6 @@ public abstract class MixinDataLayer implements LuzComprimible {
         } catch (DataFormatException e) {
             throw new IllegalStateException("Luz comprimida dañada", e);
         }
-        this.data = d;
-        SeccionesComprimidas.ESTADISTICAS.luzDescomprimida();
         return d;
     }
 
