@@ -166,9 +166,12 @@ public final class GeneracionVertical {
 
     // ------------------------------------------------------------------ enganches de la generación
 
-    private static boolean activa() {
-        return ConfigLod.SPEC_SERVIDOR.isLoaded() && ConfigLod.SERVIDOR.generacionVertical.get();
+    private static boolean activa(ServerLevel nivel) {
+        return ConfigLod.cubico(nivel, ConfigLod.SERVIDOR.generacionVertical);
     }
+
+    /** Margen de abajo con superficie exacta ({@link com.example.minecraftlodmod.generation.FuenteAltura}). */
+    static final int MARGEN_ABAJO_EXACTO = 2;
 
     /** Rango completo de la columna mientras se arma su NoiseChunk (para el acuífero). */
     private static final ThreadLocal<NoiseSettings> COMPLETO = new ThreadLocal<>();
@@ -182,18 +185,26 @@ public final class GeneracionVertical {
         NoiseSettings completo = ajustes.noiseSettings().clampToHeightAccessor(chunk);
         COMPLETO.set(completo);
         if (!(chunk instanceof ProtoChunk proto) || proto.isUpgrading() || chunk.hasData(VENTANA.get())
-                || !chunk.getPersistedStatus().isBefore(ChunkStatus.NOISE) || !activa()) {
+                || !chunk.getPersistedStatus().isBefore(ChunkStatus.NOISE)) {
             return;
         }
         ServerLevel nivel = nivelDe(chunk);
-        if (nivel == null || !nivel.dimensionType().hasSkyLight() || nivel.dimensionType().hasCeiling()) {
+        if (nivel == null || !activa(nivel) || !nivel.dimensionType().hasSkyLight() || nivel.dimensionType().hasCeiling()) {
             return; // el Nether y el End no tienen una "superficie" de la que colgar la franja
         }
         long t0 = System.nanoTime();
-        int[] sup = estimarSuperficie(chunk.getPos(), aleatorio, completo);
+        // Con un tipo de mundo que conoce su superficie (Tierra real) la franja es exacta y el margen, chico.
+        var fuente = com.example.minecraftlodmod.generation.FuenteAltura.de(nivel);
+        int[] sup = fuente != null ? superficieExacta(chunk.getPos(), fuente) : estimarSuperficie(chunk.getPos(), aleatorio, completo);
+        if (fuente != null) {
+            // El agua del mar llega hasta el nivel del mar aunque el fondo esté cientos de bloques abajo:
+            // con recortarArriba la franja tiene que llegar hasta ahí (si no, el mar sale vacío arriba).
+            sup[1] = Math.max(sup[1], nivel.getSeaLevel());
+        }
         var cfg = ConfigLod.SERVIDOR;
         RangoSecciones r = VentanaVertical.calcular(sup[0], sup[1], jugadoresCerca(nivel, chunk.getPos()),
-                cfg.margenGeneracionAbajo.get(), cfg.recortarGeneracionArriba.get(), cfg.margenGeneracionArriba.get(),
+                fuente != null ? Math.min(MARGEN_ABAJO_EXACTO, cfg.margenGeneracionAbajo.get()) : cfg.margenGeneracionAbajo.get(),
+                ConfigLod.cubico(nivel, cfg.recortarGeneracionArriba), cfg.margenGeneracionArriba.get(),
                 cfg.distanciaGeneracionJugador.get(),
                 SectionPos.blockToSectionCoord(completo.minY()),
                 SectionPos.blockToSectionCoord(completo.minY() + completo.height() - 1));
@@ -281,6 +292,23 @@ public final class GeneracionVertical {
      * la columna, con la misma densidad y umbral que la "superficie preliminar"
      * de vanilla ({@code NoiseChunk.computePreliminarySurfaceLevel}).
      */
+    /**
+     * Menor y mayor altura de la superficie del chunk, exactas: la superficie
+     * generada interpola entre las esquinas de celda (cada 4 bloques), así que
+     * sus extremos están en esas 5×5 columnas.
+     */
+    static int[] superficieExacta(ChunkPos pos, com.example.minecraftlodmod.generation.FuenteAltura fuente) {
+        int min = Integer.MAX_VALUE, max = Integer.MIN_VALUE;
+        for (int i = 0; i <= 16; i += 4) {
+            for (int j = 0; j <= 16; j += 4) {
+                int h = fuente.altura(pos.getMinBlockX() + i, pos.getMinBlockZ() + j);
+                min = Math.min(min, h);
+                max = Math.max(max, h);
+            }
+        }
+        return new int[]{min, max};
+    }
+
     private static int[] estimarSuperficie(ChunkPos pos, RandomState aleatorio, NoiseSettings completo) {
         DensityFunction densidad = aleatorio.router().initialDensityWithoutJaggedness();
         int paso = completo.getCellHeight();

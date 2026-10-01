@@ -60,6 +60,10 @@
 4. **Franja vertical exacta (`cubico/GeneracionVertical`):** hoy estima la
    superficie en 5 puntos con la densidad inicial; con `FuenteAltura` la
    conoce exacta → márgenes chicos (`margenAbajo` 2 en vez de 4).
+   **Implementado en H6:** con `FuenteAltura` la franja sale de la altura en
+   las 5×5 esquinas de celda del chunk (`GeneracionVertical.superficieExacta`:
+   la superficie generada interpola entre ellas, así que sus extremos están
+   ahí) y el margen de abajo es 2 secciones.
    `recortarArriba` es seguro (no hay islas flotantes reales): en la Tierra a
    1:8 la columna típica tiene ~2 700 bloques de alto y la franja útil unos
    pocos cientos → el ahorro medido en el mundo de prueba de 2048 (ruido 6×
@@ -76,6 +80,17 @@
    apagadas). Implementación: el `world_preset` marca la dimensión y
    `ConfigLod` resuelve "prendido si el mundo es Tierra real o si el usuario
    lo prende".
+
+   **Implementado en H6:** `ConfigLod.cubico(nivel, opción)` = la opción de
+   la config o `ConfigLod.cubicoPorDefecto` (Tierra real lo asigna por la
+   clave del `dimension_type`). Lo usan `GeneracionVertical` (franja y
+   `recortarArriba`) y `SeccionesComprimidas` por nivel.
+   **`compartirSeccionesUniformes` no se prende** en Tierra real: con ella el
+   servidor se cae cuando el agua fluye sobre una sección compartida (bug de
+   `SeccionesCompartidas`, anotado en `NOTES.md` como pedido a la sesión del
+   LOD); queda como la config diga. En todo esto, en los demás mundos y dimensiones nada cambia. En Tierra real no se
+   pueden apagar desde la config (sí con `-Dminecraftlodmod.tierraSinCubico=true`,
+   para medir).
 
 ## Precisión lejos del origen
 

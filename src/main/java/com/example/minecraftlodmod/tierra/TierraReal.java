@@ -65,6 +65,11 @@ public final class TierraReal {
     public static void registrar(IEventBus busDelMod) {
         FUNCIONES.register(busDelMod);
         FUENTES_BIOMAS.register(busDelMod);
+        // Opciones de cubico/ prendidas por defecto en Tierra real (docs/tierra-real/04-integracion-lod.md, punto 7).
+        if (!Boolean.getBoolean("minecraftlodmod.tierraSinCubico")) { // para medir sin ellas
+            com.example.minecraftlodmod.config.ConfigLod.cubicoPorDefecto = nivel -> nivel.dimensionTypeRegistration()
+                    .unwrapKey().map(k -> metrosPorBloque(k.location()) > 0).orElse(false);
+        }
         // Atajo del LOD aproximado: la altura de cada columna sale de los datos, sin buscarla en la densidad.
         com.example.minecraftlodmod.generation.FuenteAltura.registrar(nivel -> {
             AlturaTierra a = alturaDe(nivel);

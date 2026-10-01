@@ -262,6 +262,24 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ### Pedido a la sesión del LOD (desde la rama `claude/tierra-real`, 2026-10-01)
 
+- **Crash con `compartirSeccionesUniformes` (cualquier mundo):** el agua que
+  fluye sobre una sección compartida tira `IllegalArgumentException: The value
+  1 is not in the specified inclusive range of 0 to 0` en
+  `ZeroBitStorage.getAndSet` (desde `FlowingFluid.spreadTo` →
+  `LevelChunk.setBlockState` → `LevelChunkSection.setBlockState`). Causa:
+  `SeccionesCompartidas.copiarSiCompartida` copia con
+  `s.getStates().copy()`, y en vanilla `SingleValuePalette.copy()` devuelve
+  **la misma paleta**, cuyo manejador de cambio de tamaño es el contenedor
+  compartido original: al escribir un bloque distinto en la "copia", la
+  paleta agranda el **compartido** (corrompiéndolo para todas las secciones
+  que lo usan) y la copia queda con almacenamiento de 0 bits. Arreglo
+  propuesto (una línea): crear un contenedor nuevo con el único valor, p. ej.
+  `new PalettedContainer<>(Block.BLOCK_STATE_REGISTRY, s.getStates().get(0, 0, 0), PalettedContainer.Strategy.SECTION_STATES)`
+  (o `recreate()` + `set`), en vez de `copy()`. Reproducido en Tierra real
+  (forceload de 15×15 chunks en los Alpes); crash report
+  `run/crash-reports/crash-2026-10-01_20.54.36-server.txt` en esa máquina.
+  Mientras tanto Tierra real no la prende por defecto.
+
 - ~~El repo no compila desde GitHub~~ (`.gitignore` con `build/` ignoraba
   `vulkanmod/render/chunk/build/`). **Resuelto 2026-10-01:** la sesión del LOD
   ancló las rutas y subió la carpeta; `claude/tierra-real` lo juntó y

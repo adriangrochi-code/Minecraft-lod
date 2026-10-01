@@ -108,3 +108,23 @@ la cifra famosa.)
   - **Pendiente de Pista B:** en las capturas de Xvfb no se ve el terreno
     lejano (cielo bajo el horizonte desde el Cervino). Puede ser el render
     por software (Mesa) o la curvatura: verificarlo en una PC real.
+- **H6 (2026-10-01):** `ConfigLod.cubico(nivel, opción)` + `cubicoPorDefecto`
+  (Tierra real): generación por franja, `recortarArriba` y compresión de
+  secciones lejanas prendidas solo en Tierra real; franja **exacta** con
+  `FuenteAltura` (5×5 esquinas de celda, margen de abajo 2 secciones) y con
+  tope nunca bajo el nivel del mar (si no, con `recortarArriba` el mar salía
+  vacío arriba del fondo + 8 secciones). Medido en servidor dedicado, mismo
+  forceload (Alpes + Atlántico, 1 283 chunks), mundos nuevos:
+
+  | | sin (`-Dminecraftlodmod.tierraSinCubico=true`) | con H6 |
+  |---|---|---|
+  | ruido por chunk | 47,8 ms | **14,0 ms** |
+  | secciones sin generar | 0 | 91 376 abajo, 84 586 arriba |
+  | datos de bloques comprimidos | — | 92 744 → 5 873 KB |
+  | heap tras GC | 929 MB | **814 MB** |
+  | puntos medidos | iguales | iguales (mar con agua hasta y 62) |
+
+  - `compartirSeccionesUniformes` **no** se prende: crash del servidor al
+    fluir agua sobre una sección compartida (bug de `SeccionesCompartidas`,
+    `copy()` de un contenedor de un valor comparte la paleta con el
+    original; pedido a la sesión del LOD en `NOTES.md`).
