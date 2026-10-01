@@ -6,6 +6,21 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.5 — Contenedores de sección más livianos (cliente y servidor)
+- Cada contenedor de paleta (bloques y biomas de cada sección) traía un
+  detector de acceso desde varios hilos con su propio `Semaphore` y
+  `ReentrantLock` (~96 B con sus objetos internos) y su propia
+  `Configuration` (24 B), aunque solo existen unas pocas distintas. El
+  detector ahora guarda el "dueño" en un campo protegido por el monitor del
+  propio objeto (mismo error que vanilla si dos hilos se cruzan) y las
+  configuraciones se comparten. Siempre activo, en cliente y servidor y en
+  cualquier mundo; no se aplica si está FerriteCore, y se apaga con
+  `-Dminecraftlodmod.sinRecortesPaleta=true`.
+- Medido en el mundo de prueba de 2048 de alto (servidor dedicado, 1024
+  chunks): heap 712 → 621 MB (-13%), sin cambio en el tiempo de generación;
+  bloques y luz guardados iguales. En un mundo normal el ahorro es menor
+  (hay ~5 veces menos secciones por columna).
+
 ## 0.26.4 — Luz de las secciones lejanas comprimida
 - Con `cubico.comprimirSeccionesLejanas`, además de los bloques, la luz
   (cielo y bloque) de las secciones lejanas en vertical se guarda comprimida
