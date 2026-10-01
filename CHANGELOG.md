@@ -6,6 +6,35 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.9 — Contrato Voxy: agua translúcida y materiales del pack
+- Con la opción "Contrato Voxy" y un shaderpack que la soporta
+  (Complementary r5.9), el agua lejana ya no es un plano azul opaco: se
+  dibuja con el shader de agua del pack (`voxy_translucent`), con su
+  transparencia y sus reflejos, y se ve el fondo marino.
+- El pack sabe qué bloque es cada vóxel lejano (sus ids de
+  `block.properties`): hojas, agua, bloques que brillan y demás materiales
+  reciben su tratamiento propio en vez de quedar como bloque genérico.
+- La luz del cielo del LOD llega al pack (antes iba siempre al máximo): lo
+  que está bajo techo o en sombra se ve más oscuro, como el terreno cercano.
+- Probado en render por software con Complementary r5.9.3. Sin la opción,
+  el LOD se dibuja igual que antes.
+
+## 0.26.8 — Contrato de Voxy con shaderpacks: el LOD con los shaders del pack
+- Opción experimental **"Contrato Voxy"** (pestaña Experimental, apagada):
+  con Iris y un shaderpack que soporta Voxy (por ejemplo Complementary
+  Reimagined r5.9), el LOD se dibuja con el código del propio pack
+  (`voxy_opaque`) y el pack lo ilumina, le pone niebla y lo compone como al
+  resto del terreno. Sin la "niebla de borde" que tapaba el LOD más allá de
+  la distancia de render vanilla.
+- Iris 1.8 admite 16 buffers de color y Complementary en modo Voxy usa más:
+  con la opción prendida se amplían; si aun así el pack no carga en ese
+  modo, se recarga solo en el modo normal (el LOD sigue como antes, no se
+  quedan los shaders apagados).
+- Probado en render por software (Xvfb) con Complementary r5.9.3: carga,
+  compila y dibuja sin errores. Pendiente: agua translúcida (hoy el agua
+  lejana sale opaca), materiales por bloque (hojas, emisivos), sombras del
+  LOD, y verlo en una GPU real.
+
 ## 0.26.7 — Vegetación de cuevas en lo que se completa al bajar
 - Con `cubico.generacionVertical`, la banda que se completa cuando un
   jugador se acerca ahora también recibe sus features: musgo, arcilla,

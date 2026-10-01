@@ -43,6 +43,20 @@ public final class GeometriaLod {
 
     /** Caras (direcciones) posibles: 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z. */
     public static final int CARAS = 6;
+    /**
+     * Grupo aparte para el agua cuando se separa ({@link #separarAgua}): se dibuja en
+     * una pasada translúcida propia (contrato Voxy de los shaderpacks).
+     */
+    public static final int GRUPO_AGUA = CARAS;
+    /** Grupos de vértices: las 6 caras y el agua. */
+    public static final int GRUPOS = CARAS + 1;
+    /**
+     * Bytes por vértice del formato del contrato Voxy: el compacto más un int con el
+     * estado de bloque (bits 0-15, para el {@code customId} del pack), la luz de cielo
+     * horneada 0-15 (bits 16-19) y si es agua (bit 20). El color va sin sombra por cara:
+     * el pack ilumina solo.
+     */
+    public static final int BYTES_VOXY = 16;
 
     /** Bytes por vértice del formato compacto: 3 shorts de posición + short de sprite + RGBA. */
     public static final int BYTES_COMPACTO = 12;
@@ -112,9 +126,9 @@ public final class GeometriaLod {
     /** Luz horneada 0-15 por vértice (va al lightmap en el formato de bloque). */
     private byte[] luces = new byte[1024];
     /** Por cara: cantidad de vértices y planos extremos (coordenada sobre su eje, en bloques de la celda). */
-    private final int[] verticesPorCara = new int[CARAS];
-    private final float[] planoMin = new float[CARAS];
-    private final float[] planoMax = new float[CARAS];
+    private final int[] verticesPorCara = new int[GRUPOS];
+    private final float[] planoMin = new float[GRUPOS];
+    private final float[] planoMax = new float[GRUPOS];
 
     {
         Arrays.fill(planoMin, Float.POSITIVE_INFINITY);
@@ -129,7 +143,12 @@ public final class GeometriaLod {
     private byte[] caras = new byte[1024];
     /** log2 de los bloques por lado del vóxel de cada vértice (0 = bloque, 4 = sección entera). */
     private byte[] niveles = new byte[1024];
+    /** Estado de bloque del vóxel de cada vértice ({@link SuperVoxel#idEstado()}). */
+    private int[] estados = new int[1024];
+    /** Grupo de cada vértice: su cara, o {@link #GRUPO_AGUA}. */
+    private byte[] grupos = new byte[1024];
     private int vertices;
+    private boolean separarAgua;
     private Texturas fuenteTexturas;
     private boolean descartarSinLuz;
     private boolean oclusionAmbiental;
@@ -150,6 +169,8 @@ public final class GeometriaLod {
             sprites = new int[1024];
             caras = new byte[1024];
             niveles = new byte[1024];
+            estados = new int[1024];
+            grupos = new byte[1024];
         }
         vertices = 0;
         Arrays.fill(verticesPorCara, 0);
@@ -158,6 +179,12 @@ public final class GeometriaLod {
         fuenteTexturas = null;
         descartarSinLuz = false;
         oclusionAmbiental = false;
+        separarAgua = false;
+    }
+
+    /** El agua va a {@link #GRUPO_AGUA} en vez de al grupo de su cara (pasada translúcida aparte). */
+    public void separarAgua(boolean separar) {
+        this.separarAgua = separar;
     }
 
     /** Oscurecer rincones y bases de paredes (oclusión ambiental por vértice, sección 25 punto 5). */
@@ -254,8 +281,13 @@ public final class GeometriaLod {
                 && luz.minMin() == 0 && luz.maxMin() == 0 && luz.minMax() == 0 && luz.maxMax() == 0) {
             return false;
         }
-        float sombra = sombraDeCara(q.eje(), q.positivo());
         SuperVoxel v = q.voxelRepresentativo();
+        if (separarAgua && v.material() == SuperVoxel.Material.AGUA && !(q.eje() == Quad.Eje.Y && q.positivo())) {
+            // Agua translúcida: solo la superficie. Las paredes de agua entre celdas y secciones
+            // (opacas quedaban tapadas por la superficie) se verían a través de ella como una grilla.
+            return false;
+        }
+        float sombra = sombraDeCara(q.eje(), q.positivo());
         Cara cara = fuenteTexturas == null || v.idEstado() == SuperVoxel.SIN_ESTADO ? null
                 : fuenteTexturas.cara(v.idEstado(), q.eje(), q.positivo());
         int rgbBase = cara == null || cara.usaColorDelVoxel()
@@ -368,10 +400,14 @@ public final class GeometriaLod {
         int indiceCara = eje.ordinal() * 2 + (q.positivo() ? 1 : 0);
         caras[vertices] = (byte) indiceCara;
         niveles[vertices] = (byte) nivelTextura;
+        SuperVoxel representativo = q.voxelRepresentativo();
+        estados[vertices] = representativo.idEstado();
+        int grupo = separarAgua && representativo.material() == SuperVoxel.Material.AGUA ? GRUPO_AGUA : indiceCara;
+        grupos[vertices] = (byte) grupo;
         float coordenadaPlano = posiciones[i + eje.ordinal()];
-        verticesPorCara[indiceCara]++;
-        planoMin[indiceCara] = Math.min(planoMin[indiceCara], coordenadaPlano);
-        planoMax[indiceCara] = Math.max(planoMax[indiceCara], coordenadaPlano);
+        verticesPorCara[grupo]++;
+        planoMin[grupo] = Math.min(planoMin[grupo], coordenadaPlano);
+        planoMax[grupo] = Math.max(planoMax[grupo], coordenadaPlano);
         vertices++;
     }
 
@@ -416,6 +452,8 @@ public final class GeometriaLod {
             sprites = Arrays.copyOf(sprites, sprites.length * 2);
             caras = Arrays.copyOf(caras, caras.length * 2);
             niveles = Arrays.copyOf(niveles, niveles.length * 2);
+            estados = Arrays.copyOf(estados, estados.length * 2);
+            grupos = Arrays.copyOf(grupos, grupos.length * 2);
         }
     }
 
@@ -477,7 +515,7 @@ public final class GeometriaLod {
     public void escribirCompacto(ByteBuffer destino, int soloCara) {
         ByteBuffer b = destino.order(ByteOrder.LITTLE_ENDIAN);
         for (int i = 0; i < vertices; i++) {
-            if (soloCara >= 0 && caras[i] != soloCara) {
+            if (!enGrupo(i, soloCara)) {
                 continue;
             }
             b.putShort(aShort(posiciones[i * 3]));
@@ -504,7 +542,7 @@ public final class GeometriaLod {
     public void escribirBloque(ByteBuffer destino, int soloCara, boolean extendidoIris) {
         ByteBuffer b = destino.order(ByteOrder.LITTLE_ENDIAN);
         for (int i = 0; i < vertices; i++) {
-            if (soloCara >= 0 && caras[i] != soloCara) {
+            if (!enGrupo(i, soloCara)) {
                 continue;
             }
             b.putFloat(posiciones[i * 3]).putFloat(posiciones[i * 3 + 1]).putFloat(posiciones[i * 3 + 2]);
@@ -530,8 +568,46 @@ public final class GeometriaLod {
         }
     }
 
+    /** Vértices del grupo (cara 0-5 o {@link #GRUPO_AGUA}). */
     public int verticesDeCara(int cara) {
         return verticesPorCara[cara];
+    }
+
+    /** Vértices fuera del grupo del agua (todos si no se separa). */
+    public int verticesOpacos() {
+        return vertices - verticesPorCara[GRUPO_AGUA];
+    }
+
+    /** -1: todos menos el agua separada; si no, ese grupo. */
+    private boolean enGrupo(int i, int grupo) {
+        return grupo < 0 ? grupos[i] != GRUPO_AGUA : grupos[i] == grupo;
+    }
+
+    /**
+     * Escribe los vértices de un grupo (-1: todos menos el agua separada) en el formato
+     * del contrato Voxy ({@link #BYTES_VOXY} bytes c/u): como {@link #escribirCompacto}
+     * con el color sin sombra por cara ni luz horneada, más el int de estado, luz de
+     * cielo y agua.
+     */
+    public void escribirVoxy(ByteBuffer destino, int grupo) {
+        ByteBuffer b = destino.order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < vertices; i++) {
+            if (!enGrupo(i, grupo)) {
+                continue;
+            }
+            b.putShort(aShort(posiciones[i * 3]));
+            b.putShort(aShort(posiciones[i * 3 + 1]));
+            b.putShort(aShort(posiciones[i * 3 + 2]));
+            b.putShort((short) ((sprites[i] & MAX_SPRITE) | lucesBloque[i] << 14));
+            int c = coloresBase[i];
+            b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c).put((byte) (caras[i] | niveles[i] << 3));
+            b.putInt(extraVoxy(estados[i], luces[i], grupos[i] == GRUPO_AGUA));
+        }
+    }
+
+    /** El int extra del formato Voxy: estado (16 bits), luz de cielo (4) y agua (1). */
+    static int extraVoxy(int idEstado, int luzCielo, boolean agua) {
+        return (idEstado & 0xFFFF) | (luzCielo & 0xF) << 16 | (agua ? 1 << 20 : 0);
     }
 
     /** Plano más bajo de las caras de ese índice, sobre su eje (bloques de la celda). */

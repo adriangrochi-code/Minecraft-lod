@@ -160,11 +160,26 @@ public final class RenderLod {
                     .build();
 
     /**
+     * Estado de bloque, luz de cielo y agua ({@link GeometriaLod#escribirVoxy}), un int
+     * entero en el shader; uso UV con tipo entero como {@link #POSICION_SPRITE}.
+     */
+    static final VertexFormatElement EXTRA_VOXY = conVulkanMod() ? null : VertexFormatElement.register(
+            VertexFormatElement.findNextId(), 9, VertexFormatElement.Type.INT, VertexFormatElement.Usage.UV, 1);
+
+    /** Formato del contrato Voxy (shaderpacks, ver DibujoVoxy): el compacto + {@link #EXTRA_VOXY}, 16 B. */
+    public static final VertexFormat FORMATO_VOXY = conVulkanMod() ? null
+            : VertexFormat.builder()
+                    .add("PosSprite", POSICION_SPRITE)
+                    .add("Color", VertexFormatElement.COLOR)
+                    .add("Extra", EXTRA_VOXY)
+                    .build();
+
+    /**
      * Cómo está armada una malla: colores planos ({@code POSITION_COLOR}),
      * formato compacto con texturas ({@link #FORMATO_TEXTURA}) o formato de
      * bloque vanilla para shaderpacks ({@link GeometriaLod#escribirBloque}).
      */
-    enum TipoMalla { PLANA, TEXTURA, BLOQUE }
+    enum TipoMalla { PLANA, TEXTURA, BLOQUE, VOXY }
 
     /** Shader texturizado, registrado como cualquier ShaderInstance del juego; null si no cargó. */
     private static volatile ShaderInstance shaderTextura;
@@ -421,10 +436,10 @@ public final class RenderLod {
          * Buffers por dirección de cara (GeometriaLod.CARAS), null si no tiene caras.
          * Casi siempre uno por cara; con VulkanMod, más si pasa de {@link #MAX_VERTICES_VULKANMOD}.
          */
-        final VertexBuffer[][] buffers = new VertexBuffer[GeometriaLod.CARAS][];
+        final VertexBuffer[][] buffers = new VertexBuffer[GeometriaLod.GRUPOS][];
         /** Planos extremos de cada grupo: [2*cara] mínimo, [2*cara+1] máximo. */
         float[] planos;
-        final int[] verticesCara = new int[GeometriaLod.CARAS];
+        final int[] verticesCara = new int[GeometriaLod.GRUPOS];
         boolean tieneMalla;
         int vertices;
         int bytesVertice;
@@ -641,7 +656,7 @@ public final class RenderLod {
                 cerrarBuffer(estado);
             } else {
                 estado.vertices = 0;
-                for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
+                for (int cara = 0; cara < GeometriaLod.GRUPOS; cara++) {
                     MeshData[] piezas = lista.mallas()[cara];
                     VertexBuffer[] anteriores = estado.buffers[cara];
                     int n = piezas == null ? 0 : piezas.length;
@@ -816,8 +831,10 @@ public final class RenderLod {
         ordenDibujo.clear();
         int encoladas = 0;
         boolean bloque = shadersEnUso && !voxyEnUso;
-        // Con el contrato Voxy, el formato compacto con texturas (es la entrada del vértice de ContratoVoxy).
-        TipoMalla tipoEsperado = bloque ? TipoMalla.BLOQUE : texturasEnUso || voxyEnUso ? TipoMalla.TEXTURA : TipoMalla.PLANA;
+        // Con el contrato Voxy, su formato (el compacto con texturas + estado, luz de cielo y agua).
+        TipoMalla tipoEsperado = bloque ? TipoMalla.BLOQUE : voxyEnUso ? TipoMalla.VOXY
+                : texturasEnUso ? TipoMalla.TEXTURA : TipoMalla.PLANA;
+        boolean voxy = voxyEnUso;
         // Con shaders las texturas no se dibujan, pero dan el color promedio de cada cara.
         GeometriaLod.Texturas texturas = texturasEnUso || bloque || voxyEnUso ? PaletaTexturas.tabla() : null;
         boolean oclusion = oclusionEnUso;
@@ -853,7 +870,7 @@ public final class RenderLod {
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(prioridad(celda, camara, miraX, miraZ), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                cubiertos, verticales, texturas, oclusion, unBuffer, bloque)));
+                                cubiertos, verticales, texturas, oclusion, unBuffer, bloque, voxy)));
             }
         }
         boolean fundir = ConfigLod.CLIENTE.fundidoNiveles.get();
@@ -875,7 +892,8 @@ public final class RenderLod {
     /** Hilo de mallas: lee los nodos del nivel elegido y arma los vértices de la celda. */
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
                        int minSeccion, int maxSeccion, Set<Long> deVanilla, Map<Long, RangoSecciones> verticales,
-                       GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer, boolean bloque) {
+                       GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer, boolean bloque,
+                       boolean voxy) {
         long inicioArmado = System.nanoTime();
         try {
             GeometriaLod geometria = geometriaMallas.get();
@@ -883,6 +901,7 @@ public final class RenderLod {
             geometria.usarTexturas(texturas);
             geometria.descartarCarasSinLuz(ConfigLod.CLIENTE.descartarCuevas.get());
             geometria.usarOclusionAmbiental(oclusion);
+            geometria.separarAgua(voxy);
             int conDatos = celda.esGrande()
                     ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion)
                     : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion, deVanilla, verticales);
@@ -890,23 +909,34 @@ public final class RenderLod {
                 listas.add(new MallaLista(clave, celda, null, null, null, conDatos, TipoMalla.PLANA));
                 return;
             }
-            TipoMalla tipo = bloque ? TipoMalla.BLOQUE : texturas != null ? TipoMalla.TEXTURA : TipoMalla.PLANA;
+            TipoMalla tipo = bloque ? TipoMalla.BLOQUE : voxy ? TipoMalla.VOXY
+                    : texturas != null ? TipoMalla.TEXTURA : TipoMalla.PLANA;
             VertexFormat formato = switch (tipo) {
                 case PLANA -> DefaultVertexFormat.POSITION_COLOR;
                 case TEXTURA -> FORMATO_TEXTURA;
+                case VOXY -> FORMATO_VOXY;
                 // Solo hay mallas BLOQUE con un pack de Iris activo: su formato extendido.
                 case BLOQUE -> ShadersIris.formatoTerreno() != null ? ShadersIris.formatoTerreno()
                         : DefaultVertexFormat.BLOCK;
             };
             // Toda la memoria de una vez: las 6 mallas salen del mismo bloque, sin realocar.
             ByteBufferBuilder memoria = new ByteBufferBuilder(geometria.vertices() * formato.getVertexSize());
-            MeshData[][] mallas = new MeshData[GeometriaLod.CARAS][];
-            float[] planos = new float[2 * GeometriaLod.CARAS];
+            MeshData[][] mallas = new MeshData[GeometriaLod.GRUPOS][];
+            float[] planos = new float[2 * GeometriaLod.GRUPOS];
+            // El agua separada (contrato Voxy): un buffer con todas sus caras, para la pasada translúcida.
+            int agua = geometria.verticesDeCara(GeometriaLod.GRUPO_AGUA);
+            if (agua > 0) {
+                mallas[GeometriaLod.GRUPO_AGUA] = malla(geometria, GeometriaLod.GRUPO_AGUA, agua, formato, memoria, tipo);
+            }
+            planos[2 * GeometriaLod.GRUPO_AGUA] = Float.NEGATIVE_INFINITY;
+            planos[2 * GeometriaLod.GRUPO_AGUA + 1] = Float.POSITIVE_INFINITY;
             if (unBuffer) {
                 // Lejos (teselas y celdas pasada la distancia de agrupado, 768 bloques o la que fije el
                 // auto-ajuste): un solo buffer con todas las caras.
                 // Se ven chicas y la GPU ya descarta las de espaldas; separarlas triplicaba las llamadas.
-                mallas[0] = malla(geometria, -1, geometria.vertices(), formato, memoria, tipo);
+                if (geometria.verticesOpacos() > 0) {
+                    mallas[0] = malla(geometria, -1, geometria.verticesOpacos(), formato, memoria, tipo);
+                }
                 planos[0] = Float.NEGATIVE_INFINITY;
                 planos[1] = Float.POSITIVE_INFINITY;
                 listas.add(new MallaLista(clave, celda, mallas, planos, memoria, conDatos, tipo));
@@ -943,7 +973,8 @@ public final class RenderLod {
      * Una malla, partida en piezas de hasta {@link #MAX_VERTICES_VULKANMOD} vértices con
      * VulkanMod (una sola pieza si no).
      *
-     * @param cara 0-5, o -1 para todas las caras en una sola malla
+     * @param cara 0-5 o {@link GeometriaLod#GRUPO_AGUA}, o -1 para todas las caras (menos el agua separada)
+     *             en una sola malla
      */
     private static MeshData[] malla(GeometriaLod geometria, int cara, int n, VertexFormat formato,
                                     ByteBufferBuilder memoria, TipoMalla tipo) {
@@ -960,6 +991,8 @@ public final class RenderLod {
             try {
                 if (tipo == TipoMalla.TEXTURA) {
                     geometria.escribirCompacto(destino, cara);
+                } else if (tipo == TipoMalla.VOXY) {
+                    geometria.escribirVoxy(destino, cara);
                 } else {
                     geometria.escribirBloque(destino, cara, tamVertice == GeometriaLod.BYTES_BLOQUE_IRIS);
                 }
@@ -1279,7 +1312,14 @@ public final class RenderLod {
         try {
             Malla m = new Malla(evento.getModelViewMatrix(), proyeccion, null, null, desplazamiento, null, camara,
                     false, inicioCurva, radioPlaneta);
-            recorrerMallas(TipoMalla.TEXTURA, m, false);
+            recorrerMallas(TipoMalla.VOXY, m, false);
+            // Agua: con voxy_translucent sobre la profundidad de lo opaco (si el pack lo trae).
+            // Sin voxy_translucent, con el mismo programa opaco.
+            DesplazamientoCelda translucida = DibujoVoxy.empezarTranslucida();
+            Malla agua = new Malla(evento.getModelViewMatrix(), proyeccion, null, null,
+                    translucida != null ? translucida : desplazamiento, null, camara, false, inicioCurva, radioPlaneta);
+            agua.soloAgua = true;
+            recorrerMallas(TipoMalla.VOXY, agua, false);
         } finally {
             DibujoVoxy.terminar();
             VertexBuffer.unbind();
@@ -1428,6 +1468,8 @@ public final class RenderLod {
         final Vec3 camara;
         final boolean curvaPorCelda;
         final double inicioCurva, radioPlaneta;
+        /** Pasada translúcida del contrato Voxy: solo el grupo del agua; si no, solo las 6 caras. */
+        boolean soloAgua;
 
         Malla(Matrix4f modelView, Matrix4f proyeccion, ShaderInstance shader, Uniform desplazamiento,
               DesplazamientoCelda desplazamientoPrograma, Uniform fundido, Vec3 camara, boolean curvaPorCelda,
@@ -1479,12 +1521,15 @@ public final class RenderLod {
             } else {
                 vista = new Matrix4f(modelView).translate(ox, oy, oz);
             }
-            for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
+            int desde = soloAgua ? GeometriaLod.GRUPO_AGUA : 0;
+            int hasta = soloAgua ? GeometriaLod.GRUPOS : GeometriaLod.CARAS;
+            for (int cara = desde; cara < hasta; cara++) {
                 VertexBuffer[] piezas = buffers[cara];
                 double camaraEnEje = switch (cara >> 1) {
                     case 0 -> camara.x - origenX;
                     case 1 -> camara.y;
-                    default -> camara.z - origenZ;
+                    case 2 -> camara.z - origenZ;
+                    default -> 0; // agua: planos infinitos, siempre visible
                 };
                 if (piezas == null || !GeometriaLod.caraVisible(cara, camaraEnEje, planos[2 * cara], planos[2 * cara + 1])) {
                     continue;
@@ -1955,7 +2000,7 @@ public final class RenderLod {
     }
 
     private static void cerrarBuffer(EstadoCelda estado) {
-        for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
+        for (int cara = 0; cara < GeometriaLod.GRUPOS; cara++) {
             if (estado.buffers[cara] != null) {
                 for (VertexBuffer buffer : estado.buffers[cara]) {
                     buffer.close();

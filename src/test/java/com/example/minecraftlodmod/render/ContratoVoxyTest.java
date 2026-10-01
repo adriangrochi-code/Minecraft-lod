@@ -130,4 +130,27 @@ class ContratoVoxyTest {
         assertNull(p.taaOffset());
         assertTrue(ContratoVoxy.vertice(p, Map.of(), 430, List.of()).contains("{ return vec2(0.0); }"));
     }
+
+    @Test
+    void laMezclaDeCadaSalidaSaleDelJsonOdeMenosUno() {
+        Map<Integer, String> mezcla = Map.of(-1, "off", 0, "SRC_ALPHA ONE_MINUS_SRC_ALPHA ONE ONE_MINUS_SRC_ALPHA",
+                2, "one zero");
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new int[]{0x0302, 0x0303, 1, 0x0303},
+                ContratoVoxy.mezcla(mezcla, 0));
+        assertNull(ContratoVoxy.mezcla(mezcla, 1), "Sin entrada propia: la de -1 (off)");
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new int[]{1, 0, 1, 0}, ContratoVoxy.mezcla(mezcla, 2),
+                "Dos factores: los mismos para el alfa");
+        assertNull(ContratoVoxy.mezcla(Map.of(), 0));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> ContratoVoxy.mezcla(Map.of(0, "SRC_ALPHA NADA"), 0));
+    }
+
+    @Test
+    void elVerticeLeeElEnteroExtraYElFragmentoBuscaElCustomId() {
+        ContratoVoxy.Programa p = ContratoVoxy.leer("{ \"uniforms\": [] }");
+        assertTrue(ContratoVoxy.vertice(p, Map.of(), 430, List.of()).contains("in int Extra;"));
+        String f = ContratoVoxy.fragmento(p, Map.of(), 430, List.of(), "void voxy_emitFragment(VoxyFragmentParameters p) {}");
+        assertTrue(f.contains("texelFetch(lodvx_Ids"));
+        assertTrue(f.contains("lodvx_luzCielo"));
+    }
 }

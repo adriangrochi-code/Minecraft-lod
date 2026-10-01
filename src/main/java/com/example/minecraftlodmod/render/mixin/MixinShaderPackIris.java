@@ -49,7 +49,7 @@ public abstract class MixinShaderPackIris implements FuentesPackIris {
      */
     @ModifyVariable(method = CONSTRUCTOR, at = @At("STORE"), argsOnly = true)
     private ImmutableList<StringPair> minecraftlodmod$guardarDefiniciones(ImmutableList<StringPair> definiciones) {
-        if (com.example.minecraftlodmod.render.DibujoVoxy.activoEnConfig()
+        if (com.example.minecraftlodmod.render.DibujoVoxy.definirVoxy()
                 && definiciones.stream().noneMatch(d -> d.key().equals("VOXY"))) {
             definiciones = ImmutableList.<StringPair>builder().addAll(definiciones).add(new StringPair("VOXY", "")).build();
         }
