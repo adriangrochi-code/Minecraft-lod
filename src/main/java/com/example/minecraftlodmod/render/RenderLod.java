@@ -758,11 +758,9 @@ public final class RenderLod {
         // Detalle y radio del auto-ajuste (los del preset si está apagado).
         int radioChunks = balance.radioChunks(c);
         int distanciaVanillaChunks = mc.options.getEffectiveRenderDistance();
-        boolean tierraReal = com.example.minecraftlodmod.tierra.TierraReal.radioPlaneta(mc.level) > 0;
-        if (radioPlanetaActivo() > 0 && (ConfigLod.CLIENTE.horizonteReal.get() || tierraReal)) {
+        if (radioPlanetaActivo() > 0 && ConfigLod.CLIENTE.horizonteReal.get()) {
             // Horizonte real: hasta dónde se ve la superficie curva desde los ojos, en vez del radio del
             // preset; el auto-ajuste lo sigue recortando en la misma proporción que al del preset.
-            // En Tierra real va siempre (el planeta a escala es chico: lo de atrás del horizonte no se ve).
             int horizonte = HorizonteCurvo.radioChunks(camara.y - mc.level.getSeaLevel(), radioPlanetaActivo(),
                     com.example.minecraftlodmod.tierra.TierraReal.relieveHorizonte(mc.level),
                     distanciaVanillaChunks + 2, ParametrosCalidad.RADIO_MAX);
@@ -1370,14 +1368,15 @@ public final class RenderLod {
     }
 
     /**
-     * Radio de la curvatura en uso, en bloques (0 = sin curvatura): en un mundo
-     * Tierra real, el del planeta a su escala aunque la opción esté apagada
-     * ({@code docs/tierra-real/04-integracion-lod.md}); si no, el de la config.
+     * Radio de la curvatura en uso, en bloques (0 = sin curvatura). Solo con la
+     * opción prendida (por pedido del usuario, Tierra real no la fuerza: horizonte
+     * plano para depurar); en un mundo Tierra real el radio es el del planeta a
+     * su escala ({@code docs/tierra-real/04-integracion-lod.md}).
      */
     static double radioPlanetaActivo() {
+        if (!ConfigLod.CLIENTE.curvatura.get()) return 0;
         double tierra = com.example.minecraftlodmod.tierra.TierraReal.radioPlaneta(Minecraft.getInstance().level);
-        if (tierra > 0) return tierra;
-        return ConfigLod.CLIENTE.curvatura.get() ? radioCurvatura() : 0;
+        return tierra > 0 ? tierra : radioCurvatura();
     }
 
     /** Far de la proyección de vanilla que necesita el LOD con shaderpack (0 = no tocarlo). */

@@ -45,8 +45,10 @@
    **Implementado en H5:** el cliente reconoce el mundo por la clave de su
    `dimension_type` (`minecraftlodmod:tierra_8` / `tierra_6`, que el servidor
    ya le manda: no hace falta paquete propio) y usa radio = 6 371 km /
-   escala con la curvatura y el horizonte real **siempre prendidos** ahí
-   (`RenderLod.radioPlanetaActivo`; en los demás mundos sigue la config). El
+   escala (`RenderLod.radioPlanetaActivo`). **Cambio (pedido del usuario,
+   2026-10-01): por ahora no se fuerzan** la curvatura ni el horizonte real
+   en Tierra real (horizonte plano, para depurar); siguen las opciones del
+   usuario, y si prende la curvatura el radio es el del planeta. El
    relieve lejano del horizonte real es de 2 km en vez de 32 bloques
    (`TierraReal.relieveHorizonte`, `HorizonteCurvo.radioChunks` con relieve):
    a 1:8, desde el suelo, ~1 360 chunks (~21 700 bloques); montañas más
