@@ -6,6 +6,24 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.2 — Completar el relleno al bajar (etapa 2 de cubic chunks, parte 2)
+- Con `cubico.generacionVertical`, cuando un jugador se acerca en altura a
+  una columna con relleno (a menos de `distanciaJugador` secciones), la
+  banda que falta se genera con ruido, acuíferos y reglas de superficie en un
+  chunk aparte (hilo de fondo) y se mezcla en el real: entran las cuevas de
+  ruido, los acuíferos y las vetas; quedan las menas, las cuevas de carvers,
+  las estructuras y lo que haya puesto un jugador. Después se recalcula la
+  luz y se reenvía el chunk. Arriba (si se recortó) entran las islas
+  flotantes, sin la vegetación de las features.
+- Medido contra el mismo mundo generado completo (y −64..0, 49 columnas):
+  99,2% de bloques iguales (con la franja sola, 95,8% y faltaba ~40% del
+  volumen de cuevas); la diferencia que queda es la vegetación de las cuevas
+  frondosas (musgo, arcilla, pasto), que viene de features. Costo por
+  columna: 83 ms en segundo plano y 3,8 ms en el hilo del servidor.
+- Comando para administradores: `/lodcubico completar <radio> <seccionY>`.
+- Arreglo: la superficie preliminar (acuíferos, reglas de superficie) se
+  busca en la altura completa aunque el ruido esté recortado.
+
 ## 0.26.1 — Generación por franja vertical (etapa 2 de cubic chunks, parte 1)
 - **Nueva opción experimental del servidor `cubico.generacionVertical`**
   (apagada, en `minecraftlodmod-server.toml`): el ruido del terreno se

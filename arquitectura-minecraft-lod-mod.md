@@ -888,8 +888,21 @@ servidor `cubico.generacionVertical`, apagada):**
   171 ms → 103 ms con la franja → 28 ms con `recortarArriba`; estimar la
   franja, 1,4-1,7 ms.
 
-**Parte 2 (pendiente):** completar las secciones pendientes cuando un jugador
-se acerca en vertical (ruido de esas secciones en un ProtoChunk aparte,
-copiando solo las que nadie modificó; lo difícil son features y estructuras,
-que necesitan vecinos) y, después, no cargar en el servidor lo lejano en
-vertical.
+**Parte 2 (implementada en 0.26.2, `cubico/CompletadoVertical`):** cada 10
+ticks, las columnas cargadas a la vista de un jugador cuya franja no llega a
+`distanciaJugador` (+2) secciones de él se encolan, de la más cercana a la más
+lejana. En un hilo de fondo, la banda que falta se genera en un `ProtoChunk`
+aparte con la banda como franja: biomas, ruido (acuífero y superficie
+preliminar con la altura completa, `MixinNoiseChunkSuperficie`) y reglas de
+superficie (con tres secciones de relleno encima de una banda de abajo, para
+que no la traten como superficie). En el hilo del servidor se mezcla con el
+chunk real vía `LevelChunk#setBlockState` (luz, mapas de altura, fluidos):
+abajo, aire y fluidos del aparte sobre roca, y la roca del aparte solo donde el
+real tiene la del relleno; arriba, lo del aparte donde el real es aire. Al
+terminar la luz (`lightChunk(chunk, true)` como barrera) se reenvía el chunk.
+Medido: 99,2% de bloques iguales a la generación completa (falta la
+vegetación de cuevas, que viene de features).
+
+**Pendiente:** features sobre lo completado (vegetación de cuevas frondosas,
+dripstone, líquenes; necesitan vecinos) y no cargar en el servidor lo lejano
+en vertical.
