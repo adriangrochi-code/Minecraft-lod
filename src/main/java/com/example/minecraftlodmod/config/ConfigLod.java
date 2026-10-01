@@ -55,6 +55,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue texturasComoTerreno;
         public final ModConfigSpec.BooleanValue nubesLejanas;
         public final ModConfigSpec.BooleanValue oclusionPantalla;
+        public final ModConfigSpec.BooleanValue fundidoNiveles;
         public final ModConfigSpec.DoubleValue neblinaAtmosferica;
         public final ModConfigSpec.BooleanValue curvatura;
         public final ModConfigSpec.IntValue radioCurvaturaKm;
@@ -100,6 +101,11 @@ public final class ConfigLod {
                             "solo en la fila de arriba y abajo la textura de la tierra, como un corte del terreno. Apagado:",
                             "la textura del costado se repite en cada bloque del vóxel (una línea de pasto por bloque).")
                     .define("texturasComoTerreno", true);
+            fundidoNiveles = b.comment("Cuando una zona del LOD cambia de nivel de detalle, la malla vieja y la nueva se",
+                            "cruzan con un tramado durante menos de medio segundo en vez de saltar de golpe, y la vieja",
+                            "se sigue dibujando hasta que la nueva esté lista (sin huecos). Con colores planos, VulkanMod",
+                            "o shaderpacks solo se evitan los huecos.")
+                    .define("fundidoNiveles", true);
             oclusionPantalla = b.comment("Oclusión ambiental sobre la imagen del LOD (SSAO, como Voxy): sombra suave en valles,",
                             "pies de montaña y bajo los árboles, además de la horneada. Cuesta algo de GPU por píxel de LOD.")
                     .define("oclusionPantalla", true);

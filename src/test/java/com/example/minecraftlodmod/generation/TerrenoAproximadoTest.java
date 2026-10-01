@@ -141,4 +141,49 @@ class TerrenoAproximadoTest {
         }
         assertTrue(claves.add(GeneradorAproximado.claveMarca(0, 0)), "La marca de chunk es otra");
     }
+
+    @Test
+    void cercaSeAproximaMasFino() {
+        assertEquals(1, TerrenoAproximado.nivelSegunDistancia(200));
+        assertEquals(2, TerrenoAproximado.nivelSegunDistancia(800));
+        assertEquals(3, TerrenoAproximado.nivelSegunDistancia(1400));
+    }
+
+    @Test
+    void laGrillaDeNivel1TieneUnaColumnaPorVoxelDeDosBloques() {
+        TerrenoAproximado.Columna[] columnas = new TerrenoAproximado.Columna[64];
+        for (int i = 0; i < 64; i++) {
+            // Una rampa: cada columna en x un bloque más alta.
+            columnas[i] = new TerrenoAproximado.Columna(70 + i / 8, PASTO, PIEDRA);
+        }
+        SuperVoxel[] g = TerrenoAproximado.grilla(1, 4, columnas, AGUA, 63); // bloques 64-79
+        assertEquals(512, g.length);
+        // Columna x=0 (altura 70): el vóxel y=3 (bloques 70-71) tiene la superficie con 1 de 2 lleno.
+        SuperVoxel v = g[(0 * 8 + 3) * 8];
+        assertEquals(PASTO.r(), v.r());
+        assertEquals(Math.round(SuperVoxel.LLENO / 2f), v.relleno());
+        assertEquals(SuperVoxel.Material.AIRE, g[(0 * 8 + 4) * 8].material());
+        // Columna x=7 (altura 77): llega al vóxel y=6 (bloques 76-77) entero.
+        assertEquals(SuperVoxel.LLENO, g[(7 * 8 + 6) * 8].relleno());
+        assertEquals(SuperVoxel.Material.SOLIDO, g[(7 * 8 + 6) * 8].material());
+        // Reducida como los datos reales, da el nivel 2.
+        assertEquals(64, HierarchicalReducer.reducir(g, 8).length);
+    }
+
+    @Test
+    void lasClavesFinasNoChocanConNingunaOtra() {
+        java.util.Set<Long> claves = new java.util.HashSet<>();
+        for (int sy = -4; sy < 20; sy++) {
+            for (int nivel = 1; nivel <= 4; nivel++) {
+                assertTrue(claves.add(TerrenoAproximado.claveNodo(nivel, 5, sy, 7)));
+            }
+            for (int nivel = 0; nivel <= 4; nivel++) {
+                assertTrue(claves.add(SectionExtractor.claveNodo(nivel, 5, sy, 7)), "Choca con datos reales");
+            }
+        }
+        assertTrue(claves.add(TerrenoAproximado.claveMarcaFina(1, 5, 7)));
+        assertTrue(claves.add(TerrenoAproximado.claveMarcaFina(2, 5, 7)));
+        assertTrue(claves.add(GeneradorAproximado.claveMarca(5, 7)));
+        assertThrows(IllegalArgumentException.class, () -> TerrenoAproximado.claveNodo(0, 0, 0, 0));
+    }
 }

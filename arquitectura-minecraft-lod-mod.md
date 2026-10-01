@@ -807,5 +807,11 @@ potencias de 2; tamaños intermedios romperían el formato de disco y red
 - **Radio 8192** con el horizonte aproximado por región (nodo entero de nivel
   5/6/7 por tarea), porque chunk por chunk serían ~200 millones de chunks.
 
-Pendiente: fundido con tramado entre niveles (sección 6) para que el cambio de
-nivel tampoco se note en el tiempo.
+**Fundido con tramado entre niveles (sección 6) — implementado en 0.25.0**
+(`render/FundidoNiveles` + uniform `Fundido` de `lod_textura`): la malla vieja
+pasa a "saliente", se dibuja entera hasta que las celdas que la tapan están
+armadas (tope 3 s) y después se cruza con ellas con un Bayer 4×4
+complementario durante 0,4 s; hasta 32 salientes a la vez. En el mismo hito,
+la aproximación cercana se arma en niveles 1 y 2 (`TerrenoAproximado`,
+claves de nivel 15) porque los vóxeles de 8 bloques de cerca eran lo que más
+se notaba.

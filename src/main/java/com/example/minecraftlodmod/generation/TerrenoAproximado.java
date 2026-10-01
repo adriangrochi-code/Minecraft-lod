@@ -17,6 +17,13 @@ import com.example.minecraftlodmod.core.SuperVoxel;
  * Se guardan en claves propias ({@link #nivelGuardado}), separadas de los
  * datos reales: cuando el chunk se genera de verdad, lo real tiene prioridad
  * y lo aproximado queda sin usar.
+ *
+ * Cerca del jugador (0.25.0) la grilla se arma más fina, con una columna por
+ * vóxel de 2 o 4 bloques ({@link #nivelSegunDistancia}): de cerca, un vóxel
+ * aproximado de 8 bloques ocupaba decenas de píxeles y se notaba, por más
+ * bajo que fuera el tope de píxeles. Los niveles más gruesos salen reduciendo
+ * el fino. Los niveles 1 y 2 aproximados van en la clave de nivel
+ * {@link #NIVEL_CLAVE_FINO} ({@link #claveNodo}).
  */
 public final class TerrenoAproximado {
 
@@ -28,6 +35,42 @@ public final class TerrenoAproximado {
     public static final int NIVEL_MARCA = 14;
     /** Columnas por lado de un chunk (cada una representa 8×8 bloques). */
     public static final int COLUMNAS = 2;
+    /** Nivel aproximado más fino (vóxeles de 2 bloques, 8×8 columnas por chunk). */
+    public static final int NIVEL_FINO_MIN = 1;
+    /** Nivel de clave (el único libre) de los niveles aproximados 1 y 2; la Y lleva cuál es. */
+    static final int NIVEL_CLAVE_FINO = 15;
+    /**
+     * Hasta qué distancia (bloques) se aproxima en nivel 1 y nivel 2: con
+     * vóxeles de 2 y 4 bloques ocupan unos 3 px en 1080p (FOV 70) en el borde
+     * de cada tramo, debajo del tope de píxeles por vóxel por defecto.
+     */
+    public static final double DISTANCIA_NIVEL1 = 512, DISTANCIA_NIVEL2 = 1024;
+
+    /** Nivel de la grilla que se arma al aproximar un chunk a esa distancia (bloques) del jugador: 1, 2 o 3. */
+    public static int nivelSegunDistancia(double bloques) {
+        return bloques <= DISTANCIA_NIVEL1 ? 1 : bloques <= DISTANCIA_NIVEL2 ? 2 : NIVEL_MIN;
+    }
+
+    /**
+     * Clave de un nodo aproximado de nivel 1 a 4 en {@code SectionExtractor.claveNodo}:
+     * 3 y 4 con {@link #nivelGuardado}; 1 y 2 con el nivel {@link #NIVEL_CLAVE_FINO}
+     * y el bit 0x400 de la Y marcando el nivel 1 (secciones de -512 a 511).
+     */
+    public static long claveNodo(int nivel, int seccionX, int seccionY, int seccionZ) {
+        if (nivel >= NIVEL_MIN) {
+            return SectionExtractor.claveNodo(nivelGuardado(nivel), seccionX, seccionY, seccionZ);
+        }
+        if (nivel < NIVEL_FINO_MIN) {
+            throw new IllegalArgumentException("Nivel aproximado fuera de rango: " + nivel);
+        }
+        return SectionExtractor.claveNodo(NIVEL_CLAVE_FINO, seccionX, (seccionY & 0x3FF) | (nivel == 1 ? 0x400 : 0),
+                seccionZ);
+    }
+
+    /** Clave de la marca "este chunk tiene aproximado fino hasta el nivel {@code nivel}" (1 o 2). */
+    public static long claveMarcaFina(int nivel, int chunkX, int chunkZ) {
+        return SectionExtractor.claveNodo(NIVEL_CLAVE_FINO, chunkX, 0x800 | nivel, chunkZ);
+    }
     static final int LADO_VOXEL = 8;
 
     private TerrenoAproximado() {
@@ -63,14 +106,26 @@ public final class TerrenoAproximado {
      * @return la grilla, o null si la sección queda toda de aire
      */
     public static SuperVoxel[] grillaNivel3(int seccionY, Columna[] columnas, SuperVoxel agua, int nivelMar) {
-        SuperVoxel[] grilla = new SuperVoxel[8];
+        return grilla(NIVEL_MIN, seccionY, columnas, agua, nivelMar);
+    }
+
+    /**
+     * Grilla de cualquier nivel 1-3 de una sección, una columna por vóxel:
+     * lado {@code 16 >> nivel}, columnas indexadas x*lado+z, grilla
+     * (x*lado+y)*lado+z, como los datos reales.
+     *
+     * @return la grilla, o null si la sección queda toda de aire
+     */
+    public static SuperVoxel[] grilla(int nivel, int seccionY, Columna[] columnas, SuperVoxel agua, int nivelMar) {
+        int lado = SectionExtractor.LADO >> nivel, tamano = 1 << nivel;
+        SuperVoxel[] grilla = new SuperVoxel[lado * lado * lado];
         boolean alguno = false;
-        for (int x = 0; x < COLUMNAS; x++) {
-            for (int z = 0; z < COLUMNAS; z++) {
-                Columna c = columnas[x * COLUMNAS + z];
-                for (int y = 0; y < 2; y++) {
-                    SuperVoxel v = voxelDeColumna(c, seccionY * 16 + y * LADO_VOXEL, LADO_VOXEL, agua, nivelMar);
-                    grilla[(x * 2 + y) * 2 + z] = v;
+        for (int x = 0; x < lado; x++) {
+            for (int z = 0; z < lado; z++) {
+                Columna c = columnas[x * lado + z];
+                for (int y = 0; y < lado; y++) {
+                    SuperVoxel v = voxelDeColumna(c, seccionY * 16 + y * tamano, tamano, agua, nivelMar);
+                    grilla[(x * lado + y) * lado + z] = v;
                     alguno |= v.material() != SuperVoxel.Material.AIRE;
                 }
             }

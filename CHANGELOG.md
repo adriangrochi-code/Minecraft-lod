@@ -6,6 +6,26 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.25.0 — Que no se noten los vóxeles
+- **Arreglado: chunks aproximados que no terminaban nunca.** La búsqueda de
+  la superficie calculaba mal el punto medio con alturas negativas (el mundo
+  baja a -64) y quedaba dando vueltas para siempre: había chunks cercanos
+  que "tardaban minutos" y un hilo de generación ocupado sin avanzar. En la
+  prueba, el horizonte aproximado pasó de no completar casi nada a ~290
+  chunks por segundo (radio de 160 chunks en unos 3 minutos).
+- **Aproximación más fina cerca:** las zonas por las que nunca pasaste se
+  estimaban solo en vóxeles de 8 bloques, que de cerca ocupan decenas de
+  píxeles y se notaban por más bajo que fuera el tope de píxeles. Ahora,
+  hasta 512 bloques se estiman en vóxeles de 2 bloques y hasta 1024 en
+  vóxeles de 4. Lo ya aproximado en grueso que queda cerca se rehace solo.
+- **Fundido entre niveles** (Calidad, prendido): cuando una zona cambia de
+  nivel de detalle, la malla vieja y la nueva se cruzan con un tramado en
+  menos de medio segundo en vez de saltar de golpe. La vieja se sigue
+  dibujando hasta que la nueva está lista, así que tampoco aparecen huecos
+  al cambiar de tesela lejana. Con colores planos, VulkanMod o shaderpacks
+  solo se evitan los huecos (sin tramado).
+- El log de la aproximación dice cuántas evaluaciones del terreno hace.
+
 ## 0.24.1 — Los chunks reales primero
 - **La aproximación del horizonte ya no frena los chunks cercanos:** cuando
   el auto-ajuste dejaba un solo lugar de generación (procesador justo, como

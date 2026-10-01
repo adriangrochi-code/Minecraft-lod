@@ -107,6 +107,7 @@ public final class PantallaLod extends Screen {
                         interruptor("texturasComoTerreno", Impacto.NINGUNO, c.texturasComoTerreno)
                                 .siempreQue(texturas::pendiente),
                         interruptor("oclusionAmbiental", Impacto.NINGUNO, c.oclusionAmbiental),
+                        interruptor("fundidoNiveles", Impacto.BAJO, c.fundidoNiveles),
                         interruptor("oclusionPantalla", Impacto.MEDIO, c.oclusionPantalla)
                                 .siempreQue(() -> !com.example.minecraftlodmod.render.RenderLod.conVulkanMod()),
                         decimal("neblinaAtmosferica", Impacto.NINGUNO, 0, 1, 0.05, c.neblinaAtmosferica, "")

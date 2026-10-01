@@ -51,6 +51,7 @@ import org.slf4j.Logger;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -367,7 +368,58 @@ public final class RenderLod {
         int chunksConDatos;
         TipoMalla tipo = TipoMalla.PLANA;
         long construidaNanos;
+        /** Inicio de su fundido de entrada ({@link FundidoNiveles}); 0 = entera. */
+        long aparicionNanos;
+        /** Malla nueva que espera, sin dibujarse, a cruzarse con las salientes que tapa. */
+        boolean esperando;
     }
+
+    /**
+     * Malla que salió del plan (otro nivel de detalle): se sigue dibujando
+     * hasta que las que la reemplazan estén listas y después se desvanece
+     * con tramado mientras ellas aparecen (sección 6).
+     */
+    private static final class Saliente {
+        final VertexBuffer[][] buffers;
+        final float[] planos;
+        final int[] verticesCara;
+        final double origenX, origenZ, lado;
+        final TipoMalla tipo;
+        final long creadaNanos;
+        /** Inicio del desvanecimiento; 0 = todavía esperando a su reemplazo (entera). */
+        long inicioNanos;
+
+        Saliente(EstadoCelda e, long ahora, boolean yaReemplazada) {
+            buffers = e.buffers.clone();
+            Arrays.fill(e.buffers, null);
+            planos = e.planos;
+            verticesCara = e.verticesCara.clone();
+            origenX = e.construidaCon.origenX();
+            origenZ = e.construidaCon.origenZ();
+            lado = e.construidaCon.ladoEnBloques();
+            tipo = e.tipo;
+            creadaNanos = ahora;
+            inicioNanos = yaReemplazada ? ahora : 0;
+            e.tieneMalla = false;
+        }
+
+        boolean solapa(EstadoCelda e) {
+            PlanCeldas.Celda c = e.plan != null ? e.plan : e.construidaCon;
+            return c != null && FundidoNiveles.solapan(origenX, origenZ, lado, c.origenX(), c.origenZ(), c.ladoEnBloques());
+        }
+
+        void cerrar() {
+            for (VertexBuffer[] piezas : buffers) {
+                if (piezas != null) {
+                    for (VertexBuffer b : piezas) {
+                        b.close();
+                    }
+                }
+            }
+        }
+    }
+
+    private final List<Saliente> salientes = new ArrayList<>();
 
     /**
      * Resultado del hilo de mallas: una malla por dirección de cara (null las
@@ -493,6 +545,19 @@ public final class RenderLod {
             if (estado == null) {
                 cerrar(lista);
                 continue;
+            }
+            long ahora = System.nanoTime();
+            boolean fundir = ConfigLod.CLIENTE.fundidoNiveles.get();
+            boolean otroNivel = estado.tieneMalla && estado.construidaCon != null
+                    && estado.construidaCon.nivel() != lista.celda().nivel();
+            if (fundir && otroNivel && lista.mallas() != null) {
+                // Misma celda, otro nivel: la vieja se desvanece mientras la nueva aparece.
+                agregarSaliente(new Saliente(estado, ahora, true));
+                estado.aparicionNanos = ahora;
+            } else if (fundir && !estado.tieneMalla && lista.mallas() != null) {
+                // Malla nueva: si tapa una saliente que espera, aparece junto con su desvanecimiento.
+                estado.aparicionNanos = ahora;
+                estado.esperando = salientes.stream().anyMatch(s -> s.inicioNanos == 0 && s.solapa(estado));
             }
             if (lista.mallas() == null) {
                 cerrarBuffer(estado);
@@ -669,9 +734,16 @@ public final class RenderLod {
                                 cubiertos, texturas, oclusion, unBuffer, bloque)));
             }
         }
+        boolean fundir = ConfigLod.CLIENTE.fundidoNiveles.get();
         celdas.entrySet().removeIf(e -> {
             if (!vigentes.contains(e.getKey())) {
-                cerrarBuffer(e.getValue());
+                EstadoCelda vieja = e.getValue();
+                if (fundir && vieja.tieneMalla && vieja.construidaCon != null && !vieja.oculta) {
+                    // Sigue dibujada hasta que lo que la reemplaza esté armado (sin huecos).
+                    agregarSaliente(new Saliente(vieja, System.nanoTime(), false));
+                } else {
+                    cerrarBuffer(vieja);
+                }
                 return true;
             }
             return false;
@@ -873,22 +945,21 @@ public final class RenderLod {
     }
 
     /**
-     * Chunk sin datos reales pero con horizonte aproximado: niveles 3 o 4
-     * (los únicos que existen aproximados; si la celda pide uno más fino, se
-     * usa el 3). Vecinas solo arriba y abajo: los costados de un chunk
+     * Chunk sin datos reales pero con horizonte aproximado: el nivel pedido
+     * si existe ({@link #nivelAproximadoDisponible}: 1 y 2 solo cerca del
+     * jugador, 3 y 4 siempre); si no, el más fino que haya. Vecinas solo arriba y abajo: los costados de un chunk
      * aproximado se dibujan (lejos, costo chico).
      */
     private static void armarAproximado(GeometriaLod geometria, RegionFileStore store, byte dimension, int nivel,
                                         int chunkX, int chunkZ, int dx, int dz, int minSeccion, int maxSeccion,
                                         int omitidas) {
-        int nivelA = Math.max(TerrenoAproximado.NIVEL_MIN, Math.min(TerrenoAproximado.NIVEL_MAX, nivel));
+        RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimension, chunkX, chunkZ);
+        int nivelA = nivelAproximadoDisponible(store, region, nivel, chunkX, chunkZ);
         int lado = SectionExtractor.LADO >> nivelA;
         int total = SectionExtractor.voxelesPorNodo(nivelA);
-        RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimension, chunkX, chunkZ);
         SuperVoxel[][] grillas = new SuperVoxel[maxSeccion - minSeccion][];
         for (int sy = minSeccion; sy < maxSeccion; sy++) {
-            byte[] bytes = store.leer(region, SectionExtractor.claveNodo(TerrenoAproximado.nivelGuardado(nivelA),
-                    chunkX, sy, chunkZ));
+            byte[] bytes = store.leer(region, TerrenoAproximado.claveNodo(nivelA, chunkX, sy, chunkZ));
             grillas[sy - minSeccion] = bytes == null ? null : OctreeNodeCodec.deserializar(bytes, 0, total).voxeles();
         }
         for (int i = 0; i < grillas.length; i++) {
@@ -900,6 +971,27 @@ public final class RenderLod {
             geometria.agregarSeccion(grillas[i], lado, dx * 16f, (minSeccion + i) * 16f, dz * 16f, 16f / lado,
                     omitidas, vecinos);
         }
+    }
+
+    /**
+     * El nivel aproximado más fino que tiene el chunk sin pasar del pedido:
+     * cerca se aproxima en vóxeles de 2 o 4 bloques (marcas finas), el resto
+     * solo en 3 y 4.
+     */
+    static int nivelAproximadoDisponible(RegionFileStore store, RegionFileStore.ClaveRegion region, int pedido,
+                                         int chunkX, int chunkZ) {
+        if (pedido >= TerrenoAproximado.NIVEL_MIN) {
+            return Math.min(pedido, TerrenoAproximado.NIVEL_MAX);
+        }
+        boolean hay1 = store.contiene(region, TerrenoAproximado.claveMarcaFina(1, chunkX, chunkZ));
+        if (pedido <= 1 && hay1) {
+            return 1;
+        }
+        // Un chunk aproximado en nivel 1 también guardó su reducción a 2.
+        if (hay1 || store.contiene(region, TerrenoAproximado.claveMarcaFina(2, chunkX, chunkZ))) {
+            return 2;
+        }
+        return TerrenoAproximado.NIVEL_MIN;
     }
 
     private static boolean tieneAproximado(RegionFileStore store, byte dimension, int chunkX, int chunkZ) {
@@ -937,6 +1029,7 @@ public final class RenderLod {
     private void dibujarLod(Minecraft mc, RenderLevelStageEvent evento, Vec3 camara) {
         llamadasUltimoFrame = 0;
         verticesUltimoFrame = 0;
+        avanzarFundidos(System.nanoTime());
         alcanceLodBloques = alcance(camara);
         if (shadersEnUso) {
             dibujarConShaderpack(mc, evento, camara);
@@ -1088,35 +1181,100 @@ public final class RenderLod {
             }
             shader.apply();
         }
+        // Fundido entre niveles: solo con el shader propio (sin él, las salientes se van al empezar).
+        Uniform fundido = desplazamiento != null || tipo == TipoMalla.TEXTURA ? shader.getUniform("Fundido") : null;
+        long ahora = System.nanoTime();
+        Malla m = new Malla(evento.getModelViewMatrix(), proyeccion, shader, desplazamiento, fundido, camara,
+                curvaPorCelda, inicioCurva, radioPlaneta);
         for (EstadoCelda estado : ordenDibujo) {
             if (!estado.tieneMalla || estado.construidaCon == null || estado.tipo != tipo
-                    || estado.oculta) {
+                    || estado.oculta || estado.esperando) {
                 continue;
             }
-            double origenX = estado.construidaCon.origenX(), origenZ = estado.construidaCon.origenZ();
+            float visible = FundidoNiveles.fraccionEntrada(ahora, estado.aparicionNanos);
+            if (visible >= 1f) {
+                estado.aparicionNanos = 0;
+            }
+            m.dibujar(estado.buffers, estado.planos, estado.verticesCara, estado.construidaCon.origenX(),
+                    estado.construidaCon.origenZ(), estado.construidaCon.ladoEnBloques(), fundido == null ? 1f : visible,
+                    true);
+        }
+        for (Saliente s : salientes) {
+            if (s.tipo != tipo || (s.inicioNanos != 0 && fundido == null)) {
+                continue;
+            }
+            float queda = 1f - FundidoNiveles.fraccionEntrada(ahora, s.inicioNanos);
+            if (s.inicioNanos == 0) {
+                queda = 1f;
+            }
+            m.dibujar(s.buffers, s.planos, s.verticesCara, s.origenX, s.origenZ, s.lado, queda, false);
+        }
+        if (fundido != null) {
+            fundido.set(1f, 1f);
+            fundido.upload();
+        }
+        if (desplazamiento != null) {
+            desplazamiento.set(0f, 0f, 0f);
+            shader.clear();
+        }
+    }
+
+    /** Lo común a dibujar las mallas de una pasada (celdas y salientes). */
+    private final class Malla {
+        final Matrix4f modelView, proyeccion;
+        final ShaderInstance shader;
+        final Uniform desplazamiento, fundido;
+        final Vec3 camara;
+        final boolean curvaPorCelda;
+        final double inicioCurva, radioPlaneta;
+
+        Malla(Matrix4f modelView, Matrix4f proyeccion, ShaderInstance shader, Uniform desplazamiento,
+              Uniform fundido, Vec3 camara, boolean curvaPorCelda, double inicioCurva, double radioPlaneta) {
+            this.modelView = modelView;
+            this.proyeccion = proyeccion;
+            this.shader = shader;
+            this.desplazamiento = desplazamiento;
+            this.fundido = fundido;
+            this.camara = camara;
+            this.curvaPorCelda = curvaPorCelda;
+            this.inicioCurva = inicioCurva;
+            this.radioPlaneta = radioPlaneta;
+        }
+
+        /**
+         * @param visible fracción visible del tramado (1 = entera)
+         * @param entra   true la malla que aparece, false la que se desvanece (patrón complementario)
+         */
+        void dibujar(VertexBuffer[][] buffers, float[] planos, int[] verticesCara, double origenX, double origenZ,
+                     double lado, float visible, boolean entra) {
             float ox = (float) (origenX - camara.x);
             float oz = (float) (origenZ - camara.z);
             float oy = (float) -camara.y;
             if (curvaPorCelda) {
-                double mitad = estado.construidaCon.ladoEnBloques() / 2.0;
+                double mitad = lado / 2.0;
                 oy -= (float) HorizonteCurvo.bajada(Math.hypot(ox + mitad, oz + mitad), inicioCurva, radioPlaneta);
+            }
+            if (fundido != null) {
+                fundido.set(visible, entra ? 1f : 0f);
+                if (desplazamiento != null) {
+                    fundido.upload();
+                }
             }
             Matrix4f vista = null;
             if (desplazamiento != null) {
                 desplazamiento.set(ox, oy, oz);
                 desplazamiento.upload();
             } else {
-                vista = new Matrix4f(evento.getModelViewMatrix()).translate(ox, oy, oz);
+                vista = new Matrix4f(modelView).translate(ox, oy, oz);
             }
             for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
-                VertexBuffer[] piezas = estado.buffers[cara];
+                VertexBuffer[] piezas = buffers[cara];
                 double camaraEnEje = switch (cara >> 1) {
                     case 0 -> camara.x - origenX;
                     case 1 -> camara.y;
                     default -> camara.z - origenZ;
                 };
-                if (piezas == null || !GeometriaLod.caraVisible(cara, camaraEnEje,
-                        estado.planos[2 * cara], estado.planos[2 * cara + 1])) {
+                if (piezas == null || !GeometriaLod.caraVisible(cara, camaraEnEje, planos[2 * cara], planos[2 * cara + 1])) {
                     continue;
                 }
                 for (VertexBuffer buffer : piezas) {
@@ -1128,12 +1286,8 @@ public final class RenderLod {
                     }
                     llamadasUltimoFrame++;
                 }
-                verticesUltimoFrame += estado.verticesCara[cara];
+                verticesUltimoFrame += verticesCara[cara];
             }
-        }
-        if (desplazamiento != null) {
-            desplazamiento.set(0f, 0f, 0f);
-            shader.clear();
         }
     }
 
@@ -1433,6 +1587,69 @@ public final class RenderLod {
         return ((long) (celda.celdaX() & 0x3FFFFFFF) << 30) | (celda.celdaZ() & 0x3FFFFFFF);
     }
 
+    private void agregarSaliente(Saliente s) {
+        if (salientes.size() >= FundidoNiveles.MAXIMO_SALIENTES) {
+            salientes.remove(0).cerrar(); // la más vieja se va sin fundido
+        }
+        salientes.add(s);
+    }
+
+    /**
+     * Una vez por cuadro: arranca el desvanecimiento de las salientes cuyo
+     * reemplazo ya está armado (o que esperaron demasiado), libera las que
+     * terminaron y suelta las mallas nuevas que esperaban.
+     */
+    private void avanzarFundidos(long ahora) {
+        if (salientes.isEmpty()) {
+            for (EstadoCelda e : ordenDibujo) {
+                e.esperando = false;
+            }
+            return;
+        }
+        for (Saliente s : salientes) {
+            if (s.inicioNanos != 0) {
+                continue;
+            }
+            boolean listo = ahora - s.creadaNanos > FundidoNiveles.ESPERA_MAXIMA_NANOS;
+            if (!listo) {
+                listo = true;
+                for (EstadoCelda e : ordenDibujo) {
+                    if (!e.oculta && s.solapa(e) && (e.construidaCon == null || !e.construidaCon.equals(e.plan))) {
+                        listo = false;
+                        break;
+                    }
+                }
+            }
+            if (listo) {
+                s.inicioNanos = ahora;
+                for (EstadoCelda e : ordenDibujo) {
+                    if (e.esperando && s.solapa(e)) {
+                        e.esperando = false;
+                        e.aparicionNanos = ahora;
+                    }
+                }
+            }
+        }
+        salientes.removeIf(s -> {
+            if (s.inicioNanos != 0 && ahora - s.inicioNanos >= FundidoNiveles.DURACION_NANOS) {
+                s.cerrar();
+                return true;
+            }
+            return false;
+        });
+        for (EstadoCelda e : ordenDibujo) {
+            if (e.esperando && salientes.stream().noneMatch(s -> s.inicioNanos == 0 && s.solapa(e))) {
+                e.esperando = false;
+                e.aparicionNanos = ahora;
+            }
+        }
+    }
+
+    private void cerrarSalientes() {
+        salientes.forEach(Saliente::cerrar);
+        salientes.clear();
+    }
+
     private static void cerrarBuffer(EstadoCelda estado) {
         for (int cara = 0; cara < GeometriaLod.CARAS; cara++) {
             if (estado.buffers[cara] != null) {
@@ -1461,6 +1678,7 @@ public final class RenderLod {
     }
 
     private void liberarTodo() {
+        cerrarSalientes();
         cargadoDesde.clear();
         celdas.values().forEach(RenderLod::cerrarBuffer);
         celdas.clear();

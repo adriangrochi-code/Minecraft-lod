@@ -201,7 +201,7 @@ public final class GeneradorAproximado {
             if (Math.max(Math.abs(x - jx), Math.abs(z - jz)) <= alcanceReal) {
                 continue;
             }
-            if (!tieneLod(store, ctx.dimension(), x, z)) {
+            if (!tieneLod(store, ctx.dimension(), x, z, nivelPara(x, z, jugador.getX(), jugador.getZ()))) {
                 candidatos.add(ChunkPos.asLong(x, z));
             }
         }
@@ -227,12 +227,12 @@ public final class GeneradorAproximado {
             while (lote.size() < LOTE && it.hasNext()) {
                 long clave = it.next();
                 int x = ChunkPos.getX(clave), z = ChunkPos.getZ(clave);
-                if (enVuelo.contains(clave) || tieneLod(store, ctx.dimension(), x, z)) {
+                int nivelChunk = nivelPara(x, z, px, pz);
+                if (enVuelo.contains(clave) || tieneLod(store, ctx.dimension(), x, z, nivelChunk)) {
                     it.remove();
                     continue;
                 }
-                boolean unaColumna = Math.hypot(x * 16 + 8 - px, z * 16 + 8 - pz) > DISTANCIA_UNA_COLUMNA;
-                lote.add(new long[]{clave, unaColumna ? 1 : 0});
+                lote.add(new long[]{clave, nivelChunk});
             }
             if (lote.isEmpty()) {
                 return;
@@ -250,7 +250,7 @@ public final class GeneradorAproximado {
                         int x = ChunkPos.getX(c[0]), z = ChunkPos.getZ(c[0]);
                         try {
                             long inicio = System.nanoTime();
-                            if (!generar(ctx, store, x, z, c[1] == 1, scheduler::hayPrioritariasEsperando)) {
+                            if (!generar(ctx, store, x, z, (int) c[1], scheduler::hayPrioritariasEsperando)) {
                                 devolver(lote, i); // cedió a mitad del chunk
                                 break;
                             }
@@ -420,8 +420,37 @@ public final class GeneradorAproximado {
 
     /** Chunk con LOD real o aproximado: no hace falta aproximarlo. */
     static boolean tieneLod(RegionFileStore store, byte dimension, int x, int z) {
+        return tieneLod(store, dimension, x, z, TerrenoAproximado.NIVEL_MIN);
+    }
+
+    /**
+     * ¿El chunk ya tiene datos reales, o aproximados al menos tan finos como
+     * {@code nivel}? Uno aproximado en grueso que ahora quedó cerca se rehace fino.
+     */
+    static boolean tieneLod(RegionFileStore store, byte dimension, int x, int z, int nivel) {
         RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimension, x, z);
-        return store.contiene(region, GeneradorLocal.claveMarca(x, z)) || store.contiene(region, claveMarca(x, z));
+        if (store.contiene(region, GeneradorLocal.claveMarca(x, z))) {
+            return true;
+        }
+        if (nivel <= 0 || nivel >= TerrenoAproximado.NIVEL_MIN) {
+            return store.contiene(region, claveMarca(x, z));
+        }
+        for (int n = TerrenoAproximado.NIVEL_FINO_MIN; n <= nivel; n++) {
+            if (store.contiene(region, TerrenoAproximado.claveMarcaFina(n, x, z))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Nivel con que se aproxima el chunk según la distancia al jugador (bloques
+     * {@code px}, {@code pz}): 1-3 ({@link TerrenoAproximado#nivelSegunDistancia}),
+     * o 0 = una sola columna para todo el chunk (lejos, estimación rápida).
+     */
+    static int nivelPara(int chunkX, int chunkZ, double px, double pz) {
+        double d = Math.hypot(chunkX * 16 + 8 - px, chunkZ * 16 + 8 - pz);
+        return d > DISTANCIA_UNA_COLUMNA ? 0 : TerrenoAproximado.nivelSegunDistancia(d);
     }
 
     /** Clave de la marca "este chunk tiene LOD aproximado". */
@@ -448,34 +477,37 @@ public final class GeneradorAproximado {
      *              abandona el chunk sin guardar nada
      * @return false si cedió el turno
      */
-    private static boolean generar(Contexto ctx, RegionFileStore store, int chunkX, int chunkZ, boolean unaColumna,
+    private static boolean generar(Contexto ctx, RegionFileStore store, int chunkX, int chunkZ, int nivelColumnas,
                                    java.util.function.BooleanSupplier ceder) {
-        TerrenoAproximado.Columna[] columnas = new TerrenoAproximado.Columna[4];
+        boolean unaColumna = nivelColumnas <= 0;
+        // Una columna por vóxel del nivel base (lejos, una sola repetida en el nivel 3).
+        int nivel = unaColumna ? TerrenoAproximado.NIVEL_MIN : nivelColumnas;
+        int lado = SectionExtractor.LADO >> nivel, paso = 1 << nivel;
+        TerrenoAproximado.Columna[] columnas = new TerrenoAproximado.Columna[lado * lado];
         Holder<Biome> biomaAgua = null;
         int bx = chunkX * 16, bz = chunkZ * 16;
         int pista = Integer.MIN_VALUE;
-        for (int cx = 0; cx < TerrenoAproximado.COLUMNAS; cx++) {
-            for (int cz = 0; cz < TerrenoAproximado.COLUMNAS; cz++) {
+        for (int cx = 0; cx < lado; cx++) {
+            for (int c = 0; c < lado; c++) {
+                // En serpentina: cada columna es vecina de la anterior y su altura sirve de pista.
+                int cz = (cx & 1) == 0 ? c : lado - 1 - c;
                 if (unaColumna && (cx > 0 || cz > 0)) {
-                    columnas[cx * 2 + cz] = columnas[0]; // lejos: la del centro vale para todo el chunk
+                    columnas[cx * lado + cz] = columnas[0]; // lejos: la del centro vale para todo el chunk
                     continue;
                 }
                 if (ceder.getAsBoolean()) {
                     return false;
                 }
-                int x = unaColumna ? bx + 8 : bx + cx * 8 + 4, z = unaColumna ? bz + 8 : bz + cz * 8 + 4;
-                if (pista == Integer.MIN_VALUE && !unaColumna) {
-                    // Primera columna afinada: se busca desde la estimación rápida y no desde el techo del
-                    // mundo (hasta ~48 evaluaciones de la densidad final, lo más caro del generador).
-                    try {
-                        pista = altura(ctx, x, z, Integer.MIN_VALUE, true, ceder);
-                    } catch (CederTurno e) {
-                        return false;
-                    }
-                }
+                int x = unaColumna ? bx + 8 : bx + cx * paso + paso / 2;
+                int z = unaColumna ? bz + 8 : bz + cz * paso + paso / 2;
                 // Lejos (una columna por chunk) alcanza la estimación rápida; cerca, la densidad final.
                 int altura;
                 try {
+                    if (pista == Integer.MIN_VALUE && !unaColumna) {
+                        // Primera columna afinada: se busca desde la estimación rápida y no desde el techo
+                        // del mundo (hasta ~48 evaluaciones de la densidad final, lo más caro del generador).
+                        pista = altura(ctx, x, z, Integer.MIN_VALUE, true, ceder);
+                    }
                     altura = altura(ctx, x, z, pista, unaColumna, ceder);
                 } catch (CederTurno e) {
                     return false;
@@ -487,7 +519,7 @@ public final class GeneradorAproximado {
                     biomaAgua = bioma;
                 }
                 Superficie s = superficie(bioma, altura, ctx.nivelMar(), new BlockPos(x, altura, z));
-                columnas[cx * 2 + cz] = new TerrenoAproximado.Columna(altura + s.elevacion(),
+                columnas[cx * lado + cz] = new TerrenoAproximado.Columna(altura + s.elevacion(),
                         voxel(s.estado(), bioma.value(), x, z, 15).conNevado(s.nevado()),
                         voxel(s.subsuelo(), bioma.value(), x, z, 0));
             }
@@ -495,12 +527,20 @@ public final class GeneradorAproximado {
         SuperVoxel agua = agua(biomaAgua, bx + 8, bz + 8, ctx.nivelMar());
         RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(ctx.dimension(), chunkX, chunkZ);
         for (int sy = ctx.minSeccion(); sy < ctx.maxSeccion(); sy++) {
-            SuperVoxel[] n3 = TerrenoAproximado.grillaNivel3(sy, columnas, agua, ctx.nivelMar());
-            if (n3 == null) {
+            SuperVoxel[] grilla = TerrenoAproximado.grilla(nivel, sy, columnas, agua, ctx.nivelMar());
+            if (grilla == null) {
                 continue;
             }
-            guardar(store, region, 3, chunkX, sy, chunkZ, n3);
-            guardar(store, region, 4, chunkX, sy, chunkZ, TerrenoAproximado.grillaNivel4(n3));
+            // El nivel base y, reduciéndolo como a los datos reales, los más gruesos hasta el 4.
+            for (int n = nivel, l = lado; n <= TerrenoAproximado.NIVEL_MAX; n++, l /= 2) {
+                if (n > nivel) {
+                    grilla = HierarchicalReducer.reducir(grilla, l * 2);
+                }
+                guardar(store, region, n, chunkX, sy, chunkZ, grilla);
+            }
+        }
+        if (nivel < TerrenoAproximado.NIVEL_MIN) {
+            store.guardar(region, TerrenoAproximado.claveMarcaFina(nivel, chunkX, chunkZ), MARCA);
         }
         store.guardar(region, claveMarca(chunkX, chunkZ), MARCA);
         return true;
@@ -509,7 +549,7 @@ public final class GeneradorAproximado {
     private static void guardar(RegionFileStore store, RegionFileStore.ClaveRegion region, int nivel,
                                 int chunkX, int sy, int chunkZ, SuperVoxel[] grilla) {
         OctreeNode nodo = OctreeNode.mixto(nivel, chunkX * 16, sy * 16, chunkZ * 16, 16, grilla);
-        store.guardar(region, SectionExtractor.claveNodo(TerrenoAproximado.nivelGuardado(nivel), chunkX, sy, chunkZ),
+        store.guardar(region, TerrenoAproximado.claveNodo(nivel, chunkX, sy, chunkZ),
                 OctreeNodeCodec.serializar(nodo, SectionExtractor.voxelesPorNodo(nivel)));
     }
 
@@ -540,6 +580,9 @@ public final class GeneradorAproximado {
     }
 
     private static final CederTurno CEDER = new CederTurno();
+
+    /** Evaluaciones de densidad (para el log: lo caro de la aproximación). */
+    private static final java.util.concurrent.atomic.LongAdder EVALUACIONES = new java.util.concurrent.atomic.LongAdder();
 
     /**
      * @param rapida usar la estimación de superficie de vanilla (sin cuevas ni
@@ -582,10 +625,19 @@ public final class GeneradorAproximado {
      */
     private static int afinar(Contexto ctx, int x, int z, int y, boolean rapida,
                               java.util.function.BooleanSupplier ceder) {
-        int bajo = y, alto = Math.min(ctx.maxY() - 1, y + 7);
+        return solidoMasAlto(y, Math.min(ctx.maxY() - 1, y + 7), alto -> solido(ctx, x, alto, z, rapida, ceder));
+    }
+
+    /**
+     * Búsqueda binaria del sólido más alto entre {@code bajo} (sólido) y
+     * {@code alto}. El medio se calcula con signo: con {@code >>>} y alturas
+     * negativas (el mundo baja a -64) daba un medio enorme y la búsqueda no
+     * terminaba nunca (columnas que "tardaban minutos").
+     */
+    static int solidoMasAlto(int bajo, int alto, java.util.function.IntPredicate solido) {
         while (bajo < alto) {
-            int medio = (bajo + alto + 1) >>> 1;
-            if (solido(ctx, x, medio, z, rapida, ceder)) {
+            int medio = (bajo + alto + 1) >> 1;
+            if (solido.test(medio)) {
                 bajo = medio;
             } else {
                 alto = medio - 1;
@@ -599,6 +651,7 @@ public final class GeneradorAproximado {
         if (ceder.getAsBoolean()) {
             throw CEDER;
         }
+        EVALUACIONES.increment();
         DensityFunction.SinglePointContext punto = new DensityFunction.SinglePointContext(x, y, z);
         return rapida ? ctx.densidadInicial().compute(punto) > UMBRAL_SUPERFICIE_INICIAL
                 : ctx.densidad().compute(punto) > 0;
@@ -714,13 +767,15 @@ public final class GeneradorAproximado {
         }
         long n = hechos.getAndSet(0), nanos = nanosCalculo.getAndSet(0), regiones = regionesHechas.getAndSet(0);
         long cedidas = cesiones.getAndSet(0);
-        if (n > 0 || regiones > 0 || cedidas > 0) {
+        long evaluaciones = EVALUACIONES.sumThenReset();
+        if (n > 0 || regiones > 0 || cedidas > 0 || evaluaciones > 0) {
             LOG.info("LOD horizonte aproximado: anillo {} de {}, {} chunks ({} /s), {} nodos por región "
-                            + "(anillo {} de {}), {} ms de cálculo en el pool, {} veces cedió el turno a chunks reales",
+                            + "(anillo {} de {}), {} ms de cálculo en el pool, {} veces cedió el turno a chunks reales, "
+                            + "{} evaluaciones de densidad",
                     espiral.anillo(), espiral.radio(), n,
                     String.format("%.0f", n / ((ahora - ultimoLogNanos) / 1e9)), regiones,
                     espiralRegion == null ? 0 : espiralRegion.anillo(), espiralRegion == null ? 0 : espiralRegion.radio(),
-                    nanos / 1_000_000, cedidas);
+                    nanos / 1_000_000, cedidas, evaluaciones);
         }
         ultimoLogNanos = ahora;
     }
