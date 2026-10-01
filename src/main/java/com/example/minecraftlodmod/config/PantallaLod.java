@@ -172,8 +172,14 @@ public final class PantallaLod extends Screen {
     /** Pantalla de video vanilla, por si hace falta algo que esta no tiene; al volver, esta de nuevo. */
     private void abrirOriginal() {
         aplicar();
-        PantallaConfig.abrirOriginalUnaVez();
         Minecraft mc = Minecraft.getInstance();
+        if (ConmutadorVulkan.activoEnEstaSesion()) {
+            // Las opciones de VulkanMod (integrado); su botón "LOD" vuelve acá.
+            mc.setScreen(new com.example.minecraftlodmod.vulkanmod.config.gui.VOptionScreen(
+                    Component.literal("Video Setting"), new PantallaLod(anterior, paginaActual)));
+            return;
+        }
+        PantallaConfig.abrirOriginalUnaVez();
         mc.setScreen(new net.minecraft.client.gui.screens.options.VideoSettingsScreen(
                 new PantallaLod(anterior, paginaActual), mc, mc.options));
     }

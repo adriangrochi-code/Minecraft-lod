@@ -136,6 +136,14 @@ public class VOptionScreen extends Screen {
         }
 
         this.pageButtons.get(this.currentListIdx).setSelected(true);
+
+        // Minecraft LOD: las opciones del LOD, debajo de las páginas de VulkanMod (las dos juntas).
+        VButtonWidget lod = new VButtonWidget(x, y, width, height,
+                Component.translatable("minecraftlodmod.pantalla.boton"),
+                button -> this.minecraft.setScreen(new com.example.minecraftlodmod.config.PantallaLod(
+                        this, com.example.minecraftlodmod.config.PantallaLod.PAGINA_LOD)));
+        this.buttons.add(lod);
+        this.addWidget(lod);
     }
 
     private void buildPage() {

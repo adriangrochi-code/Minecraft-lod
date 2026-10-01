@@ -145,6 +145,8 @@
   "minecraftlodmod.video.glintStrength": "Strength of the enchantment glint.",
   "minecraftlodmod.video.shaders": "Shader packs",
   "minecraftlodmod.video.shaders.tooltip": "Opens the Iris shader pack screen. The LOD is drawn with the pack's terrain.",
+  "minecraftlodmod.video.vulkanmod": "VulkanMod settings",
+  "minecraftlodmod.video.vulkanmod.tooltip": "Opens the integrated VulkanMod settings (its own video options). Its LOD button comes back here.",
   "minecraftlodmod.video.original": "Original video settings",
   "minecraftlodmod.video.original.tooltip": "Opens Minecraft's unchanged video settings screen, in case another mod adds something there this one does not show. Leaving it comes back here.",
   "minecraftlodmod.configuration.texturasComoTerreno": "Large voxels as terrain",

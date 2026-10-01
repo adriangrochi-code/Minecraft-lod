@@ -6,6 +6,28 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.25.6 — Chunks huecos, lluvia sin tirones, RAM llena con lo cercano, opciones con Vulkan
+- **Chunks huecos o vacíos (y LOD cercano que faltaba):** un chunk se
+  extraía apenas cargaba, a veces antes de que el motor de luz lo iluminara;
+  sin luz, todas sus caras se descartaban como si fueran cuevas y quedaba
+  hueco o vacío, marcado como hecho para siempre. Ahora se espera a que
+  tenga luz. Los chunks extraídos con versiones anteriores se vuelven a
+  extraer una vez cuando cargan (más trabajo de generación al principio).
+- **Tirón al empezar o terminar de llover o nevar:** la lluvia achicaba el
+  radio del plan en décimos y cada décimo rearmaba celdas. Ahora las mallas
+  quedan armadas y lo que tapa la neblina simplemente no se dibuja.
+- **RAM para LOD:** el cache ya no se llena solo con lo que se pide. Un
+  hilo de fondo trae del disco las regiones más cercanas, de adentro hacia
+  afuera, hasta llenar el 90 % (a ~40 MB/s, para no competir con el disco
+  del juego). Al llenarse, se desaloja primero lo lejano; lo que queda lejos
+  sigue en disco. Si la RAM elegida no entra en la memoria de Java (-Xmx),
+  se usa como mucho el 40 % de ella y el log lo avisa. El log muestra
+  `cache RAM N MB`.
+- **Opciones de video con Vulkan:** la pantalla de VulkanMod tiene un
+  botón "LOD" que abre las opciones del LOD, y la del LOD tiene "Opciones de
+  VulkanMod" arriba de todo en la pestaña Video. Se llega a las dos desde el
+  menú principal y desde la partida.
+
 ## 0.25.5 — Índice de regiones append-only
 - Cada lote de escritura (cada 3 s) reescribía entero el índice de cada
   región tocada, y en este mundo hay índices de hasta 1,5 MB: mucho disco

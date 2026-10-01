@@ -145,6 +145,8 @@
   "minecraftlodmod.video.glintStrength": "Intensidad del brillo de los objetos encantados.",
   "minecraftlodmod.video.shaders": "Paquetes de shaders",
   "minecraftlodmod.video.shaders.tooltip": "Abre la pantalla de shaders de Iris. El LOD se dibuja con el terreno del shaderpack.",
+  "minecraftlodmod.video.vulkanmod": "Opciones de VulkanMod",
+  "minecraftlodmod.video.vulkanmod.tooltip": "Abre las opciones de VulkanMod integrado (sus opciones de vídeo propias). Su botón LOD vuelve aquí.",
   "minecraftlodmod.video.original": "Opciones de video originales",
   "minecraftlodmod.video.original.tooltip": "Abre la pantalla de video de Minecraft sin cambios, por si otro mod agrega ahí algo que esta no muestra. Al salir se vuelve acá.",
   "minecraftlodmod.configuration.texturasComoTerreno": "Vóxeles grandes como terreno",

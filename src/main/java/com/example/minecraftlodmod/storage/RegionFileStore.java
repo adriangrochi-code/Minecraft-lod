@@ -129,6 +129,7 @@ public final class RegionFileStore implements AutoCloseable {
         }
         this.limitePendientes = presupuestoRamBytes / 4;
         this.cacheLectura = new BoundedRegionCache(presupuestoRamBytes - limitePendientes);
+        this.cacheLectura.protegerSi(this::cercaDelCentro);
         this.directorioBase = directorioBase;
         this.hashFuente = hashFuente;
         if (periodoEscrituraMs > 0) {
@@ -674,9 +675,183 @@ public final class RegionFileStore implements AutoCloseable {
         }
     }
 
+    // ---------------------------------------------------------------- precarga
+
+    /*
+     * La RAM elegida para el LOD se llena con lo que está cerca del jugador, no
+     * solo con lo que ya se pidió: un hilo de baja prioridad lee del disco las
+     * regiones en anillos alrededor de él hasta el 90 % del cache, y al llenarse
+     * el cache desaloja primero lo lejano ({@link BoundedRegionCache#protegerSi}).
+     * Cuando el jugador se mueve, el centro cambia y se precarga lo nuevo; lo que
+     * queda lejos se va desalojando a medida que hace falta lugar (en disco sigue).
+     */
+
+    /** Centro de la precarga: dimensión, región X y Z empaquetadas; MIN_VALUE = sin centro. */
+    private volatile long centroPrecarga = Long.MIN_VALUE;
+    private volatile int radioPrecarga;
+    /** Radio (en regiones, Chebyshev) que la precarga ya completó: eso no se desaloja primero. */
+    private volatile int radioProtegido = 1;
+    private Thread hiloPrecarga;
+    private volatile boolean cerrado;
+    /** Bytes leídos por pausa de la precarga: ~40 MB/s, sin ahogar al disco del juego. */
+    static final long BYTES_POR_PAUSA = 2L << 20;
+    static final long PAUSA_MS = 50;
+    static final double LLENADO_PRECARGA = 0.9;
+
+    private static long empaquetarCentro(byte dimension, int regionX, int regionZ) {
+        return (long) (dimension & 0xFF) << 56 | (regionX & 0xFFFFFFFL) << 28 | (regionZ & 0xFFFFFFFL);
+    }
+
+    /**
+     * Dónde está el jugador (región del store) y hasta qué radio de regiones precargar.
+     * Lo llama el render en cada plan; barato si no cambió.
+     */
+    public void ponerCentro(byte dimension, int regionX, int regionZ, int radioRegiones) {
+        radioPrecarga = Math.max(0, radioRegiones);
+        long nuevo = empaquetarCentro(dimension, regionX, regionZ);
+        if (nuevo != centroPrecarga) {
+            centroPrecarga = nuevo;
+            synchronized (this) {
+                if (hiloPrecarga == null && !cerrado) {
+                    hiloPrecarga = new Thread(this::precargarSiempre, "LOD-Precarga");
+                    hiloPrecarga.setDaemon(true);
+                    hiloPrecarga.setPriority(Thread.MIN_PRIORITY);
+                    hiloPrecarga.start();
+                }
+                notifyAll();
+            }
+        }
+    }
+
+    /** Clave del cache cerca del centro de la precarga (ver {@link #claveCache}). */
+    private boolean cercaDelCentro(long claveCache) {
+        long centro = centroPrecarga;
+        if (centro == Long.MIN_VALUE || (claveCache >>> 54 & 0xFF) != (centro >>> 56 & 0xFF)) {
+            return false;
+        }
+        int rx = (int) (claveCache << 10 >> 50); // 14 bits con signo (bits 40-53)
+        int rz = (int) (claveCache << 24 >> 50); // bits 26-39
+        int cx = (int) (centro << 8 >> 36), cz = (int) (centro << 36 >> 36);
+        return Math.max(Math.abs(rx - cx), Math.abs(rz - cz)) <= radioProtegido;
+    }
+
+    private void precargarSiempre() {
+        while (!cerrado) {
+            long centro = centroPrecarga;
+            try {
+                precargarAlrededor(centro);
+                synchronized (this) {
+                    if (centro == centroPrecarga && !cerrado) {
+                        wait(30_000); // también relee lo que se generó mientras tanto
+                    }
+                }
+            } catch (InterruptedException e) {
+                return;
+            } catch (RuntimeException e) {
+                // Disco con problemas: no vale la pena tirar nada; se reintenta más tarde.
+                try {
+                    Thread.sleep(5_000);
+                } catch (InterruptedException fin) {
+                    return;
+                }
+            }
+        }
+    }
+
+    private void precargarAlrededor(long centro) throws InterruptedException {
+        byte dimension = (byte) (centro >>> 56);
+        int cx = (int) (centro << 8 >> 36), cz = (int) (centro << 36 >> 36);
+        long presupuesto = cacheLectura.presupuestoBytes();
+        long leidos = 0;
+        int radio = radioPrecarga;
+        for (int r = 0; r <= radio; r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != r) {
+                        continue; // solo el anillo
+                    }
+                    if (cerrado || centro != centroPrecarga) {
+                        return; // el jugador se movió: empezar de nuevo desde él
+                    }
+                    long lleno;
+                    synchronized (cacheLectura) {
+                        lleno = cacheLectura.bytesUsados();
+                    }
+                    if (lleno > presupuesto * LLENADO_PRECARGA) {
+                        radioProtegido = Math.max(1, r - 1);
+                        return;
+                    }
+                    leidos += precargar(new ClaveRegion(dimension, cx + dx, cz + dz));
+                    while (leidos >= BYTES_POR_PAUSA) {
+                        leidos -= BYTES_POR_PAUSA;
+                        Thread.sleep(PAUSA_MS);
+                    }
+                }
+            }
+            radioProtegido = Math.max(1, r);
+        }
+    }
+
+    /**
+     * Lee al cache los nodos de la región que no estén ya en memoria, en orden de
+     * posición en el archivo (lectura casi secuencial).
+     *
+     * @return bytes leídos del disco
+     */
+    long precargar(ClaveRegion region) {
+        Indice indice = indicePublicado(region);
+        if (indice == null) {
+            return 0;
+        }
+        long[] claves = indice.header().claves();
+        long[][] porOffset = new long[claves.length][];
+        int n = 0;
+        for (long clave : claves) {
+            long[] ubicacion = indice.header().buscarNodo(clave);
+            if (ubicacion != null && ubicacion[1] > 0 && claveCache(region, clave) != SIN_CACHE) {
+                porOffset[n++] = new long[]{ubicacion[0], ubicacion[1], clave};
+            }
+        }
+        java.util.Arrays.sort(porOffset, 0, n, java.util.Comparator.comparingLong(u -> u[0]));
+        long leidos = 0;
+        for (int i = 0; i < n; i++) {
+            long clave = porOffset[i][2];
+            long claveCache = claveCache(region, clave);
+            synchronized (cacheLectura) {
+                if (cacheLectura.contiene(claveCache)) {
+                    continue;
+                }
+            }
+            if (buscarEnMemoria(region, clave) != null) {
+                continue;
+            }
+            byte[] datos;
+            try {
+                datos = leerDeDisco(region, indice.generacion(), porOffset[i][0], (int) porOffset[i][1]);
+            } catch (UncheckedIOException e) {
+                return leidos; // compactada o borrada mientras tanto: la próxima vuelta la toma
+            }
+            synchronized (cacheLectura) {
+                if (cacheLectura.bytesUsados() + datos.length > cacheLectura.presupuestoBytes() * LLENADO_PRECARGA) {
+                    return leidos;
+                }
+                cacheLectura.poner(claveCache, datos);
+            }
+            leidos += datos.length;
+        }
+        return leidos;
+    }
+
     /** Detiene el hilo de escritura y baja todo lo pendiente a disco. */
     @Override
     public void close() throws IOException {
+        cerrado = true;
+        synchronized (this) {
+            if (hiloPrecarga != null) {
+                hiloPrecarga.interrupt();
+            }
+            notifyAll();
+        }
         if (hiloEscritura != null) {
             hiloEscritura.shutdown();
             try {

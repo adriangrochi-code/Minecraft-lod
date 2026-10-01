@@ -65,6 +65,30 @@ public final class BoundedRegionCache {
         return clave;
     }
 
+    /** Inversa de {@link #mezclar} (cada paso del mezclador es invertible). */
+    static long desmezclar(long mezclada) {
+        long clave = mezclada;
+        clave ^= clave >>> 33;
+        clave *= 0x9cb4b2f8129337dbL; // inversa de 0xc4ceb9fe1a85ec53 módulo 2^64
+        clave ^= clave >>> 33;
+        clave *= 0x4f74430c22a54005L; // inversa de 0xff51afd7ed558ccd
+        clave ^= clave >>> 33;
+        return clave;
+    }
+
+    /**
+     * Entradas que el desalojo deja para el final (lo cercano al jugador, ver
+     * RegionFileStore#ponerCentro): al llenarse se va primero lo lejano aunque
+     * se haya usado hace poco. Recibe la clave original (sin mezclar).
+     */
+    private java.util.function.LongPredicate protegida = clave -> false;
+    /** Protegidas que se saltean por desalojo como mucho; pasado eso, LRU puro (todo es cercano). */
+    static final int MAX_SALTOS = 4096;
+
+    public void protegerSi(java.util.function.LongPredicate protegida) {
+        this.protegida = protegida;
+    }
+
     /** null si la clave no está cacheada (hay que leerla de disco). */
     public byte[] obtener(long claveNodo) {
         return mapa.get(mezclar(claveNodo)); // el propio get() ya actualiza el orden LRU
@@ -96,11 +120,38 @@ public final class BoundedRegionCache {
     }
 
     private void desalojarHastaEntrarEnPresupuesto() {
+        if (bytesUsados <= presupuestoBytes) {
+            return;
+        }
         var iterador = mapa.entrySet().iterator();
+        long[] salteadas = null;
+        int saltos = 0;
         while (bytesUsados > presupuestoBytes && iterador.hasNext()) {
             Map.Entry<Long, byte[]> masViejo = iterador.next(); // el primero en orden LRU = el menos usado recientemente
+            if (saltos < MAX_SALTOS && protegida.test(desmezclar(masViejo.getKey()))) {
+                if (salteadas == null) {
+                    salteadas = new long[64];
+                } else if (saltos == salteadas.length) {
+                    salteadas = java.util.Arrays.copyOf(salteadas, saltos * 2);
+                }
+                salteadas[saltos++] = masViejo.getKey();
+                continue;
+            }
             bytesUsados -= masViejo.getValue().length;
             iterador.remove();
+        }
+        if (bytesUsados > presupuestoBytes) {
+            // Todo lo que quedaba estaba protegido: LRU puro (el presupuesto manda siempre).
+            iterador = mapa.entrySet().iterator();
+            while (bytesUsados > presupuestoBytes && iterador.hasNext()) {
+                bytesUsados -= iterador.next().getValue().length;
+                iterador.remove();
+            }
+            return;
+        }
+        // Las salteadas pasan al final del orden: el próximo desalojo no las vuelve a recorrer.
+        for (int i = 0; i < saltos; i++) {
+            mapa.get(salteadas[i]);
         }
     }
 

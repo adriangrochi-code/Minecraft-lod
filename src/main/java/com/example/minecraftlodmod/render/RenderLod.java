@@ -225,12 +225,13 @@ public final class RenderLod {
         Runtime rt = Runtime.getRuntime();
         LOG.info("LOD stats: fps={} | dibujo LOD {} ms/frame, {} llamadas/frame, {} vértices dibujados/frame | "
                         + "{} piezas, {} vértices ({} triángulos), VRAM LOD ~{} MB | mallas armadas {} ({} ms prom) "
-                        + "| ocultas por relieve {} ({} ms) | planes {} (máx {} ms) | luz cielo #{} | heap {} / {} MB",
+                        + "| ocultas por relieve {} ({} ms) | planes {} (máx {} ms) | cache RAM {} MB | luz cielo #{} | heap {} / {} MB",
                 mc.getFps(), String.format("%.2f", nanosDibujo / 1e6 / Math.max(1, framesDesdeEstadistica)),
                 llamadasUltimoFrame, verticesUltimoFrame, piezas, vertices, vertices / 2, bytesVram >> 20, mallas,
                 mallas == 0 ? 0 : String.format("%.1f", nanos / 1e6 / mallas),
                 piezasOcultas, String.format("%.1f", nanosOclusion / 1e6),
                 planesDesdeEstadistica, String.format("%.1f", nanosPlanMaximo / 1e6),
+                generador.store() == null ? 0 : generador.store().bytesEnCache() >> 20,
                 String.format("%06X", colorLuzCielo(mc)), (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20);
         ultimaEstadisticaNanos = ahora;
         framesDesdeEstadistica = 0;
@@ -358,8 +359,13 @@ public final class RenderLod {
      */
     static final long FOV_QUIETO_NANOS = 150_000_000L, REPLANIFICAR_FOV_MAXIMO_NANOS = 400_000_000L;
     private double fovVisto = 70;
-    /** Lluvia (0-1, en décimos) con que se armó el plan: si cambia, se replanifica con otro radio. */
-    private int lluviaPlan;
+    /**
+     * Distancia (horizontal, en bloques) desde la que no se dibuja con lluvia: la neblina la
+     * tapa. Se calcula en cada cuadro y NO toca el plan: hasta la 0.25.4 la lluvia achicaba el
+     * radio del plan en décimos, y cada décimo replanificaba y rearmaba celdas (y al parar se
+     * rearmaba todo lo lejano): tirones al empezar y terminar de llover o nevar.
+     */
+    private float corteLluvia = Float.MAX_VALUE;
     /** Cuánto se achica el radio del LOD con lluvia o tormenta plena (la neblina tapa lo de más allá). */
     static final double RADIO_CON_LLUVIA = 0.5;
     /** Neblina mínima con lluvia plena. */
@@ -675,16 +681,13 @@ public final class RenderLod {
         balance.usarBase(c);
         // Con escalado, el detalle se mide en píxeles del mundo (la resolución interna), no de la pantalla.
         int alturaDibujo = Escalado.alturaDelMundo(mc);
-        int lluviaAhora = Math.round(lluvia(mc) * 10);
         if (chunkX == chunkPlanX && chunkZ == chunkPlanZ && Math.abs(fovGrados - fovPlan) < 1 && !giro
-                && lluviaAhora == lluviaPlan
                 && alturaDibujo == alturaPlan
                 && Math.abs(camara.y - yPlan) < REPLANIFICAR_ALTURA && ahora - ultimoPlanNanos < REPLANIFICAR_NANOS
                 && balance.version() == versionBalancePlan) {
             return;
         }
         versionBalancePlan = balance.version();
-        lluviaPlan = lluviaAhora;
         alturaPlan = alturaDibujo;
         miraPlanX = miraX;
         miraPlanZ = miraZ;
@@ -695,14 +698,14 @@ public final class RenderLod {
         ultimoPlanNanos = ahora;
         planesDesdeEstadistica++;
         try {
-            planificar(mc, camara, store, chunkX, chunkZ, miraX, miraZ, fovNormal, alturaDibujo, lluviaAhora, ahora);
+            planificar(mc, camara, store, chunkX, chunkZ, miraX, miraZ, fovNormal, alturaDibujo, ahora);
         } finally {
             nanosPlanMaximo = Math.max(nanosPlanMaximo, System.nanoTime() - ahora);
         }
     }
 
     private void planificar(Minecraft mc, Vec3 camara, RegionFileStore store, int chunkX, int chunkZ,
-                            double miraX, double miraZ, double fovNormal, int alturaDibujo, int lluviaAhora,
+                            double miraX, double miraZ, double fovNormal, int alturaDibujo,
                             long ahora) {
         ParametrosCalidad c = calidad;
         // Detalle y radio del auto-ajuste (los del preset si está apagado).
@@ -718,13 +721,12 @@ public final class RenderLod {
         } else {
             GeneradorLocal.radioHorizonteCliente = 0;
         }
-        if (lluviaAhora > 0) {
-            // Con lluvia la neblina tapa lo lejano: no se dibuja lo que no se va a ver.
-            int minimo = mc.options.getEffectiveRenderDistance() + 4;
-            radioChunks = Math.max(Math.min(radioChunks, minimo),
-                    (int) Math.round(radioChunks * (1 - RADIO_CON_LLUVIA * lluviaAhora / 10.0)));
-        }
         radioEnUso = radioChunks;
+        // RAM para LOD llena primero con lo cercano: el store precarga alrededor de la cámara.
+        store.ponerCentro(GeneradorLocal.idDimension(mc.level.dimension()),
+                com.example.minecraftlodmod.generation.SectionExtractor.regionDe(chunkX),
+                com.example.minecraftlodmod.generation.SectionExtractor.regionDe(chunkZ),
+                radioChunks / com.example.minecraftlodmod.generation.SectionExtractor.LADO_REGION + 1);
         double umbralPx = balance.umbralPx(c);
         double distanciaUnBuffer = balance.distanciaUnBuffer();
         // Vanilla dibuja hasta su distancia de render; se deja un chunk de
@@ -1102,9 +1104,19 @@ public final class RenderLod {
         llamadasUltimoFrame = 0;
         verticesUltimoFrame = 0;
         avanzarFundidos(System.nanoTime());
-        alcanceLodBloques = alcance(camara);
+        float intensidadLluvia = lluvia(mc);
+        float minimoLluvia = (mc.options.getEffectiveRenderDistance() + 4) * 16f;
+        corteLluvia = intensidadLluvia <= 0 ? Float.MAX_VALUE : Math.max(minimoLluvia,
+                radioEnUso * 16f * (1f - (float) RADIO_CON_LLUVIA * intensidadLluvia));
+        // La niebla termina donde se corta: el borde queda dentro de ella.
+        alcanceLodBloques = Math.min(alcance(camara), corteLluvia);
         alcancePorSector = ConfigLod.CLIENTE.nieblaSinDatos.get()
                 ? nieblaSectores.alcances(mc.options.getEffectiveRenderDistance() * 16f + 48f) : null;
+        if (alcancePorSector != null && corteLluvia < Float.MAX_VALUE) {
+            for (int sector = 0; sector < alcancePorSector.length; sector++) {
+                alcancePorSector[sector] = Math.min(alcancePorSector[sector], corteLluvia);
+            }
+        }
         if (shadersEnUso) {
             dibujarConShaderpack(mc, evento, camara);
             return;
@@ -1136,7 +1148,7 @@ public final class RenderLod {
         }
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         VertexBuffer.unbind();
-        // Con lluvia la neblina se espesa (y el radio ya se achicó en el plan, ver lluviaPlan).
+        // Con lluvia la neblina se espesa (y lo de más allá de corteLluvia no se dibuja).
         float neblina = Math.max(ConfigLod.CLIENTE.neblinaAtmosferica.get().floatValue(),
                 ConfigLod.CLIENTE.nieblaLluvia.get() ? NEBLINA_LLUVIA * lluvia(mc) : 0f);
         AcabadoLod.aplicar(mc, proyeccion, evento.getModelViewMatrix(), alcanceLodBloques,
@@ -1324,6 +1336,13 @@ public final class RenderLod {
          */
         void dibujar(VertexBuffer[][] buffers, float[] planos, int[] verticesCara, double origenX, double origenZ,
                      double lado, float visible, boolean entra) {
+            if (corteLluvia < Float.MAX_VALUE) {
+                double dx = Math.max(0, Math.max(origenX - camara.x, camara.x - (origenX + lado)));
+                double dz = Math.max(0, Math.max(origenZ - camara.z, camara.z - (origenZ + lado)));
+                if (dx * dx + dz * dz > (double) corteLluvia * corteLluvia) {
+                    return; // entera detrás de la neblina de la lluvia: la malla se guarda, no se dibuja
+                }
+            }
             float ox = (float) (origenX - camara.x);
             float oz = (float) (origenZ - camara.z);
             float oy = (float) -camara.y;

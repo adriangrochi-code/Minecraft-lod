@@ -48,6 +48,12 @@ final class OpcionesVideo {
         Options o = mc.options;
 
         List<Opcion> ventana = new ArrayList<>();
+        if (ConmutadorVulkan.activoEnEstaSesion()) {
+            // Con Vulkan, sus opciones propias arriba de todo: las dos pantallas a mano.
+            ventana.add(new Accion(Component.translatable(CLAVE + "vulkanmod"),
+                    Component.translatable(CLAVE + "vulkanmod.tooltip"), Impacto.NINGUNO,
+                    () -> Component.translatable(CLAVE + "abrir"), abrirOriginal));
+        }
         ventana.add(de(o.fullscreen(), "fullscreen", Impacto.NINGUNO));
         Opcion resolucion = resolucionPantallaCompleta(mc.getWindow());
         if (resolucion != null) {
@@ -72,8 +78,10 @@ final class OpcionesVideo {
                     Component.translatable(CLAVE + "shaders.tooltip"), Impacto.VARIABLE,
                     () -> Component.translatable(CLAVE + "abrir"), OpcionesVideo::abrirShaders));
         }
-        extras.add(new Accion(Component.translatable(CLAVE + "original"),
-                Component.translatable(CLAVE + "original.tooltip"), Impacto.NINGUNO,
+        // Con Vulkan activo, la pantalla de video "original" es la de VulkanMod (sus opciones propias).
+        String original = ConmutadorVulkan.activoEnEstaSesion() ? "vulkanmod" : "original";
+        extras.add(new Accion(Component.translatable(CLAVE + original),
+                Component.translatable(CLAVE + original + ".tooltip"), Impacto.NINGUNO,
                 () -> Component.translatable(CLAVE + "abrir"), abrirOriginal));
         graficos = List.of(
                 List.of(de(o.renderDistance(), "renderDistance", Impacto.ALTO),

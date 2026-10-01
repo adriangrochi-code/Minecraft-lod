@@ -75,9 +75,18 @@ public final class GeneradorLocal {
 
     /** Nivel reservado en {@link SectionExtractor#claveNodo} para marcar "este chunk ya se generó". */
     private static final int NIVEL_MARCA_CHUNK = 15;
-    private static final byte[] MARCA = new byte[0];
+    /**
+     * Versión de la marca "chunk extraído". Las marcas vacías (hasta la 0.25.5) pudieron
+     * quedar en chunks extraídos antes de que tuvieran luz (caras descartadas como si
+     * fueran cuevas: chunks huecos o vacíos que nunca se revisaban): al volver a cargar,
+     * esos chunks se extraen de nuevo.
+     */
+    static final byte VERSION_MARCA = 1;
+    private static final byte[] MARCA = {VERSION_MARCA};
     private static final long PERIODO_ESCRITURA_MS = 3000;
     static final int REINTENTOS_POR_TICK = 8;
+    /** Parte del heap de Java que puede ocupar el store del LOD (cache + pendientes). */
+    static final double FRACCION_HEAP_MAXIMA = 0.4;
 
     /** Chunks que no entraron en la cola; solo hilo del servidor. */
     private record Pendiente(ResourceKey<Level> dimension, long chunk) {
@@ -159,7 +168,16 @@ public final class GeneradorLocal {
         PresupuestoMemoria presupuesto = PresupuestoMemoria.para(calidad.cacheRamMb(), calidad.hilosGeneracion());
         // El slider "RAM para LOD" (cacheRamMb): su parte de cache limita lo
         // que el store tiene en memoria antes de mandarlo a disco.
-        store = new RegionFileStore(directorio, hashFuente, PERIODO_ESCRITURA_MS, presupuesto.bytesCacheRegiones());
+        // La precarga llena el cache hasta el tope: nunca más que una parte del heap de Java (elegir
+        // 4 GB para el LOD con -Xmx de 4 GB terminaría sin memoria).
+        long bytesStore = Math.min(presupuesto.bytesCacheRegiones(),
+                (long) (Runtime.getRuntime().maxMemory() * FRACCION_HEAP_MAXIMA));
+        if (bytesStore < presupuesto.bytesCacheRegiones()) {
+            LOG.warn("LOD: la RAM para LOD ({} MB) no entra en la memoria de Java ({} MB); se usan {} MB."
+                            + " Para más, subí -Xmx en el launcher.", presupuesto.bytesCacheRegiones() >> 20,
+                    Runtime.getRuntime().maxMemory() >> 20, bytesStore >> 20);
+        }
+        store = new RegionFileStore(directorio, hashFuente, PERIODO_ESCRITURA_MS, bytesStore);
         scheduler = new GenerationTaskScheduler(calidad.hilosGeneracion(), presupuesto.maxTareasEnCola());
         LOG.info("LOD: generación LOCAL activa ({}, cola {}) en {}",
                 calidad, presupuesto.maxTareasEnCola(), directorio);
@@ -207,10 +225,39 @@ public final class GeneradorLocal {
         if (!(evento.getLevel() instanceof ServerLevel nivel) || !(evento.getChunk() instanceof LevelChunk chunk)) {
             return;
         }
-        if (store == null || store.contiene(claveRegion(nivel, chunk), claveMarca(chunk))) {
+        if (store == null || extraidoVigente(claveRegion(nivel, chunk), claveMarca(chunk))) {
             return;
         }
         encolar(nivel, chunk);
+    }
+
+    /** Ya extraído con la marca vigente ({@link #VERSION_MARCA}). */
+    private boolean extraidoVigente(RegionFileStore.ClaveRegion region, long marca) {
+        byte[] bytes = store.leer(region, marca);
+        return bytes != null && bytes.length > 0 && bytes[0] >= VERSION_MARCA;
+    }
+
+    /**
+     * El motor de luz ya iluminó el chunk. Al cargar (sobre todo uno recién generado)
+     * la luz del cielo puede estar todavía en 0: extraerlo así descartaba todas sus
+     * caras como "sin luz" (cuevas) y quedaba hueco o vacío. Se mira la columna del
+     * centro justo encima del suelo, que con cielo tiene que tener luz.
+     */
+    static boolean luzLista(ServerLevel nivel, ChunkAccess chunk) {
+        if (!chunk.isLightCorrect()) {
+            return false;
+        }
+        if (!nivel.dimensionType().hasSkyLight()) {
+            return true;
+        }
+        // getHeight da el bloque más alto (sólido, con luz 0 adentro): el aire de encima es +1.
+        int y = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, 8, 8) + 1;
+        if (y >= nivel.getMaxBuildHeight()) {
+            return true;
+        }
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(
+                chunk.getPos().getMinBlockX() + 8, y, chunk.getPos().getMinBlockZ() + 8);
+        return nivel.getBrightness(net.minecraft.world.level.LightLayer.SKY, pos) > 0;
     }
 
     @SubscribeEvent
@@ -245,9 +292,12 @@ public final class GeneradorLocal {
             LevelChunk chunk = nivel == null ? null
                     : nivel.getChunkSource().getChunkNow(ChunkPos.getX(p.chunk()), ChunkPos.getZ(p.chunk()));
             // Descargado: se regenera en la próxima carga. Ya generado: nada que hacer.
-            if (chunk == null || store.contiene(claveRegion(nivel, chunk), claveMarca(chunk))) {
+            if (chunk == null || extraidoVigente(claveRegion(nivel, chunk), claveMarca(chunk))) {
                 pendientes.remove(p);
                 continue;
+            }
+            if (!luzLista(nivel, chunk)) {
+                continue; // queda pendiente hasta que el motor de luz lo ilumine
             }
             if (!encolarSinPendiente(nivel, chunk)) {
                 return; // cola todavía llena: seguir el próximo tick
@@ -520,7 +570,7 @@ public final class GeneradorLocal {
     public static final int VOXELES_GRANDE = NivelesGrandes.LADO * NivelesGrandes.LADO * NivelesGrandes.LADO;
 
     private void encolar(ServerLevel nivel, ChunkAccess chunk) {
-        if (!encolarSinPendiente(nivel, chunk)) {
+        if (!luzLista(nivel, chunk) || !encolarSinPendiente(nivel, chunk)) {
             pendientes.add(new Pendiente(nivel.dimension(), chunk.getPos().toLong()));
         }
     }
