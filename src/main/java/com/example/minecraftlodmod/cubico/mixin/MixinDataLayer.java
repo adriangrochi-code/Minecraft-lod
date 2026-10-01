@@ -82,7 +82,7 @@ public abstract class MixinDataLayer implements LuzComprimible {
         minecraftlodmod$comprimido = null;
     }
 
-    @Inject(method = {"isDefinitelyHomogenous", "isDefinitelyFilledWith"}, at = @At("HEAD"), cancellable = true)
+    @Inject(method = {"isDefinitelyHomogenous", "isDefinitelyFilledWith", "isEmpty"}, at = @At("HEAD"), cancellable = true)
     private void minecraftlodmod$noEsUniforme(CallbackInfoReturnable<Boolean> cir) {
         if (minecraftlodmod$comprimido != null) {
             cir.setReturnValue(false);
