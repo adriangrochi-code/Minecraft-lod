@@ -24,7 +24,7 @@ Relieve total: Everest 8 849 m + fosa de las Marianas ~10 935 m ≈ 19,8 km.
 |---|---|---|
 | 1 bloque | 8 m | 6 m |
 | Everest sobre el mar | ~1 106 bloques | ~1 475 bloques |
-| Fosa más profunda | ~1 367 bloques | ~1 823 bloques |
+| Fosa más profunda (real / grilla 30″) | ~1 367 / 1 322 bloques | ~1 823 / 1 762 bloques |
 | Relieve total | ~2 473 | ~3 298 |
 | Circunferencia (ecuador) | ~5,01 M bloques | ~6,68 M bloques |
 | Radio del disco (tierra plana) | ~2,50 M bloques | ~3,33 M bloques |
@@ -43,13 +43,28 @@ Relieve total: Everest 8 849 m + fosa de las Marianas ~10 935 m ≈ 19,8 km.
 `y = 63 + elevación_m / escala`. Se mantiene el 63 para que mobs, peces,
 estructuras y reglas de vanilla que asumen ese nivel sigan andando.
 
-| | min_y | height | techo (max_y) |
-|---|---|---|---|
-| 1:8 | -1328 | 2704 | 1376 |
-| 1:6 | -1776 | 3520 | 1744 |
+| | fondo de la fosa (y) | min_y | height | techo (max_y) |
+|---|---|---|---|---|
+| 1:8 | -1259 | -1264 | 2640 | 1376 |
+| 1:6 | -1699 | -1712 | 3456 | 1744 |
 
-(16 bloques de margen bajo la fosa para el lecho de roca y ~200 sobre el
-Everest para construir; todo múltiplo de 16.)
+**El fondo de la fosa de las Marianas apoya en el lecho de roca** (pedido
+del usuario, 2026-10-01). El punto más hondo de los datos (ETOPO 30″:
+-10 571 m en 11,354° N, 142,429° E; la grilla promedia ~1 km, por eso no
+llega a los -10 935 m reales) da el bloque más hondo del mundo, `min_y` es
+el múltiplo de 16 en o bajo ese bloque, y el lecho de roca es **macizo**
+desde `min_y` hasta el fondo de la fosa (6 bloques a 1:8, 13 a 1:6), sin el
+degradé de vanilla. En el fondo de la fosa, lo siguiente bajo los pies es
+lecho de roca. La superficie se recorta al rango de los datos (la bicúbica
+no baja de la fosa). Código: `tierra/AlturaTierra` (`yFondoFosa`,
+`minYDimension`, `esLechoDeRoca`); el `.lodt` guarda el mínimo y el máximo
+de sus muestras. Otro dato (15″) u otra `exageracionVertical` mueven la
+fosa: los presets se calculan con el dato de 30″ y al cargar se comprueba
+que el dato coincida (H3).
+
+Techo: ~270 bloques sobre la cima de la grilla para construir (la muestra
+más alta del Everest a 30″ es 8 354 m: y 1107 a 1:8, 1455 a 1:6); todo
+múltiplo de 16.
 
 ## Lo que se reutiliza del mod (no se reescribe)
 

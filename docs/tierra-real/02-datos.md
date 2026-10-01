@@ -62,6 +62,22 @@ Pantalla de crear mundo + `CREDITS` del jar: NOAA ETOPO, Beck et al.
 | ESA WorldCover | CC BY 4.0, 10 m, **~117 GB** el mapa global | Demasiado grande para agregarlo en la máquina del jugador: la agregación a 1 km se hace una sola vez de nuestro lado o se usa otra cobertura global de 300 m–1 km (**sin verificar**; elegir en H4). Atribución exacta: "© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium" |
 | Copernicus GLO-30 | no verificado (sigue como mejora futura) | — |
 
+Medido en H1 (2026-10-01):
+- Archivos de NOAA: 30″ GeoTIFF global **1,5 GB**, 60″ **444 MB**, teselas de
+  15″ ~30 MB. Todos float32, teselas internas de 256×256, Deflate, predictor
+  de punto flotante, celda centrada (`PixelIsArea`). `tierra/GeoTiff` los lee
+  sin dependencias.
+- La grilla de 30″ es exactamente el promedio 2×2 de la de 15″ (comprobado
+  contra el OPeNDAP de NCEI al metro): `PreparadorDatos --reduccion 2`
+  reproduce la de 30″ desde las teselas de 15″.
+- `.lodt`: la tesela de 15″ del Himalaya (3600×3600) pasa de 29 MB a
+  **9,15 MB**; el recorte de prueba de 10°×10° a 30″ ocupa **1,27 MB**
+  (`src/test/resources/tierra/himalaya-bengala-30s.lodt`). Es la zona más
+  rugosa: el global, con ~70% de mar, debería quedar bastante por debajo.
+  Preparar: ~1,8 s por 1,4 M de muestras (Deflate máximo, un hilo); el
+  global de 30″ (933 M) son ~20 min, una sola vez. Paralelizar si molesta.
+- Datos de prueba: ETOPO 2022 (NOAA NCEI), DOI 10.25921/fd45-gt74, uso libre.
+
 Fuentes: ncei.noaa.gov/products/etopo-global-relief-model, guía de usuario
 de ETOPO 2022 (ngdc.noaa.gov), gebco.net, gloh2o.org/koppen,
 esa-worldcover.org/en/data-access.

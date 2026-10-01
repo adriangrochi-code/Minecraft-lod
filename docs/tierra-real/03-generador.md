@@ -42,7 +42,9 @@ registrada con su codec). Así se reutilizan, sin tocarlos:
 - `initial_density_without_jaggedness`: la misma `DensidadTierra` → la
   superficie estimada es **exacta** (la usan la franja vertical y el LOD).
 - `sea_level`: 63; fluido por defecto: agua (los océanos salen solos).
-- `surface_rule`: las de vanilla por bioma (arena en costas, nieve, etc.).
+- `surface_rule`: las de vanilla por bioma (arena en costas, nieve, etc.),
+  salvo el piso: **lecho de roca macizo de `min_y` al fondo de la fosa**
+  (`AlturaTierra.esLechoDeRoca`, `01-decisiones.md`) en vez del degradé.
 - `aquifers_enabled`: sí; `ore_veins_enabled`: sí.
 
 ## Detalle a escala de bloque

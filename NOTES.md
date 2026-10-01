@@ -255,6 +255,17 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Errores recurrentes / bloqueos
 
+### Pedido a la sesión del LOD (desde la rama `claude/tierra-real`, 2026-10-01)
+
+- **El repo no compila desde GitHub:** `.gitignore` tiene `build/`, que
+  también ignora `src/main/java/.../vulkanmod/render/chunk/build/` (y
+  cualquier paquete `build`). Esa carpeta nunca se subió: `compileJava` falla
+  con "package ...vulkanmod.render.chunk.build does not exist" en un clon
+  limpio. Arreglo: cambiar la línea a `/build/` y subir la carpeta. La rama
+  de Tierra real corrió sus tests con JUnit aparte (`tierra/` no depende de
+  Minecraft) hasta que esto se arregle.
+
+
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~
   **Resuelto (2026-09-29):** con la red ampliada, `./gradlew build` completo
   (incluye `test`) pasa contra NeoForge 21.1.252 (última 21.1.x publicada en

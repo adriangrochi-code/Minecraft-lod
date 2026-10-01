@@ -935,3 +935,44 @@ luz, guardado, red y otros mods lo asumen); se achica lo que guarda cada secció
 dripstone, líquenes; necesitan vecinos); los ~250 B fijos por contenedor
 (lo que más pesa ahora: ~170 MB en el mundo de prueba); el cliente (hoy todo
 es servidor).
+
+## 33. Tipo de mundo "Tierra real" — 2026-10-01
+
+Pedido: un tipo de mundo aparte (nunca por defecto) con la Tierra real a
+escala 1:8 (1:6 opcional), en variante cilíndrica y "tierra plana" con
+farlands congeladas en el borde, integrado con el LOD y con `cubico/`. El
+diseño completo y los hitos están en `docs/tierra-real/` (H0 a H10); acá van
+las decisiones que fijan el código.
+
+- **Generador:** el `NoiseBasedChunkGenerator` de vanilla con
+  `noise_settings` propios y una función de densidad propia
+  (`(alturaTierra(x, z) - y) · k`), no un `ChunkGenerator` nuevo: cuevas,
+  acuíferos, menas, estructuras, `cubico/` y `GeneradorAproximado` siguen
+  andando sin tocarlos. `initial_density_without_jaggedness` es la misma
+  densidad, así que la superficie estimada es exacta.
+- **Datos:** ETOPO 2022 30″ (superficie del hielo), preprocesado una vez a
+  `.lodt` (teselas de 256×256: elevación int16 con diferencia por fila +
+  bioma uint8, Deflate, índice al principio; caché LRU con tope de bytes).
+  Clima y cobertura del suelo para biomas en H4. Verificación de licencias y
+  tamaños en `docs/tierra-real/02-datos.md`.
+- **Superficie:** `tierra/AlturaTierra` es la única fuente de verdad
+  (generador y LOD): y = 63 + elevación × exageración / metros por bloque,
+  bicúbica Catmull-Rom recortada al rango de los datos. 0,14 µs por columna
+  con la tesela en caché (presupuesto 0,5 µs; el resto es para el detalle
+  de H8).
+- **Piso y techo:** el fondo de la fosa más honda de los datos (Marianas,
+  -10 571 m en la grilla de 30″) apoya en el lecho de roca: `min_y` es el
+  múltiplo de 16 en o bajo ese bloque y el lecho de roca es macizo hasta él.
+  1:8: `min_y` -1264, height 2640; 1:6: -1712, 3456. Entra en el límite de
+  vanilla (4064): no hace falta formato de guardado propio.
+- **Proyecciones** (`tierra/Proyeccion`): equirectangular (norte -z, este
+  +x) y azimutal equidistante centrada en el polo norte (el polo sur, el
+  borde del disco, a ~2,5 M bloques a 1:8).
+- **Riesgos que el diseño ya contempla:** fluido global de vanilla (lava
+  bajo y -54: océanos de lava) → agua en toda la altura (H3); pizarra
+  profunda y menas atadas a `y` absoluto → por profundidad bajo la
+  superficie (H4, H9); horizonte curvo corto con R = 796 km (H5);
+  estiramiento ×17 de la Antártida en la tierra plana (H8).
+- **Paquete `tierra/`** (autorizado para esto): H1 y H2 son lógica pura con
+  tests (`GeoTiff`, `FormatoLodt`, `EscritorLodt`, `LectorLodt`,
+  `PreparadorDatos`, `Proyeccion*`, `FuenteTierra`, `AlturaTierra`).
