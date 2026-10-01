@@ -209,6 +209,8 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue margenGeneracionArriba;
         public final ModConfigSpec.IntValue distanciaGeneracionJugador;
         public final ModConfigSpec.BooleanValue compartirSeccionesUniformes;
+        public final ModConfigSpec.BooleanValue comprimirSeccionesLejanas;
+        public final ModConfigSpec.IntValue distanciaCompresion;
 
         Servidor(ModConfigSpec.Builder b) {
             b.push("generacion");
@@ -253,6 +255,11 @@ public final class ConfigLod {
                             "altos, también ayuda en mundos normales. Se copian al escribir. Si otro mod escribe",
                             "directo en las secciones, el juego avisa con un error: apagalo en ese caso.")
                     .define("compartirSeccionesUniformes", false);
+            comprimirSeccionesLejanas = b.comment("Guardar comprimidos en RAM los bloques de las secciones lejanas en vertical de",
+                            "todos los jugadores; se descomprimen solos al usarlos. Sirve sobre todo en mundos altos.")
+                    .define("comprimirSeccionesLejanas", false);
+            distanciaCompresion = b.comment("Secciones arriba y abajo de cada jugador que nunca se comprimen.")
+                    .defineInRange("distanciaCompresion", 8, 2, 256);
             b.pop();
         }
     }

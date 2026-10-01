@@ -118,10 +118,15 @@ public final class GeneracionVertical {
             }
         }
         CompletadoVertical.tick(evento.getServer());
+        SeccionesComprimidas.tick(evento.getServer(), foto, distanciaVista);
         if (tick % 600 == 0) {
             String r = ESTADISTICAS.resumenYReiniciar();
             if (r != null) {
                 LOG.info("[LOD] Generación vertical (30 s): {}", r);
+            }
+            r = SeccionesComprimidas.ESTADISTICAS.resumenYReiniciar();
+            if (r != null) {
+                LOG.info("[LOD] Secciones lejanas (30 s): {}", r);
             }
             r = SeccionesCompartidas.ESTADISTICAS.resumenYReiniciar();
             if (r != null) {

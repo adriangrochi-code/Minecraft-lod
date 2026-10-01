@@ -41,12 +41,14 @@ public final class SeccionesCompartidas {
 
     /** Tamaño serializado de un contenedor de un solo valor: bits + id + largo 0 (siempre menos de 8 bytes). */
     private static final int TAMANO_UNICO_MAXIMO = 8;
+    private static final boolean DEPURAR = Boolean.getBoolean("minecraftlodmod.depurarCompartidas");
 
     private static final Map<BlockState, PalettedContainer<BlockState>> BLOQUES = new ConcurrentHashMap<>();
     private static final Map<Holder<Biome>, PalettedContainer<Holder<Biome>>> BIOMAS = new ConcurrentHashMap<>();
 
     @SubscribeEvent
     public static void alCargarChunk(ChunkEvent.Load evento) {
+        ESTADISTICAS.eventos.increment();
         if (evento.getLevel() instanceof ServerLevel nivel && evento.getChunk() instanceof LevelChunk chunk
                 && ConfigLod.SPEC_SERVIDOR.isLoaded() && ConfigLod.SERVIDOR.compartirSeccionesUniformes.get()) {
             compartir(nivel, chunk);
@@ -62,11 +64,17 @@ public final class SeccionesCompartidas {
 
     static void compartir(ServerLevel nivel, LevelChunk chunk) {
         LevelChunkSection[] secciones = chunk.getSections();
+        ESTADISTICAS.chunks.increment();
+        ESTADISTICAS.secciones.add(secciones.length);
         int compartidos = 0;
         for (int i = 0; i < secciones.length; i++) {
             LevelChunkSection s = secciones[i];
             PalettedContainer<BlockState> bloques = s.getStates();
             PalettedContainerRO<Holder<Biome>> biomas = s.getBiomes();
+            if (DEPURAR && i % 16 == 0) {
+                com.mojang.logging.LogUtils.getLogger().info("[LOD] depurar sección {}: bloques {} B ({}), biomas {} B ({})", i,
+                        bloques.getSerializedSize(), bloques.get(0, 0, 0), biomas.getSerializedSize(), biomas.getClass().getSimpleName());
+            }
             PalettedContainer<BlockState> nuevosBloques = bloques;
             PalettedContainerRO<Holder<Biome>> nuevosBiomas = biomas;
             if (!compartido(bloques) && bloques.getSerializedSize() < TAMANO_UNICO_MAXIMO) {
@@ -115,14 +123,20 @@ public final class SeccionesCompartidas {
     public static final class Estadisticas {
         final LongAdder compartidos = new LongAdder();
         final LongAdder copias = new LongAdder();
+        final LongAdder eventos = new LongAdder();
+        final LongAdder chunks = new LongAdder();
+        final LongAdder secciones = new LongAdder();
 
         public String resumenYReiniciar() {
             long c = compartidos.sumThenReset();
             long k = copias.sumThenReset();
-            if (c == 0 && k == 0) {
+            long e = eventos.sumThenReset();
+            long ch = chunks.sumThenReset();
+            long se = secciones.sumThenReset();
+            if (c == 0 && k == 0 && e == 0) {
                 return null;
             }
-            return c + " contenedores uniformes compartidos (~" + (c * 250 >> 20) + " MB menos), "
+            return e + " cargas, " + ch + " chunks del servidor, " + se + " secciones, " + c + " contenedores uniformes compartidos (~" + (c * 250 >> 20) + " MB menos), "
                     + k + " secciones copiadas al escribir, " + (BLOQUES.size() + BIOMAS.size()) + " valores distintos";
         }
     }
