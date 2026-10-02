@@ -10,6 +10,10 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Siluetas de plantas (0.26.29):** mirar en monitor real si las cruces del
+  LOD se confunden con las de vanilla en el borde (color, brillo sin sombra por
+  cara) y si titilan a distancia (recorte por alfa con mipmaps); medir el costo
+  en GPU real en una selva de bambú o un campo de girasoles.
 - **Cobertura vegetal y camas/cofres (0.26.28):** juzgar en monitor real si el
   tinte de flores/pasto (`ColorTextura.pesoCobertura`, tope 0,75) se nota
   demasiado o muy poco a distancia, y si las camas/cofres en una aldea lejana

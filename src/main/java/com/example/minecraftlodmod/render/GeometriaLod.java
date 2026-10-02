@@ -371,8 +371,8 @@ public final class GeometriaLod {
         return agregados;
     }
 
-    /** Sombra de los planos de una cruz: entre la de los costados X y Z. */
-    static final float SOMBRA_CRUZ = 0.7f;
+    /** Sin sombra por cara, como vanilla: los modelos en cruz llevan "shade": false. */
+    static final float SOMBRA_CRUZ = 1f;
 
     private void verticeCruz(float x, float y, float z, int cara, SuperVoxel v, int rgb, Cara textura) {
         asegurarCapacidad();

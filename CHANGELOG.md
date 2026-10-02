@@ -6,6 +6,15 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.29 — Siluetas de plantas en el LOD cercano
+- **Caña, bambú, pasto alto, helechos grandes, girasoles, lilas, rosales y
+  peonías** se ven en el LOD cercano como de cerca: dos planos cruzados con su
+  silueta, en vez de desaparecer. Más lejos siguen tiñendo el suelo (0.26.28).
+- Costo medido en Xvfb: +2% de vértices en una llanura con flores y bosque.
+  Opción "Siluetas de plantas" (Calidad), prendida. Solo con las texturas del
+  LOD (sin shaderpack ni VulkanMod).
+- Como en la 0.26.28, aparecen en el terreno que se extraiga desde esta versión.
+
 ## 0.26.28 — Plantas y camas/cofres con su color en el LOD
 Solo cambia la zona del LOD; el terreno cercano (vanilla) queda igual.
 - **Pasto, flores, caña y cultivos tiñen el suelo** en el LOD según cuánto de

@@ -1187,5 +1187,19 @@ bloques con entidad por cajas (lo cercano tiene que quedar igual).
 - `VERSION_ALGORITMO` no sube: regenerar todo el cache por un tono no vale;
   se aplica a lo que se extrae desde ahora.
 
-**Siguiente (pendiente):** siluetas en cruz para plantas altas (caña, bambú,
-girasoles) solo en el nivel 0, con pasada de recorte; geometría nueva, a medir.
+**0.26.29 — siluetas en cruz (opción `siluetasPlantas`, prendida):**
+- `LectorSeccionMinecraft.esCruz` (caña, bambú, `DoublePlantBlock` no
+  sumergidas) → `SuperVoxel.Material.CRUZ` (código 4) con su color, luz y
+  estado. `sinVolumen()`: para el mesher (caras, superficie a la altura real,
+  oclusión), la luz por vértice, el relieve y el reductor cuenta como aire, así
+  que de nivel 1 para arriba desaparece y el suelo queda igual que antes.
+- `GeometriaLod.agregarCruces` (solo nivel 0 y con texturas): dos planos por
+  planta, X y Z, una columna de la misma planta en un solo par;
+  `GRUPO_CRUZ` aparte. Las posiciones del formato compacto son enteras: bit 7
+  del byte de alfa (`MARCA_CRUZ`) y el shader corre el plano 0,5 al centro.
+- Silueta: la vista de costado horneada del modelo con su alfa
+  (`AtlasLod.recortable`, huecos con el promedio y alfa 1 para que los mipmaps
+  de vanilla no oscurezcan los bordes), tabla `TablaTexturas.cruces`.
+- Pasada propia después de lo opaco, sin culling, con `lod_textura_recorte`
+  (discard por alfa < 0,5); el fundido entre niveles hace el mismo recorte.
+  Lo opaco sigue sin discard. Medido: 4,2 → 4,3 M vértices (+2%).
