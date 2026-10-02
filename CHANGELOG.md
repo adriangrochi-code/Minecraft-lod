@@ -6,6 +6,34 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.14 — Más rápido fuera del LOD: modo híbrido, entidades tapadas, partículas, generación en paralelo
+- **Arreglo importante:** faltaban pedazos de terreno e islas en el LOD. La
+  marca de "chunk ya extraído" usaba la misma clave que un nodo del terreno
+  aproximado fino, así que algunos chunks se daban por hechos sin estarlo.
+  La marca nueva usa otra clave; la vieja se sigue reconociendo.
+- **Modo híbrido** (General, «Modo híbrido (vanilla corta)», apagado por
+  defecto): con el LOD activo, la distancia de vanilla se acota según el
+  preset (Mínimo 5, Bajo 6, Medio 8, Alto 10, Ultra y Horizonte 12 chunks) y
+  el LOD dibuja el resto. Nunca sube la distancia que elegiste. Medido: de
+  4-5 a 9-10 FPS pidiendo 16 chunks.
+- **Ocultar entidades tapadas** (prendido): no se dibujan los animales, mobs,
+  cofres, carteles, cabezas, etc. que el terreno tapa. Un hilo aparte lo
+  prueba con rayos desde la cámara. Medido: de 105 a 51 entidades dibujadas
+  con la misma imagen. Si tenés EntityCulling instalado, manda ese.
+- **Distancia de entidades, distancia de partículas y máximo de
+  partículas** (General): para recortar entidades lejanas, partículas
+  lejanas (vanilla: 32 bloques) y lluvias de partículas.
+- **Velocidad de carga de chunks** (General, 7 ms = vanilla): cuánto del
+  tick dedica el juego a recibir chunks. En las pruebas no cambió nada
+  (el límite era el servidor); probá subirlo y contame.
+- **Generación en paralelo** (opción experimental del servidor
+  `generacionParalela`, apagada): superficie, cuevas y features de los
+  chunks nuevos se reparten entre los núcleos en vez de ir de a uno.
+- **Menos RAM por estado de bloque** (siempre, salvo con FerriteCore): los
+  ~26 mil estados de bloque comparten una tabla de vecinos por bloque.
+- Arreglado un caso raro en el que el cache del LOD podía quedarse con la
+  versión vieja de un nodo recién guardado.
+
 ## 0.26.13 — GPU y VRAM medidas como el Administrador de tareas (Windows)
 - En Windows, el uso de GPU y la VRAM del HUD salen de los contadores de
   rendimiento del sistema (los mismos del Administrador de tareas): andan
