@@ -6,6 +6,18 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.25 — Más calidad cuando sobra rendimiento
+- **Detalle extra automático:** con el auto-ajuste prendido, si el juego va
+  con 20% o más de margen sobre el FPS objetivo y todo lo demás ya está en
+  el preset, el LOD suma detalle por encima del preset (hasta el doble, sin
+  bajar nunca de vóxeles de 1 píxel). Es lo primero que se saca si el cuadro
+  deja de alcanzar, y después espera 30 s antes de volver a sumarlo, para
+  que no suba y baje. El HUD muestra "detalle +N%" mientras está activo.
+- **Oclusión en costados** (opción nueva, apagada): la oclusión ambiental
+  también en los costados y caras de abajo, como vanilla. Más relieve en
+  acantilados, laderas de roca y bosques. Medido: +29% de geometría y +18%
+  de GPU, por eso queda apagada; para GPUs con margen (la 1060).
+
 ## 0.26.24 — Generación de chunks un poco más rápida
 - El acuífero de vanilla (agua y lava subterráneas) buscaba, para cada bloque
   de aire o cueva, los 12 centros de acuífero vecinos desde cero. Ahora

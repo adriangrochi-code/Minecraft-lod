@@ -57,7 +57,7 @@ public final class BalanceCpuGpu {
 
     // Perillas publicadas (las lee el hilo de render al planificar y dibujar).
     private volatile double umbralPx = Double.NaN, distanciaUnBuffer = BalanceadorCpuGpu.UN_BUFFER_INICIAL,
-            factorOclusion = 1;
+            factorOclusion = 1, detalleExtra = 1;
     private volatile int radioChunks = -1, reduccionEscala;
     private volatile String diagnostico = "-";
 
@@ -194,9 +194,9 @@ public final class BalanceCpuGpu {
                 }
             });
         }
-        LOG.debug("LOD: auto-ajuste {} -> umbral {} radio {} gen {} agrupado {} oclusión {} escala -{}%",
+        LOG.debug("LOD: auto-ajuste {} -> umbral {} radio {} gen {} agrupado {} oclusión {} escala -{}% detalle extra {}",
                 b.ultimoLimite(), b.umbralPx(), b.radioChunks(), b.limiteConcurrencia(),
-                (int) b.distanciaUnBuffer(), b.factorOclusion(), b.reduccionEscala());
+                (int) b.distanciaUnBuffer(), b.factorOclusion(), b.reduccionEscala(), b.detalleExtra());
     }
 
     /** Frame time objetivo: el FPS objetivo del preset, o el tope de FPS del jugador si es menor. */
@@ -217,12 +217,15 @@ public final class BalanceCpuGpu {
         };
         String gpu = Double.isNaN(gpuMs) ? "-" : String.format(java.util.Locale.ROOT, "%.1f", gpuMs);
         return limite + " (GPU " + gpu + " ms)" + (b.conTirones() ? " tirones" : "")
+                + (b.detalleExtra() < 1 ? String.format(java.util.Locale.ROOT, " detalle +%.0f%%",
+                (1 / b.detalleExtra() - 1) * 100) : "")
                 + (b.enPisoAbsoluto() ? " PISO" : "");
     }
 
     private void publicar(BalanceadorCpuGpu b) {
         boolean replanificar = b.umbralPx() != umbralPx || b.radioChunks() != radioChunks
-                || b.factorOclusion() != factorOclusion;
+                || b.factorOclusion() != factorOclusion || b.detalleExtra() != detalleExtra;
+        detalleExtra = b.detalleExtra();
         umbralPx = b.umbralPx();
         radioChunks = b.radioChunks();
         distanciaUnBuffer = b.distanciaUnBuffer();
@@ -265,6 +268,11 @@ public final class BalanceCpuGpu {
 
     double factorOclusion() {
         return activo() ? factorOclusion : 1;
+    }
+
+    /** Multiplicador del umbral y del piso de píxeles cuando sobra margen (1 = el del preset). */
+    double detalleExtra(ParametrosCalidad c) {
+        return activo() && c.equals(base) ? detalleExtra : 1;
     }
 
     /** Puntos de porcentaje a restar a la escala del escalado. */

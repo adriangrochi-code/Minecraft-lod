@@ -119,4 +119,45 @@ class BalanceadorCpuGpuTest {
         assertEquals(2, b.limiteConcurrencia());
         assertEquals(0, b.reduccionEscala());
     }
+
+    @Test
+    void conMargenDeSobraSumaDetalleExtraHastaElMinimo() {
+        BalanceadorCpuGpu b = new BalanceadorCpuGpu(2.5, 160, 2);
+        for (int i = 0; i < 50; i++) {
+            b.ajustar(5, 6, 4, OBJETIVO, false);
+        }
+        assertEquals(BalanceadorCpuGpu.DETALLE_EXTRA_MIN, b.detalleExtra(), "con todo en el preset, sigue sumando detalle");
+        assertEquals(2.5, b.umbralPx(), "el umbral del preset no se toca: el extra va aparte");
+    }
+
+    @Test
+    void elDetalleExtraEsLoPrimeroQueSeSacaYTardaEnVolver() {
+        BalanceadorCpuGpu b = new BalanceadorCpuGpu(2.5, 160, 2);
+        for (int i = 0; i < 50; i++) {
+            b.ajustar(5, 6, 4, OBJETIVO, false);
+        }
+        double conExtra = b.detalleExtra();
+        double unBuffer = b.distanciaUnBuffer();
+        assertTrue(b.ajustar(35, SIN_TIRONES, 34, OBJETIVO, false));
+        assertTrue(b.detalleExtra() > conExtra, "se saca detalle extra");
+        assertEquals(unBuffer, b.distanciaUnBuffer(), "antes que cualquier otra perilla");
+        double despues = b.detalleExtra();
+        for (int i = 0; i < BalanceadorCpuGpu.CICLOS_BLOQUEO_EXTRA - 2; i++) {
+            b.ajustar(5, 6, 4, OBJETIVO, false);
+        }
+        assertEquals(despues, b.detalleExtra(), "no vuelve enseguida: no oscila");
+        for (int i = 0; i < 6; i++) {
+            b.ajustar(5, 6, 4, OBJETIVO, false);
+        }
+        assertTrue(b.detalleExtra() < despues, "pasado el bloqueo, vuelve");
+    }
+
+    @Test
+    void sinMargenNoHayDetalleExtra() {
+        BalanceadorCpuGpu b = new BalanceadorCpuGpu(2.5, 160, 2);
+        for (int i = 0; i < 50; i++) {
+            b.ajustar(22, 26, 20, OBJETIVO, false); // dentro del objetivo pero sin el 20% de margen
+        }
+        assertEquals(1, b.detalleExtra());
+    }
 }

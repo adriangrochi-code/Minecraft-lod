@@ -155,6 +155,7 @@ public final class GeometriaLod {
     private boolean bordesAlAire;
     private static final VertexLightSampler.LuzEsquinas LUZ_PLENA = new VertexLightSampler.LuzEsquinas(15, 15, 15, 15);
     private boolean oclusionAmbiental;
+    private boolean oclusionCostados;
 
     /**
      * Vacía la geometría conservando sus arreglos: el hilo de mallas usa siempre la
@@ -184,6 +185,7 @@ public final class GeometriaLod {
         costadosAlAire = false;
         bordesAlAire = false;
         oclusionAmbiental = false;
+        oclusionCostados = false;
         separarAgua = false;
     }
 
@@ -220,6 +222,11 @@ public final class GeometriaLod {
     /** Oscurecer rincones y bases de paredes (oclusión ambiental por vértice, sección 25 punto 5). */
     public void usarOclusionAmbiental(boolean usar) {
         this.oclusionAmbiental = usar;
+    }
+
+    /** Con la oclusión prendida, también en costados y caras de abajo (no solo arriba). */
+    public void usarOclusionCostados(boolean usar) {
+        this.oclusionCostados = usar;
     }
 
     /**
@@ -270,7 +277,7 @@ public final class GeometriaLod {
         int agregados = 0;
         // Superficie a la altura real dentro de los vóxeles grandes (recortes en bloques enteros).
         int bloquesPorVoxel = escala >= 2 && escala == Math.round(escala) ? Math.round(escala) : 0;
-        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos, oclusionAmbiental, bloquesPorVoxel, superficies())) {
+        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos, oclusionAmbiental, oclusionCostados, bloquesPorVoxel, superficies())) {
             if (omitida(q, lado, carasOmitidas)) {
                 continue;
             }

@@ -46,6 +46,8 @@
   "minecraftlodmod.configuration.descartarCuevas.tooltip": "No dibuja en el LOD caras sin luz (interiores de cuevas, caras enterradas). Mucha menos geometría; puede dejar huecos al mirar dentro de una cueva lejana.",
   "minecraftlodmod.configuration.oclusionAmbiental": "Oclusión ambiental",
   "minecraftlodmod.configuration.oclusionAmbiental.tooltip": "Oscurece rincones, bases de paredes y bajo los árboles del LOD, como la iluminación suave de vanilla. No cuesta GPU; genera algo más de geometría.",
+  "minecraftlodmod.configuration.oclusionCostados": "Oclusión en costados",
+  "minecraftlodmod.configuration.oclusionCostados.tooltip": "La oclusión ambiental también en los costados y caras de abajo del LOD, como vanilla (si no, solo arriba): más relieve en acantilados, laderas y bosques. Separa caras que antes se fusionaban: medido +29% de geometría y +18% de GPU. Para GPUs con margen.",
   "minecraftlodmod.configuration.lodActivo": "LOD activado",
   "minecraftlodmod.configuration.lodActivo.tooltip": "Dibuja el terreno lejano. Apagalo para comparar contra vanilla; la generación de LOD sigue funcionando.",
   "minecraftlodmod.configuration.vanillaReducida": "Modo híbrido (vanilla corta)",

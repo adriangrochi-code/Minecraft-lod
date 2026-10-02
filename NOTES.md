@@ -770,3 +770,10 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   1060 y la A275 contra la 0.26.22 (en llvmpipe no se nota; en GPU real
   debería, por el early-Z). Confirmar que el fundido entre niveles se ve igual.
 
+- **Detalle extra (0.26.25):** en Xvfb nunca sobra margen (1-2 fps), no se pudo
+  ver actuar. En la 1060: confirmar que con margen sube ("detalle +N%" en el
+  HUD), que se saca rápido al bajar el FPS y que no oscila (30 s de bloqueo).
+- **Oclusión en costados (0.26.25):** juzgar en monitor real si el relieve
+  extra vale el +18% de GPU en la 1060; si sí, evaluar prenderla por defecto
+  en Ultra/Horizonte.
+

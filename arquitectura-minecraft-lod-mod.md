@@ -1119,3 +1119,20 @@ con C2ME. Memoria: el heap en vuelo es sobre todo la cache del LOD (`byte[]`)
 y los chunks retenidos a propósito (`long[]`); compartir contenedores de un
 solo valor por defecto se descartó (≤ 65 MB, error si otro mod escribe directo).
 
+## 37. Más calidad con poco costo — 2026-10-02
+
+**Detalle extra (0.26.25, `BalanceadorCpuGpu.detalleExtra`):** perilla del
+auto-ajuste que multiplica umbral y piso de píxeles (1 → 0,5; piso nunca bajo
+1 px, `RenderLod.PISO_DETALLE_EXTRA_PX`). Se suma último en `recuperar()` (con
+todo en el preset y 2 ciclos bajo el 80% del objetivo) y se saca primero en
+cuanto el cuadro pasa el objetivo, sin esperar a confirmar el lado; después
+queda bloqueada `CICLOS_BLOQUEO_EXTRA` (30) ciclos. Solo con el auto-ajuste.
+
+**Oclusión en costados (0.26.25, opción `oclusionCostados`, apagada):**
+`GreedyMesher.mallar(..., enCostados, ...)` calcula la AO por esquina en las
+6 caras (antes solo +Y); el mapeo (u, v) de la AO a los vértices ya era el
+mismo por eje. Medido en la vista de prueba: malla 24,6 → 31,7 M vértices,
+dibujados 8,5 → 10,3 M, GPU +18%: corta fusiones de caras. La SSAO
+(`oclusionPantalla`, prendida) ya cubre valles y pies de montaña; la de
+costados suma el detalle de las grietas en laderas de roca.
+

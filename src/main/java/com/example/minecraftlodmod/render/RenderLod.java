@@ -111,6 +111,8 @@ public final class RenderLod {
     static final int ENCOLADAS_POR_PLAN = 48;
     /** Cada cuánto se replanifica aunque la cámara no se mueva (para levantar chunks recién generados). */
     static final long REPLANIFICAR_NANOS = 3_000_000_000L;
+    /** El detalle extra del auto-ajuste no baja el piso de píxeles de esto: más fino no se distingue. */
+    static final double PISO_DETALLE_EXTRA_PX = 1.0;
     /** Antigüedad a partir de la cual se reconstruye una celda incompleta (le faltaban chunks con datos). */
     static final long RECONSTRUIR_INCOMPLETA_NANOS = 10_000_000_000L;
     /** Lo mismo en el anillo justo después de vanilla (ver GeneradorAproximado#revisarAnilloCercano). */
@@ -199,7 +201,7 @@ public final class RenderLod {
     private boolean texturasEnUso;
     /** Con shaderpack: el LOD se dibuja con el voxy_opaque del pack (DibujoVoxy) en vez de gbuffers_terrain. */
     private boolean voxyEnUso;
-    private boolean oclusionEnUso;
+    private int oclusionEnUso;
     private boolean shadersEnUso;
     /**
      * Con un shaderpack el LOD usa la proyección de vanilla (la que conoce el
@@ -620,7 +622,9 @@ public final class RenderLod {
         // celdas (las viejas se siguen dibujando hasta que llegue su reemplazo).
         boolean usarTexturas = shaderTextura != null && PaletaTexturas.tabla() != null
                 && ConfigLod.CLIENTE.texturasLod.get();
-        boolean usarOclusion = ConfigLod.CLIENTE.oclusionAmbiental.get();
+        // 0 sin oclusión, 1 solo arriba, 2 también en costados y abajo.
+        int usarOclusion = !ConfigLod.CLIENTE.oclusionAmbiental.get() ? 0
+                : ConfigLod.CLIENTE.oclusionCostados.get() ? 2 : 1;
         boolean usarShaders = ShadersIris.enUso();
         boolean usarVoxy = false;
         if (usarShaders) {
@@ -801,7 +805,9 @@ public final class RenderLod {
                 com.example.minecraftlodmod.generation.SectionExtractor.regionDe(chunkX),
                 com.example.minecraftlodmod.generation.SectionExtractor.regionDe(chunkZ),
                 radioChunks / com.example.minecraftlodmod.generation.SectionExtractor.LADO_REGION + 1);
-        double umbralPx = balance.umbralPx(c);
+        // Con margen de sobra, el auto-ajuste baja umbral y piso de píxeles (más detalle que el preset).
+        double detalleExtra = balance.detalleExtra(c);
+        double umbralPx = balance.umbralPx(c) * detalleExtra;
         double distanciaUnBuffer = balance.distanciaUnBuffer();
         // Vanilla dibuja hasta su distancia de render; se deja un chunk de
         // solapamiento para que no queden huecos en el borde (vanilla queda encima).
@@ -850,8 +856,10 @@ public final class RenderLod {
         PlanCeldas.Vista vista = new PlanCeldas.Vista(miraX, miraZ, Math.toRadians(fovNormal), mediaApertura);
         // El tope visual es en píxeles de PANTALLA: con escalado se pasa a píxeles del mundo.
         double aPantalla = alturaDibujo / (double) Math.max(1, mc.getWindow().getHeight());
-        PlanCeldas.configurar(ConfigLod.CLIENTE.pixelesMaximos.get() * aPantalla,
-                ConfigLod.CLIENTE.pixelesMinimos.get() * aPantalla,
+        // El piso baja con el detalle extra, nunca por debajo de 1 px (ni del que eligió el jugador).
+        double pixelesMinimos = ConfigLod.CLIENTE.pixelesMinimos.get();
+        double piso = Math.max(Math.min(pixelesMinimos, PISO_DETALLE_EXTRA_PX), pixelesMinimos * detalleExtra);
+        PlanCeldas.configurar(ConfigLod.CLIENTE.pixelesMaximos.get() * aPantalla, piso * aPantalla,
                 TerrenoAproximado.CHUNKS_POR_REGION_DESDE * 16.0);
         List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, radioChunks,
                 distanciaVanilla, cubiertos::contains, vista, Math.toRadians(fovGrados), alturaDibujo,
@@ -872,7 +880,7 @@ public final class RenderLod {
         boolean voxy = voxyEnUso;
         // Con shaders las texturas no se dibujan, pero dan el color promedio de cada cara.
         GeometriaLod.Texturas texturas = texturasEnUso || bloque || voxyEnUso ? PaletaTexturas.tabla() : null;
-        boolean oclusion = oclusionEnUso;
+        int oclusion = oclusionEnUso;
         int minSeccion = mc.level.getMinSection();
         int maxSeccion = mc.level.getMaxSection();
         it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap nivelesCeldas = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
@@ -940,7 +948,7 @@ public final class RenderLod {
     /** Hilo de mallas: lee los nodos del nivel elegido y arma los vértices de la celda. */
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
                        int minSeccion, int maxSeccion, Set<Long> deVanilla, Map<Long, RangoSecciones> verticales,
-                       int vecinas, GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer, boolean bloque,
+                       int vecinas, GeometriaLod.Texturas texturas, int oclusion, boolean unBuffer, boolean bloque,
                        boolean voxy) {
         long inicioArmado = System.nanoTime();
         try {
@@ -948,7 +956,8 @@ public final class RenderLod {
             geometria.reiniciar();
             geometria.usarTexturas(texturas);
             geometria.descartarCarasSinLuz(ConfigLod.CLIENTE.descartarCuevas.get());
-            geometria.usarOclusionAmbiental(oclusion);
+            geometria.usarOclusionAmbiental(oclusion > 0);
+            geometria.usarOclusionCostados(oclusion > 1);
             geometria.separarAgua(voxy);
             int conDatos = celda.esGrande()
                     ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion)

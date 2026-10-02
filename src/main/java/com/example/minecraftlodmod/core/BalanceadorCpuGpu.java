@@ -18,6 +18,10 @@ package com.example.minecraftlodmod.core;
  *   núcleos para el hilo de render; es lo que más ayuda contra los tirones.
  * - {@link #umbralPx} y {@link #radioChunks}: detalle y alcance del LOD, al
  *   final porque son las que más se ven.
+ * - {@link #detalleExtra}: más detalle que el del preset (multiplica el umbral y
+ *   el piso de píxeles, de 1 a {@link #DETALLE_EXTRA_MIN}). Es lo último que se
+ *   suma con margen de sobra y lo primero que se saca si el cuadro no alcanza;
+ *   después de sacarlo espera {@link #CICLOS_BLOQUEO_EXTRA} ciclos para no oscilar.
  *
  * Al sobrar margen se recupera primero lo visible (radio, detalle, escala) y
  * la generación; las perillas invisibles de reparto quedan donde están.
@@ -45,6 +49,11 @@ public final class BalanceadorCpuGpu {
     static final double PASO_OCLUSION = 0.125;
     public static final int REDUCCION_ESCALA_MAX = 15;
     static final int PASO_REDUCCION_ESCALA = 5;
+    /** Multiplicador del umbral y del piso de píxeles con detalle extra al máximo. */
+    public static final double DETALLE_EXTRA_MIN = 0.5;
+    static final double PASO_DETALLE_EXTRA = 0.1;
+    /** Ciclos (≈ s) sin volver a sumar detalle extra después de haberlo sacado. */
+    static final int CICLOS_BLOQUEO_EXTRA = 30;
 
     private final double umbralMin, umbralMax, pasoUmbral;
     private final int radioMin, radioMax, pasoRadio;
@@ -56,6 +65,8 @@ public final class BalanceadorCpuGpu {
     private double distanciaUnBuffer = UN_BUFFER_INICIAL;
     private double factorOclusion = 1;
     private int reduccionEscala;
+    private double detalleExtra = 1;
+    private int bloqueoExtra;
 
     private Limite ultimoLimite = Limite.DESCONOCIDO;
     private int ciclosConMargen;
@@ -116,6 +127,16 @@ public final class BalanceadorCpuGpu {
         boolean cambioDeLado = anterior != Limite.DESCONOCIDO && ultimoLimite != Limite.DESCONOCIDO
                 && ultimoLimite != anterior;
         tirones = peorMs > objetivoMs * FACTOR_TIRON;
+        if (bloqueoExtra > 0) {
+            bloqueoExtra--;
+        }
+        if (frameMs > objetivoMs && detalleExtra < 1) {
+            // El detalle extra es un lujo: es lo primero que se saca, sin esperar a confirmar el lado.
+            ciclosConMargen = 0;
+            detalleExtra = Math.min(1, redondear(detalleExtra + PASO_DETALLE_EXTRA));
+            bloqueoExtra = CICLOS_BLOQUEO_EXTRA;
+            return true;
+        }
         if (tirones && frameMs <= objetivoMs) {
             // El promedio alcanza pero hay tirones: casi siempre son hilos de generación
             // compitiendo con el de render. Menos generación simultánea, nada más visible.
@@ -202,10 +223,17 @@ public final class BalanceadorCpuGpu {
             umbralPx = Math.max(umbralMin, umbralPx - pasoUmbral);
         } else if (reduccionEscala > 0) {
             reduccionEscala = Math.max(0, reduccionEscala - PASO_REDUCCION_ESCALA);
+        } else if (bloqueoExtra == 0 && detalleExtra > DETALLE_EXTRA_MIN) {
+            detalleExtra = Math.max(DETALLE_EXTRA_MIN, redondear(detalleExtra - PASO_DETALLE_EXTRA));
         } else {
             return false;
         }
         return true;
+    }
+
+    /** Sin el error acumulado de sumar décimos (0.1 × 5 ≠ 0.5 en double). */
+    private static double redondear(double v) {
+        return Math.round(v * 100) / 100.0;
     }
 
     public double umbralPx() {
@@ -230,6 +258,11 @@ public final class BalanceadorCpuGpu {
 
     public int reduccionEscala() {
         return reduccionEscala;
+    }
+
+    /** Multiplicador del umbral y del piso de píxeles: 1 = el del preset, menos = más detalle. */
+    public double detalleExtra() {
+        return detalleExtra;
     }
 
     public Limite ultimoLimite() {

@@ -67,6 +67,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue texturasLod;
         public final ModConfigSpec.BooleanValue descartarCuevas;
         public final ModConfigSpec.BooleanValue oclusionAmbiental;
+        public final ModConfigSpec.BooleanValue oclusionCostados;
         public final ModConfigSpec.BooleanValue texturasComoTerreno;
         public final ModConfigSpec.BooleanValue nubesLejanas;
         public final ModConfigSpec.BooleanValue oclusionPantalla;
@@ -144,6 +145,10 @@ public final class ConfigLod {
             oclusionAmbiental = b.comment("Oscurecer rincones y bases de paredes del LOD (oclusión ambiental por vértice).",
                             "Sin costo en la GPU, pero fusiona menos caras: algo más de geometría.")
                     .define("oclusionAmbiental", true);
+            oclusionCostados = b.comment("Oclusión ambiental también en los costados y caras de abajo, como vanilla (si no, solo",
+                            "arriba): más relieve en acantilados, laderas y bosques. Corta fusiones de caras: medido",
+                            "+29% de geometría y +18% de GPU. Para GPUs con margen.")
+                    .define("oclusionCostados", false);
             texturasComoTerreno = b.comment("Vóxeles grandes (lejos): el costado de pasto, nieve, micelio, etc. lleva su franja",
                             "solo en la fila de arriba y abajo la textura de la tierra, como un corte del terreno. Apagado:",
                             "la textura del costado se repite en cada bloque del vóxel (una línea de pasto por bloque).")
