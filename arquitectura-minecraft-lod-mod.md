@@ -1053,3 +1053,7 @@ ticket propio de nivel 33 (completo, sin ticks ni envío) para un colchón de
 `chunksEnRam` chunks más allá de la vista (de a 32 por pasada, prioridad de
 vista, no con MSPT > 40 ms) y retención LRU de lo que queda atrás hasta
 `ramChunksMb` (~96 KB por chunk medido). Solo singleplayer.
+
+**0.26.17:** el presupuesto sale de `cacheRamMb` ("RAM para LOD"), con tope
+en un cuarto del heap; la mitad para el colchón (el más ancho de 2 a 32
+chunks que entre, `ChunksEnRam.margenPara`), el resto para la retención.

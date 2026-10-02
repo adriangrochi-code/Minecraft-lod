@@ -6,6 +6,19 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.17 — Chunks en RAM según la RAM para LOD
+- **Chunks en RAM** ahora es un interruptor (prendido) y usa la misma RAM
+  que le das al LOD ("RAM para LOD" del preset o personalizado), con tope en
+  un cuarto de la memoria de Java. La mitad va al colchón de adelante, el
+  más ancho que entre (de 2 a 32 chunks más allá de tu distancia de render),
+  y el resto a retener lo que dejás atrás. Más RAM para el LOD = más chunks
+  listos alrededor. Ejemplo: Medio (500 MB) con distancia 12 → colchón de
+  16 chunks y hasta ~5300 chunks retenidos.
+- Ojo: el juego usa en total hasta el doble de "RAM para LOD" (la del LOD
+  más la de los chunks). Dale a Minecraft memoria de sobra (-Xmx) o bajá
+  ese valor.
+- Se quitan las opciones de ancho y de MB sueltas de la 0.26.16.
+
 ## 0.26.16 — Chunks en RAM para que carguen antes
 - **Chunks en RAM** (Generación, 8 chunks por defecto, 0 = apagado): los
   chunks hasta esa distancia más allá de tu distancia de render se mantienen

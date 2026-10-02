@@ -204,7 +204,5 @@
   "minecraftlodmod.configuration.anilloReal.tooltip": "Generates real chunks (not approximated) up to this many chunks beyond your render distance, following you as you move. The first LOD you see past normal terrain has trees and the real relief, like Voxy; farther out the approximated horizon continues. Uses some CPU while moving and the chunks are saved in the world (16 chunks is a few MB). 0 = off.",
   "minecraftlodmod.configuration.anilloReal.apagado": "Off",
   "minecraftlodmod.configuration.chunksEnRam": "Chunks in RAM",
-  "minecraftlodmod.configuration.chunksEnRam.tooltip": "Keeps chunks up to this many beyond your render distance loaded in memory (not ticked or sent to the screen). While walking, what enters view is already ready and shows up right away; what you leave behind stays in memory up to the limit below, so going back is instant. Uses RAM, almost no CPU. 0 = off.",
-  "minecraftlodmod.configuration.ramChunksMb": "RAM for retained chunks",
-  "minecraftlodmod.configuration.ramChunksMb.tooltip": "Memory for chunks that stay loaded behind you. Past it, the ones you haven't been near for longest are released. Leave headroom: keep this under a third of the RAM given to Minecraft."
+  "minecraftlodmod.configuration.chunksEnRam.tooltip": "Keeps chunks around your render distance (not ticked or sent to the screen) and the ones you leave behind loaded in memory. While walking, what enters view is already ready and shows up right away, and going back is instant. Uses the same RAM you give the LOD (\"RAM for LOD\" from the preset or custom), capped at a quarter of Java's memory: more RAM for the LOD = more chunks ready around you."
 }
