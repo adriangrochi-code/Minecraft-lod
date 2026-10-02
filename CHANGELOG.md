@@ -6,32 +6,6 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
-## 0.27.0 — Tipo de mundo "Tierra real"
-- Cuatro tipos de mundo nuevos en la pantalla de crear mundo (en "Más
-  opciones" → tipo de mundo): **Tierra real 1:8** y **1:6** (el planeta como
-  un cilindro: se da la vuelta al mundo de este a oeste, los polos son el
-  borde) y **Tierra plana 1:8** y **1:6** (el mapa de la tierra plana, con el
-  polo norte en el centro y farlands congeladas pasando la Antártida).
-  Ninguno reemplaza al mundo normal, y ya no aparece el aviso de "ajustes
-  experimentales" al usarlos.
-- Relieve real (ETOPO 2022), escala 1:8: el Everest a y 1107 y el fondo de la
-  fosa de las Marianas a y -1284, apoyado en el lecho de roca. Mares, lagos
-  con su propio nivel y depresiones secas (el Mar Muerto no se inunda);
-  biomas según el clima real (Köppen), la altura y la latitud; detalle a
-  escala de bloque en las montañas.
-- Cuevas y menas medidas desde la superficie del lugar: en los Alpes y bajo
-  el mar hay las mismas menas a la misma profundidad que en una llanura.
-- Polos de la Tierra cilíndrica: barrera de hielo sobre el mar Ártico y
-  farlands congeladas más allá.
-- El horizonte del LOD se dibuja directo desde los datos, sin buscar la
-  superficie bloque por bloque.
-- **Hace falta preparar los datos una vez** (`tierra.lodt`, ~670 MB, en
-  `.minecraft/minecraftlodmod/tierra/`): ver `docs/tierra-real/02-datos.md`.
-  Sin el archivo el mundo se genera como un fondo de mar plano y el log lo
-  avisa.
-- Comandos de prueba (con permisos de operador): `/tierra ir <lat> <lon>`,
-  `/tierra medir <lat> <lon>`.
-
 ## 0.26.24 — Generación de chunks un poco más rápida
 - El acuífero de vanilla (agua y lava subterráneas) buscaba, para cada bloque
   de aire o cueva, los 12 centros de acuífero vecinos desde cero. Ahora

@@ -317,12 +317,6 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ### Pedido a la sesión del LOD (desde la rama `claude/tierra-real`, 2026-10-01)
 
-- **Versión 0.27.0 tomada (2026-10-02):** el usuario pidió compilar Tierra
-  real; se entregó como **0.27.0** (sube el MENOR: tipo de mundo nuevo) desde
-  `claude/tierra-real`, que incluye todo hasta 0.26.24. Para no repetir
-  números: lo siguiente de la rama del LOD, 0.27.1 en adelante (o juntar
-  `claude/tierra-real`, PR #2, antes de la próxima versión).
-
 - **Crash con `compartirSeccionesUniformes` (cualquier mundo):** el agua que
   fluye sobre una sección compartida tira `IllegalArgumentException: The value
   1 is not in the specified inclusive range of 0 to 0` en
