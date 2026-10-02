@@ -48,8 +48,9 @@ import java.util.Locale;
  *    un mundo, cambios de config, tirones de FPS). Separado del
  *    latest.log para poder mandarlo y compararlo entre equipos.
  *
- * GPU %: tiempo de GPU del cuadro ({@link BalanceCpuGpu}) sobre el tiempo
- * de cuadro; sin dato con Vulkan. VRAM: {@link MedidorVram}.
+ * GPU % y VRAM: en Windows, los contadores del sistema ({@link MedidorGpuWindows});
+ * si no, el tiempo de GPU del cuadro ({@link BalanceCpuGpu}, sin dato con Vulkan)
+ * y {@link MedidorVram}.
  */
 public final class MonitorRendimiento {
 
@@ -143,10 +144,19 @@ public final class MonitorRendimiento {
         extraidosAntes = extraidos;
         aproximadosAntes = aproximados;
         boolean conServidor = servidor != null && generador.store() != null;
-        double gpuMs = balance.ultimoGpuMs();
-        double gpu = Double.isNaN(gpuMs) || r.promedioMs() <= 0 ? -1 : Math.min(100, 100 * gpuMs / r.promedioMs());
-        MedidorVram.Vram vram = ConfigLod.CLIENTE.hudRendimiento.get() || ConfigLod.CLIENTE.logDepuracion.get()
-                ? MedidorVram.INSTANCIA.medir() : MedidorVram.Vram.SIN_DATO;
+        boolean medir = ConfigLod.CLIENTE.hudRendimiento.get() || ConfigLod.CLIENTE.logDepuracion.get();
+        // Primero los contadores de Windows (los del Administrador de tareas: cualquier placa, también con
+        // Vulkan); si no hay, la medición del juego.
+        MedidorGpuWindows windows = MedidorGpuWindows.INSTANCIA;
+        double gpu = medir ? windows.gpuPorcentaje() : -1;
+        if (gpu < 0) {
+            double gpuMs = balance.ultimoGpuMs();
+            gpu = Double.isNaN(gpuMs) || r.promedioMs() <= 0 ? -1 : Math.min(100, 100 * gpuMs / r.promedioMs());
+        }
+        MedidorVram.Vram vram = medir ? MedidorVram.INSTANCIA.medir() : MedidorVram.Vram.SIN_DATO;
+        if (medir && windows.vramUsadaMb() >= 0 && windows.vramTotalMb() > 0) {
+            vram = new MedidorVram.Vram(windows.vramUsadaMb(), windows.vramTotalMb(), -1);
+        }
         return new Muestra(r.fps(), r.promedioMs(), r.peorMs(), r.fpsUnoPorCientoBajo(),
                 so == null ? -1 : so.getProcessCpuLoad() * 100, so == null ? -1 : so.getCpuLoad() * 100,
                 (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20,

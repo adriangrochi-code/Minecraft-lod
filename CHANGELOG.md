@@ -6,6 +6,17 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.13 — GPU y VRAM medidas como el Administrador de tareas (Windows)
+- En Windows, el uso de GPU y la VRAM del HUD salen de los contadores de
+  rendimiento del sistema (los mismos del Administrador de tareas): andan
+  con cualquier placa (NVIDIA, AMD, Intel) y también con Vulkan prendido.
+  GPU %: el motor más ocupado de la placa; VRAM: memoria dedicada usada
+  sobre la total de la placa.
+- Se leen en un hilo aparte una vez por segundo (no frenan el juego). Si en
+  tu sistema no están, el HUD usa la medición de antes.
+- Sin probar en Windows todavía (se desarrolló en Linux): fijate que los
+  valores se parezcan a los del Administrador de tareas.
+
 ## 0.26.12 — HUD nuevo: FPS | MIN | AVG, CPU, RAM, GPU y VRAM con colores
 - El HUD de rendimiento pasa arriba a la izquierda, con texto con sombra y
   sin fondo: `FPS | MIN | AVG | CPU % | RAM usada/máx GB | GPU % | VRAM

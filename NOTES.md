@@ -47,6 +47,14 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   - en multiplayer el LOD vertical necesita los datos LOD en el cliente
     (hoy solo singleplayer, como el resto del LOD por red).
 
+- **HUD: GPU y VRAM por contadores de Windows (0.26.13, sin probar):**
+  `render/MedidorGpuWindows` (PDH por JNA, hilo propio). Verificar en la PC:
+  que el GPU % se parezca al del Administrador de tareas (con OpenGL y con
+  Vulkan), que la VRAM total sea la de la placa (en la A275/3500U es la
+  memoria dedicada chica de la APU) y que el log diga «uso de GPU y VRAM
+  desde los contadores de Windows». Si dice «sin contadores», el HUD queda
+  con la medición del juego.
+
 - **Fusión de caras (medido después de 0.26.11, Xvfb, mundo de benchmark):**
   por qué se corta una fusión (pares vecinos al empezar cada quad): estado de
   bloque 190k, oclusión ambiental 116k, altura 33k, color 7,6k. Probado:
