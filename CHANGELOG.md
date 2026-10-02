@@ -6,6 +6,26 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.24 — Generación de chunks un poco más rápida
+- El acuífero de vanilla (agua y lava subterráneas) buscaba, para cada bloque
+  de aire o cueva, los 12 centros de acuífero vecinos desde cero. Ahora
+  recuerda los de la última celda, que comparten casi todos los bloques
+  seguidos. Mismo terreno: comparado contra vanilla en 40 millones de
+  bloques, sin ninguna diferencia. Medido: 328 → 261 ns por bloque (−20%),
+  ~4% menos CPU al generar chunks nuevos. No se aplica si tenés C2ME.
+
+## 0.26.23 — Optimizaciones sin cambio visual
+- El shader del terreno LOD ya no tiene `discard`: el fundido entre niveles
+  pasó a un programa aparte que solo usan las mallas que entran o salen. Un
+  shader con `discard` apaga en la GPU la prueba de profundidad temprana, así
+  que antes se pintaba cada píxel del LOD aunque quedara tapado. Los datos
+  fijos por cara ya no se interpolan por píxel. La imagen es la misma.
+- Extracción del LOD al doble de velocidad por bloque (287 → 145 ns): un
+  solo objeto por vóxel en vez de cinco copias, la mezcla de biomas solo
+  para los bloques que se tiñen y solo su canal, y la luz de los vecinos
+  en una pasada. Comprobado contra el código anterior: 54 millones de
+  vóxeles idénticos.
+
 ## 0.26.22 — Menos carga de GPU en los presets altos
 - Nueva opción **Píxeles mínimos por vóxel** (Calidad, 2 px por defecto): por
   más detalle que pida el preset, el LOD ya no dibuja vóxeles más chicos que

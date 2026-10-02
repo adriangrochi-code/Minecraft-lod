@@ -1097,6 +1097,28 @@ Ultra 1,0, Horizonte 0,75, × 0,6 cerca) el nivel 0 llegaba a 1-1,7 km a
 14,8 M → 9,2 M vértices dibujados, GPU −31%, imagen igual. En Medio no
 cambia nada (el umbral ya pasa los 2 px donde termina el nivel 0).
 
+**0.26.23 — sin cambio visual:**
+- `lod_textura` sin `discard` (apagaba el early-Z); el tramado del fundido va
+  en `lod_textura_fundido` (mismo color por `include/lod_textura_color.glsl`),
+  dibujado en una pasada aparte solo para las mallas que entran o salen
+  (`RenderLod.Filtro`). Datos por cara `flat`. En llvmpipe no cambia el
+  tiempo (ya prueba profundidad antes); la ganancia es en GPU real (Pista B).
+- `LectorSeccionMinecraft.voxel`: un objeto por vóxel, tinte de bioma pedido
+  solo por los bloques que lo usan (`ColoresBloque.FuenteTinte`, un canal),
+  luz de los 6 vecinos en una pasada, emisión en `InfoEstado`. 287 → 145 ns
+  por vóxel, 54 M vóxeles iguales al código anterior.
+- Descartado: tabla de oclusión ambiental por capa en `GreedyMesher` (mismos
+  quads, 5% más lento: arma la capa entera para pocas caras).
+
+**0.26.24 — acuífero (`cubico/mixin/MixinAcuifero`, `@Overwrite` de
+`NoiseBasedAquifer#computeSubstance`):** los 12 centros vecinos dependen solo
+de la celda de acuífero; se guardan desempaquetados los de la última celda
+(mismo orden, desempates y siembra que vanilla). 40 M llamadas iguales a
+vanilla, 328 → 261 ns (el acuífero es ~19% del CPU de `wgen_fill_noise`). No
+con C2ME. Memoria: el heap en vuelo es sobre todo la cache del LOD (`byte[]`)
+y los chunks retenidos a propósito (`long[]`); compartir contenedores de un
+solo valor por defecto se descartó (≤ 65 MB, error si otro mod escribe directo).
+
 ## 37. Tipo de mundo "Tierra real" — 2026-10-01
 
 Pedido: un tipo de mundo aparte (nunca por defecto) con la Tierra real a

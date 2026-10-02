@@ -74,6 +74,31 @@ public final class ColoresBloque {
         };
     }
 
+    /** Color de bioma ya mezclado de un tipo de tinte en un lugar; se pide solo si el bloque lo usa. */
+    public interface FuenteTinte {
+        /** @param tinte PASTO, FOLLAJE o AGUA */
+        int color(Tinte tinte, int x, int y, int z);
+    }
+
+    /**
+     * Como {@link #rgb(int, BlockState, Tintes)}, pero el tinte se pide a la
+     * fuente solo si el bloque lo usa (la piedra no mezcla biomas) y solo el
+     * canal que usa. Mismo resultado.
+     */
+    public static int rgb(int id, BlockState estado, FuenteTinte fuente, int x, int y, int z) {
+        Paleta p = paleta;
+        if (p == null || !p.contiene(id)) {
+            return estado.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).col;
+        }
+        int base = p.rgbBase()[id];
+        Tinte tinte = TINTES[p.tinte()[id]];
+        return switch (tinte) {
+            case NINGUNO -> base;
+            case FIJO -> ColorTextura.tenir(base, p.tinteFijo()[id]);
+            case PASTO, FOLLAJE, AGUA -> ColorTextura.tenir(base, fuente.color(tinte, x, y, z));
+        };
+    }
+
     /**
      * @param bioma  bioma en esa posición (para el tinte); puede ser null
      * @param x      coordenadas de mundo, para la variación del pasto (pantanos)

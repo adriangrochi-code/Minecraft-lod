@@ -10,6 +10,7 @@
     "AccesoInfoBlockEntity",
     "AccesoPasosGeneracion",
     "AccesoSeccionBloques",
+    "MixinAcuifero",
     "MixinBeardifier",
     "MixinChunkHolder",
     "MixinDataLayer",

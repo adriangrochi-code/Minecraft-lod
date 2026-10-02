@@ -186,6 +186,13 @@ public final class RenderLod {
 
     /** Shader texturizado, registrado como cualquier ShaderInstance del juego; null si no cargó. */
     private static volatile ShaderInstance shaderTextura;
+    /**
+     * Mismo terreno con el tramado del fundido entre niveles: solo para las mallas que
+     * entran o salen. Programa aparte porque un shader con discard apaga la prueba de
+     * profundidad temprana de la GPU (cada fragmento tapado se pintaba igual). Null con
+     * VulkanMod (su variante no tiene fundido).
+     */
+    private static volatile ShaderInstance shaderTexturaFundido;
     /** Sube cada vez que cambian las texturas (resource pack, F3+T): hay que rearmar todo. */
     private static volatile int versionTexturas;
     private int versionTexturasVista = -1;
@@ -318,6 +325,18 @@ public final class RenderLod {
         } catch (IOException e) {
             LOG.error("LOD: no se pudo cargar el shader de texturas; se dibuja con colores planos", e);
             shaderTextura = null;
+        }
+        if (conVulkanMod()) {
+            shaderTexturaFundido = null;
+            return;
+        }
+        try {
+            evento.registerShader(new ShaderInstance(evento.getResourceProvider(),
+                    ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, "lod_textura_fundido"),
+                    FORMATO_TEXTURA), cargado -> shaderTexturaFundido = cargado);
+        } catch (IOException e) {
+            LOG.error("LOD: no se pudo cargar el shader del fundido entre niveles; los cambios de nivel serán de golpe", e);
+            shaderTexturaFundido = null;
         }
     }
 
@@ -1309,14 +1328,21 @@ public final class RenderLod {
         int luzCielo = colorLuzCielo(mc);
         RenderSystem.setShaderColor(((luzCielo >> 16) & 0xFF) / 255f, ((luzCielo >> 8) & 0xFF) / 255f,
                 (luzCielo & 0xFF) / 255f, 1f);
-        dibujarPasada(evento, camara, proyeccion, TipoMalla.PLANA, GameRenderer.getPositionColorShader());
+        dibujarPasada(evento, camara, proyeccion, TipoMalla.PLANA, GameRenderer.getPositionColorShader(), Filtro.TODAS);
         ShaderInstance conTextura = shaderTextura;
         if (conTextura != null) {
             // Atlas propio del LOD (texturas del pack activo + modelos horneados), con mipmaps:
             // la textura se simplifica sola con la distancia.
             RenderSystem.setShaderTexture(0, PaletaTexturas.ATLAS);
             RenderSystem.setShaderTexture(1, PaletaTexturas.TABLA_SPRITES);
-            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura);
+            ShaderInstance fundido = shaderTexturaFundido;
+            if (fundido == null) {
+                dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.TODAS);
+            } else {
+                // Primero lo entero sin discard (casi todo), después lo que se funde.
+                dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.ENTERAS);
+                dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, fundido, Filtro.FUNDIENDO);
+            }
         }
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         VertexBuffer.unbind();
@@ -1363,7 +1389,7 @@ public final class RenderLod {
         RenderSystem.setShaderTexture(0, TEXTURA_BLANCA);
         mc.gameRenderer.lightTexture().turnOnLightLayer();
         dibujarPasada(evento, camara, new Matrix4f(evento.getProjectionMatrix()), TipoMalla.BLOQUE,
-                GameRenderer.getRendertypeSolidShader());
+                GameRenderer.getRendertypeSolidShader(), Filtro.TODAS);
         mc.gameRenderer.lightTexture().turnOffLightLayer();
         VertexBuffer.unbind();
     }
@@ -1470,7 +1496,7 @@ public final class RenderLod {
      * drawWithShader con la matriz desplazada.
      */
     private void dibujarPasada(RenderLevelStageEvent evento, Vec3 camara, Matrix4f proyeccion,
-                               TipoMalla tipo, ShaderInstance shader) {
+                               TipoMalla tipo, ShaderInstance shader, Filtro filtro) {
         if (shader == null) {
             return;
         }
@@ -1495,7 +1521,7 @@ public final class RenderLod {
         Uniform fundido = desplazamiento != null || tipo == TipoMalla.TEXTURA ? shader.getUniform("Fundido") : null;
         Malla m = new Malla(evento.getModelViewMatrix(), proyeccion, shader, desplazamiento, null, fundido, camara,
                 curvaPorCelda, inicioCurva, radioPlaneta);
-        recorrerMallas(tipo, m, fundido != null);
+        recorrerMallas(tipo, m, fundido != null || filtro == Filtro.ENTERAS, filtro);
         if (fundido != null) {
             fundido.set(1f, 1f);
             fundido.upload();
@@ -1506,8 +1532,25 @@ public final class RenderLod {
         }
     }
 
-    /** Las celdas con malla del tipo pedido y las salientes (las que se desvanecen), en orden de dibujo. */
+    /** Qué mallas dibuja una pasada según su fundido entre niveles. */
+    private enum Filtro {
+        TODAS,
+        /** Las que no se están fundiendo (shader sin discard). */
+        ENTERAS,
+        /** Las que entran o salen con el tramado (shader con discard). */
+        FUNDIENDO
+    }
+
     private void recorrerMallas(TipoMalla tipo, Malla m, boolean conFundido) {
+        recorrerMallas(tipo, m, conFundido, Filtro.TODAS);
+    }
+
+    /**
+     * Las celdas con malla del tipo pedido y las salientes (las que se desvanecen), en orden de dibujo.
+     *
+     * @param conFundido hay fundido entre niveles (en esta pasada o en la de {@link Filtro#FUNDIENDO})
+     */
+    private void recorrerMallas(TipoMalla tipo, Malla m, boolean conFundido, Filtro filtro) {
         long ahora = System.nanoTime();
         for (EstadoCelda estado : ordenDibujo) {
             if (!estado.tieneMalla || estado.construidaCon == null || estado.tipo != tipo
@@ -1518,12 +1561,16 @@ public final class RenderLod {
             if (visible >= 1f) {
                 estado.aparicionNanos = 0;
             }
+            if (conFundido && (filtro == Filtro.ENTERAS && visible < 1f || filtro == Filtro.FUNDIENDO && visible >= 1f)) {
+                continue;
+            }
             m.dibujar(estado.buffers, estado.planos, estado.verticesCara, estado.construidaCon.origenX(),
                     estado.construidaCon.origenZ(), estado.construidaCon.ladoEnBloques(), conFundido ? visible : 1f,
                     true);
         }
         for (Saliente s : salientes) {
-            if (s.tipo != tipo || (s.inicioNanos != 0 && !conFundido)) {
+            if (s.tipo != tipo || (s.inicioNanos != 0 && !conFundido)
+                    || filtro == Filtro.ENTERAS && s.inicioNanos != 0 || filtro == Filtro.FUNDIENDO && s.inicioNanos == 0) {
                 continue;
             }
             float queda = 1f - FundidoNiveles.fraccionEntrada(ahora, s.inicioNanos);

@@ -37,7 +37,7 @@ import java.util.List;
  * independiente del chunk, así la extracción corre en el pool de
  * {@code GenerationTaskScheduler} sin carreras contra el juego.
  */
-public final class LectorSeccionMinecraft implements SectionExtractor.LectorSeccion {
+public final class LectorSeccionMinecraft implements SectionExtractor.LectorSeccion, ColoresBloque.FuenteTinte {
 
     private final PalettedContainer<BlockState> estados;
     /** Estados de la sección de arriba (para cubiertas sobre la fila y=15), o null si es solo aire. */
@@ -219,9 +219,11 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
      * como el "biome blend" de vanilla: cada celda de 4 bloques promedia las
      * 3×3 de alrededor y el bloque interpola entre los centros de las 4
      * celdas más cercanas. Sin eso el tinte cambia en escalones de 4 bloques
-     * en el borde de dos biomas, muy visible en el LOD lejano.
+     * en el borde de dos biomas, muy visible en el LOD lejano. Solo el canal
+     * que usa el bloque, y solo si lo usa ({@link ColoresBloque.FuenteTinte}).
      */
-    private ColoresBloque.Tintes tintes(int x, int y, int z) {
+    @Override
+    public int color(ColoresBloque.Tinte tinte, int x, int y, int z) {
         if (tintesMezclados == null) {
             tintesMezclados = mezclarTintes();
         }
@@ -233,10 +235,11 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         ColoresBloque.Tintes b = tintesMezclados[celdaMezcla(cx + 1, cy, cz)];
         ColoresBloque.Tintes c = tintesMezclados[celdaMezcla(cx, cy, cz + 1)];
         ColoresBloque.Tintes d = tintesMezclados[celdaMezcla(cx + 1, cy, cz + 1)];
-        return new ColoresBloque.Tintes(
-                ColorTextura.bilineal(a.pasto(), b.pasto(), c.pasto(), d.pasto(), fx, fz),
-                ColorTextura.bilineal(a.follaje(), b.follaje(), c.follaje(), d.follaje(), fx, fz),
-                ColorTextura.bilineal(a.agua(), b.agua(), c.agua(), d.agua(), fx, fz));
+        return switch (tinte) {
+            case PASTO -> ColorTextura.bilineal(a.pasto(), b.pasto(), c.pasto(), d.pasto(), fx, fz);
+            case FOLLAJE -> ColorTextura.bilineal(a.follaje(), b.follaje(), c.follaje(), d.follaje(), fx, fz);
+            default -> ColorTextura.bilineal(a.agua(), b.agua(), c.agua(), d.agua(), fx, fz);
+        };
     }
 
     private static int celdaMezcla(int cx, int cy, int cz) {
@@ -300,7 +303,7 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
     }
 
     /** Lo que se consulta de cada estado de bloque, calculado una vez por sección. */
-    private record InfoEstado(BlockState estado, int id, SuperVoxel.Material material, Forma forma) {
+    private record InfoEstado(BlockState estado, int id, SuperVoxel.Material material, Forma forma, int emision) {
     }
 
     /**
@@ -367,7 +370,7 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         }
         InfoEstado info = infos.get(estado);
         if (info == null) {
-            info = new InfoEstado(estado, Block.getId(estado), material(estado), forma(estado));
+            info = new InfoEstado(estado, Block.getId(estado), material(estado), forma(estado), emision(estado));
             infos.put(estado, info);
         }
         ultimoEstado = estado;
@@ -389,7 +392,7 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         }
         SuperVoxel.Material material = info.material();
         if (material == SuperVoxel.Material.AIRE) {
-            return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, material, (byte) 0);
+            return AIRE;
         }
         // Alfombra encima: el bloque toma la cubierta. Nieve fina: el bloque queda como es
         // (hojas, pasto) y solo su cara de arriba se dibuja nevada (SuperVoxel.nevado).
@@ -407,17 +410,35 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         }
         int rgb;
         if (biomasAmplias != null) {
-            rgb = ColoresBloque.rgb(info.id(), estado, tintes(x, y, z));
+            rgb = ColoresBloque.rgb(info.id(), estado, this, x, y, z);
         } else {
             Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
             rgb = ColoresBloque.rgb(info.id(), estado, bioma, origenX + x, origenZ + z);
         }
+        // Luz de los 6 vecinos en una pasada: la máxima (cielo o bloque) y la de bloque sola.
+        int luces = luces(x, y + 1, z);
+        luces = maxLuces(luces, luces(x - 1, y, z));
+        luces = maxLuces(luces, luces(x + 1, y, z));
+        luces = maxLuces(luces, luces(x, y, z - 1));
+        luces = maxLuces(luces, luces(x, y, z + 1));
+        luces = maxLuces(luces, luces(x, y - 1, z));
+        int luzBloque = SuperVoxel.cuantizarLuzBloque(Math.max(luces & 15, info.emision()));
+        // Un solo objeto (antes, una copia por cada con...): mismos flags que conLuzHorneada,
+        // conLuzBloque y conNevado; estado como conEstado (ids > 65535 quedan sin estado).
+        int flags = (luces >> 4) << 4 | luzBloque << 2 | (nevado ? 0b10 : 0);
+        int id = info.id();
+        short idEstado = id > 0 && id <= 0xFFFF ? (short) id : SuperVoxel.SIN_ESTADO;
         return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) SuperVoxel.LLENO, material,
-                (byte) 0)
-                .conLuzHorneada(luz(x, y, z))
-                .conLuzBloque(SuperVoxel.cuantizarLuzBloque(Math.max(luzBloque(x, y, z), emision(estado))))
-                .conEstado(info.id()) // para dibujar su textura; ids > 65535 quedan sin estado
-                .conNevado(nevado);
+                (byte) flags, idEstado);
+    }
+
+
+
+    private static final SuperVoxel AIRE =
+            new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+
+    private static int maxLuces(int a, int b) {
+        return Math.max(a & 0xF0, b & 0xF0) | Math.max(a & 15, b & 15);
     }
 
     /**
@@ -431,35 +452,28 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
      * Vecinos fuera de la sección: arriba se lee la sección de arriba; a los
      * costados no hay dato y se asume luz plena (no descartar caras de un
      * acantilado justo en el borde de un chunk); abajo, sin luz.
+     *
+     * Devuelve las dos luces de un vecino juntas: la máxima entre cielo y
+     * bloque en los bits 4-7 y la de bloque sola en los bits 0-3 (para
+     * {@link SuperVoxel#luzBloque()}); fuera de la sección a los costados no
+     * hay luz de bloque.
      */
-    private int luz(int x, int y, int z) {
-        int max = luzEn(x, y + 1, z);
-        if (max == 15) {
-            return 15;
+    private int luces(int x, int y, int z) {
+        if (x < 0 || x > 15 || z < 0 || z > 15) {
+            return 15 << 4;
         }
-        max = Math.max(max, luzEn(x - 1, y, z));
-        max = Math.max(max, luzEn(x + 1, y, z));
-        max = Math.max(max, luzEn(x, y, z - 1));
-        max = Math.max(max, luzEn(x, y, z + 1));
-        return Math.max(max, luzEn(x, y - 1, z));
-    }
-
-    /** Como {@link #luz}, solo la luz de bloque (sin la del cielo). */
-    private int luzBloque(int x, int y, int z) {
-        int max = luzBloqueEn(x, y + 1, z);
-        max = Math.max(max, luzBloqueEn(x - 1, y, z));
-        max = Math.max(max, luzBloqueEn(x + 1, y, z));
-        max = Math.max(max, luzBloqueEn(x, y, z - 1));
-        max = Math.max(max, luzBloqueEn(x, y, z + 1));
-        return Math.max(max, luzBloqueEn(x, y - 1, z));
-    }
-
-    private int luzBloqueEn(int x, int y, int z) {
-        if (x < 0 || x > 15 || z < 0 || z > 15 || y < 0) {
+        if (y < 0) {
             return 0;
         }
-        DataLayer capaBloque = y < SectionExtractor.LADO ? bloque : bloqueArriba;
-        return capaBloque == null ? 0 : capaBloque.get(x, y & 15, z);
+        boolean dentro = y < SectionExtractor.LADO;
+        DataLayer capaCielo = dentro ? cielo : cieloArriba;
+        DataLayer capaBloque = dentro ? bloque : bloqueArriba;
+        int ly = y & 15;
+        // Sin datos de luz del cielo (motor de luz todavía no corrió, o
+        // sección por encima de todo): asumir cielo abierto.
+        int deCielo = capaCielo == null ? 15 : capaCielo.get(x, ly, z);
+        int deBloque = capaBloque == null ? 0 : capaBloque.get(x, ly, z);
+        return Math.max(deCielo, deBloque) << 4 | deBloque;
     }
 
     /** Luz que emite el bloque mismo (lava, piedra luminosa): la de sus vecinos puede faltar si está enterrado a medias. */
@@ -469,23 +483,6 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         } catch (RuntimeException e) {
             return 0;
         }
-    }
-
-    private int luzEn(int x, int y, int z) {
-        if (x < 0 || x > 15 || z < 0 || z > 15) {
-            return 15;
-        }
-        if (y < 0) {
-            return 0;
-        }
-        DataLayer capaCielo = y < SectionExtractor.LADO ? cielo : cieloArriba;
-        DataLayer capaBloque = y < SectionExtractor.LADO ? bloque : bloqueArriba;
-        int ly = y & 15;
-        // Sin datos de luz del cielo (motor de luz todavía no corrió, o
-        // sección por encima de todo): asumir cielo abierto.
-        int deCielo = capaCielo == null ? 15 : capaCielo.get(x, ly, z);
-        int deBloque = capaBloque == null ? 0 : capaBloque.get(x, ly, z);
-        return Math.max(deCielo, deBloque);
     }
 
     /**
