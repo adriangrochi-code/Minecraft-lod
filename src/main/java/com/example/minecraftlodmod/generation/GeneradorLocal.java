@@ -343,7 +343,13 @@ public final class GeneradorLocal {
             return;
         }
         try {
-            pregenerador.tick(servidor, ConfigLod.CLIENTE.pregenerar.get(), ConfigLod.CLIENTE.radioPregeneracion.get());
+            // Anillo real: aunque la pregeneración esté apagada, terreno real (no aproximado) justo
+            // después de vanilla, siguiendo al jugador: es lo primero que se ve del LOD.
+            boolean pregenerar = ConfigLod.CLIENTE.pregenerar.get();
+            int anillo = ConfigLod.CLIENTE.anilloReal.get();
+            int radioAnillo = anillo > 0 ? servidor.getPlayerList().getViewDistance() + anillo : 0;
+            int radio = pregenerar ? Math.max(ConfigLod.CLIENTE.radioPregeneracion.get(), radioAnillo) : radioAnillo;
+            pregenerador.tick(servidor, pregenerar || anillo > 0, radio);
         } catch (RuntimeException e) {
             pregeneradorRoto = true;
             pregenerador.soltarTodo();

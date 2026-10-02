@@ -10,6 +10,15 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Anillo con huecos en 4 direcciones (0.26.15):** no se reprodujo tal cual
+  en Xvfb (radio 160). Arreglados tres motivos de huecos que encajan: caras
+  laterales del terreno aproximado descartadas por luz 0 (verificado en la
+  isla: huecos cerrados), bordes de celda entre niveles distintos y costados
+  que dan a vanilla. Confirmar en la A275 y en la 1060 con el preset y la
+  distancia de esos equipos.
+- **Anillo real (0.26.15, `anilloReal`):** medir en la A275 si generar 16
+  chunks más allá de vanilla al moverse baja los FPS o traba el servidor
+  integrado; si sí, bajar el valor por defecto.
 - **Generación en paralelo (0.26.14, `generacionParalela`):** en Xvfb
   (4 núcleos) 1024 chunks nuevos tardan lo mismo con y sin la opción
   (7,5/7,7 s contra 7,6/5,6 s), sin errores de hilos. Medir en el i5-9400

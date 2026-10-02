@@ -1023,3 +1023,22 @@ Pedido: acelerar el juego en general (chunks y FPS), no solo el LOD. En orden:
 6. **Vecinos de estados de bloque (`cubico/TablaEstados`):** una tabla por
    bloque con índice en base mixta en vez de un `ArrayTable` por estado
    (~26 mil tablas). Idea de FerriteCore (MIT; si está, no corre).
+
+## 34. Sin huecos cerca y terreno real después de vanilla (como Voxy) — 2026-10-02
+
+- **Luz del terreno aproximado:** el subsuelo de una columna se guarda con
+  luz 0 y el descarte de caras sin luz (sección 25) borraba las paredes de
+  acantilados. Los chunks aproximados se mallan con sus vecinos laterales al
+  mismo nivel (reales o aproximados) y sus costados restantes llevan luz
+  plena (`GeometriaLod#costadosAlAire`); en las teselas, solo los interiores
+  (los bordes siguen dependiendo de la luz para no dibujar paredes enterradas).
+- **Bordes entre niveles:** una celda oculta los costados de su borde contra
+  el chunk vecino solo si la celda de al lado tiene el mismo nivel (firma de
+  vecinas en `EstadoCelda`, rearmado si cambia).
+- **Anillo real (`anilloReal`):** el pregenerador (`PregeneradorChunks`) con
+  radio vista + N, re-centrado cada radio/8 chunks: lo primero después de
+  vanilla es terreno real, como en Voxy (que solo muestra chunks reales).
+- **Anillo cercano (`GeneradorAproximado#revisarAnilloCercano`):** cada
+  segundo, de vanilla hacia afuera hasta `DISTANCIA_NIVEL1`, lo que falta
+  pasa adelante de la ventana (tope 256); las celdas cercanas incompletas se
+  rearman cada 2 s.

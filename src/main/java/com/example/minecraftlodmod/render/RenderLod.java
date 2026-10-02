@@ -113,6 +113,9 @@ public final class RenderLod {
     static final long REPLANIFICAR_NANOS = 3_000_000_000L;
     /** Antigüedad a partir de la cual se reconstruye una celda incompleta (le faltaban chunks con datos). */
     static final long RECONSTRUIR_INCOMPLETA_NANOS = 10_000_000_000L;
+    /** Lo mismo en el anillo justo después de vanilla (ver GeneradorAproximado#revisarAnilloCercano). */
+    static final long RECONSTRUIR_INCOMPLETA_CERCA_NANOS = 2_000_000_000L;
+    static final double DISTANCIA_ANILLO_CERCANO = TerrenoAproximado.DISTANCIA_NIVEL1;
     /** Profundidad de 24 bits: un near plane lejos mejora mucho la precisión a distancia. */
     static final float NEAR_LOD = 16f;
     /** Intensidad del SSAO del acabado (render/AcabadoLod); el ajuste fino es de Pista B. */
@@ -876,10 +879,14 @@ public final class RenderLod {
             boolean cambio = !celda.equals(estado.construidaCon)
                     || (estado.tieneMalla && estado.tipo != tipoEsperado)
                     || firma != estado.firmaVertical || vecinas != estado.firmaVecinas;
+            double mitad = celda.ladoEnBloques() / 2.0;
+            // Justo después de vanilla es lo primero que se ve: ahí los huecos se reintentan seguido.
+            boolean cercana = !celda.esGrande() && Math.hypot(celda.origenX() + mitad - camara.x,
+                    celda.origenZ() + mitad - camara.z) < distanciaVanilla * 16.0 + DISTANCIA_ANILLO_CERCANO;
             boolean incompleta = estado.construidaCon != null
                     && estado.chunksConDatos < chunksDibujables(celda)
-                    && ahora - estado.construidaNanos > RECONSTRUIR_INCOMPLETA_NANOS;
-            double mitad = celda.ladoEnBloques() / 2.0;
+                    && ahora - estado.construidaNanos > (cercana ? RECONSTRUIR_INCOMPLETA_CERCA_NANOS
+                    : RECONSTRUIR_INCOMPLETA_NANOS);
             // Con shaderpack cada llamada pasa por el apply() de Iris: un buffer por celda.
             boolean unBuffer = bloque || celda.esGrande() || Math.hypot(celda.origenX() + mitad - camara.x,
                     celda.origenZ() + mitad - camara.z) > distanciaUnBuffer;

@@ -199,5 +199,8 @@
   "minecraftlodmod.configuration.maxParticulas.vanilla": "No cap",
   "minecraftlodmod.configuration.unidad.bloques": "%s blocks",
   "minecraftlodmod.configuration.msCargaChunks": "Chunk loading speed",
-  "minecraftlodmod.configuration.msCargaChunks.tooltip": "Milliseconds of each tick (out of 50) the game spends receiving chunks from the server; the server sends as many as fit. Vanilla uses 7: with more, chunks show up sooner when moving or joining, at the cost of a bit more work while they arrive. Works on servers too."
+  "minecraftlodmod.configuration.msCargaChunks.tooltip": "Milliseconds of each tick (out of 50) the game spends receiving chunks from the server; the server sends as many as fit. Vanilla uses 7: with more, chunks show up sooner when moving or joining, at the cost of a bit more work while they arrive. Works on servers too.",
+  "minecraftlodmod.configuration.anilloReal": "Real ring",
+  "minecraftlodmod.configuration.anilloReal.tooltip": "Generates real chunks (not approximated) up to this many chunks beyond your render distance, following you as you move. The first LOD you see past normal terrain has trees and the real relief, like Voxy; farther out the approximated horizon continues. Uses some CPU while moving and the chunks are saved in the world (16 chunks is a few MB). 0 = off.",
+  "minecraftlodmod.configuration.anilloReal.apagado": "Off"
 }

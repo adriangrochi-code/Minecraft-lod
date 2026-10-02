@@ -152,6 +152,8 @@ public final class PantallaLod extends Screen {
 
         paginas.add(new Pagina(pestana("generacion"), List.of(
                 List.of(interruptor("generacionAproximada", Impacto.MEDIO, c.generacionAproximada)),
+                List.of(entero("anilloReal", Impacto.MEDIO, 0, 64, 4, c.anilloReal,
+                                v -> v == 0 ? texto("anilloReal.apagado") : Component.literal(v + " chunks"))),
                 List.of(interruptor("pregenerar", Impacto.ALTO, c.pregenerar),
                         entero("radioPregeneracion", Impacto.NINGUNO, 16, ParametrosCalidad.RADIO_MAX, 16,
                                 c.radioPregeneracion, v -> Component.literal(v + " chunks"))))));

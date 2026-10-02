@@ -6,6 +6,32 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.15 — Sin huecos en el LOD y terreno real justo después de vanilla
+- **Huecos en acantilados y laderas (el "anillo con huecos" lejano):** en el
+  terreno aproximado, la parte de abajo de cada columna se guardaba "sin
+  luz", y el LOD descarta las caras sin luz (son cuevas). La pared de un
+  acantilado o una ladera empinada desaparecía y se veía el cielo a través.
+  Ahora los costados del terreno aproximado se dibujan con luz plena, y las
+  paredes enterradas entre chunks se ocultan comparando con el chunk de al
+  lado. Lo mismo en las piezas grandes lejanas.
+- **Ranuras donde cambia el nivel de detalle:** el borde de una celda se
+  ocultaba contra el chunk vecino aunque ese vecino se dibujara con vóxeles
+  de otro tamaño. Ahora solo se oculta si la celda de al lado tiene el mismo
+  nivel. Esas ranuras se veían de frente mirando a lo largo de los ejes:
+  las 4 direcciones a 90°.
+- **Borde con el terreno normal:** las paredes del LOD que dan a un chunk de
+  vanilla más bajo (un acantilado frente a la playa) ya no faltan.
+- **Anillo real** (Generación, 16 chunks por defecto, 0 = apagado): genera
+  chunks de verdad hasta esa distancia más allá de tu distancia de render y
+  te sigue al moverte. Lo primero que se ve del LOD después del terreno
+  normal tiene árboles y el relieve real, como en Voxy; más lejos sigue el
+  horizonte aproximado. Los chunks quedan guardados en el mundo (16 chunks
+  son unos pocos MB). Solo singleplayer.
+- **Prioridad y revisión del borde:** cada segundo se revisan los 32 chunks
+  después de vanilla; lo que falta, o está más grueso de lo que pide su
+  distancia, pasa adelante en la cola. Las celdas cercanas incompletas se
+  rearman cada 2 s (antes 10).
+
 ## 0.26.14 — Más rápido fuera del LOD: modo híbrido, entidades tapadas, partículas, generación en paralelo
 - **Arreglo importante:** faltaban pedazos de terreno e islas en el LOD. La
   marca de "chunk ya extraído" usaba la misma clave que un nodo del terreno

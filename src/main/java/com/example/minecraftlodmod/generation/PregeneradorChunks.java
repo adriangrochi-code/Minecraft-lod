@@ -100,8 +100,11 @@ public final class PregeneradorChunks {
         }
         ServerLevel nivelJugador = jugador.serverLevel();
         int jugadorX = jugador.chunkPosition().x, jugadorZ = jugador.chunkPosition().z;
+        // Con un radio chico (el anillo real que sigue al jugador) se re-centra seguido: recorrer
+        // de nuevo lo ya generado es barato y, si no, lo de adelante quedaba sin generar.
+        int recentrar = Math.max(4, Math.min(RECENTRAR_CHUNKS, radio / 8));
         if (espiral == null || nivelJugador != nivel || espiral.radio() != radio
-                || Math.max(Math.abs(jugadorX - centroX), Math.abs(jugadorZ - centroZ)) > RECENTRAR_CHUNKS) {
+                || Math.max(Math.abs(jugadorX - centroX), Math.abs(jugadorZ - centroZ)) > recentrar) {
             if (nivelJugador != nivel) {
                 soltarTodo();
             }

@@ -62,6 +62,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue pregenerar;
         public final ModConfigSpec.BooleanValue generacionAproximada;
         public final ModConfigSpec.IntValue radioPregeneracion;
+        public final ModConfigSpec.IntValue anilloReal;
         public final ModConfigSpec.BooleanValue texturasLod;
         public final ModConfigSpec.BooleanValue descartarCuevas;
         public final ModConfigSpec.BooleanValue oclusionAmbiental;
@@ -121,6 +122,11 @@ public final class ConfigLod {
             radioPregeneracion = b.comment("Radio de la pregeneración, en chunks. 256 ≈ 200 mil chunks (del orden de",
                             "1-2 GB y decenas de minutos); 2048 ≈ 13 millones (cientos de GB, días).")
                     .defineInRange("radioPregeneracion", 256, 16, ParametrosCalidad.RADIO_MAX);
+            anilloReal = b.comment("Anillo real: chunks vanilla generados (no aproximados) hasta esta cantidad de chunks",
+                            "más allá de la distancia de render, siguiendo al jugador. Lo primero que se ve del LOD",
+                            "queda con árboles y el terreno de verdad, como en Voxy. Usa CPU al moverse y los chunks",
+                            "quedan guardados en el mundo. 0 = apagado. Solo singleplayer por ahora.")
+                    .defineInRange("anilloReal", 16, 0, 64);
             ocultarTapado = b.comment("No armar ni dibujar el LOD escondido detrás de montañas (oclusión por relieve).")
                     .define("ocultarTapado", true);
             texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
