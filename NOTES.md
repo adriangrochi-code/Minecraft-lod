@@ -362,40 +362,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   (incluye `test`) pasa contra NeoForge 21.1.252 (última 21.1.x publicada en
   maven.neoforged.net a esa fecha).
 
-## Tierra real (rama `claude/tierra-real`)
+## Tierra real
 
-- Diseño y resultados: `docs/tierra-real/` (hitos y medidas en `06-hitos.md`),
-  sección 37 de la arquitectura. Hechos H0–H10.
-- Datos: `.minecraft/minecraftlodmod/tierra/tierra.lodt` (formato v2, con
-  agua), preparado como dice `docs/tierra-real/02-datos.md` (ETOPO 30″ +
-  Köppen + Natural Earth; 672 MB, ~5 min, `-Xmx10g`). Sin el archivo, el mundo
-  sale como fondo de mar plano y el log lo dice.
-- Comandos de prueba: `/tierra ir <lat> <lon>`, `/tierra medir <lat> <lon>`.
-- Pendiente de Pista B: ver el mundo en el cliente (pantalla de crear mundo
-  con los 4 tipos, horizonte del LOD sobre Tierra real). En Xvfb (render por
-  software) el mundo carga y se juega, el horizonte aproximado se genera con
-  el atajo (0 evaluaciones de densidad), pero **no se ve terreno lejano** en
-  las capturas desde la cumbre del Cervino: ¿Mesa o la curvatura de 796 km?
-  Probar en la PC con `/tierra ir 45.9763 7.6586` y mirar al sur.
-- Pendiente de Pista B (H7): ver el borde de la Tierra plana en la PC
-  (`/tp 0 1300 2503900` en un mundo "Tierra plana 1:8"): las grietas, las
-  paredes de las farlands congeladas, el bioma (nieve, cielo frío) y la
-  precisión del render a 2,5 M bloques (titileo de vértices, nubes).
-- Pendiente de Pista B (H10): dar la vuelta al mundo en la PC. Probado en
-  Xvfb con carrito y a pie (`docs/tierra-real/06-hitos.md`); falta: cruzar
-  **en bote o a caballo** (el cliente maneja el vehículo: va por
-  `ClientboundMoveVehiclePacket`, sin probar porque en Xvfb no hay teclado),
-  **con élitros** (llegada antes de que se carguen los chunks: el salto
-  espera), y ver el horizonte del LOD a través del antimeridiano. Se cruza en
-  x = ±2 501 888 (1:8), p. ej. `/tp 2501700 120 -916078` (Chukotka).
-  Medir también el parpadeo al cruzar a pie: en Xvfb ~0,7-1 s de cielo, todo
-  del lado del cliente (`06-hitos.md`); con placa de video y `cubico/`
-  (columnas recortadas) debería ser bastante menos. Sacarlo del todo pediría
-  correr en el cliente el terreno ya armado una vuelta (chunks y secciones
-  del render, con VulkanMod): no se hizo.
-- Pendiente de Pista B: ver los polos de la cilíndrica (`/tp 1000 120
-  -1250700`: frente y barrera de hielo del polo norte, grietas y farlands
-  más allá; el sur en z +1 250 944).
+Es el mod aparte **Farlands** (repo `Farlands-lod`): pendientes en su
+`NOTES.md`, diseño en su `docs/tierra-real/`. Acá quedan los ganchos del LOD
+que usa (sección 37 de la arquitectura) y los pedidos de arriba.
 
 ## Mejoras notadas, no aplicadas todavía
 

@@ -23,10 +23,6 @@ config = "minecraftlodmod-vulkan.mixins.json"
 [[mixins]]
 config = "minecraftlodmod-cubico.mixins.json"
 
-# Tierra real (tierra/): agua en vez de lava bajo y -54, solo en ese tipo de mundo.
-[[mixins]]
-config = "minecraftlodmod-tierra.mixins.json"
-
 [[accessTransformers]]
 file = "META-INF/accesstransformer.cfg"
 

@@ -1119,68 +1119,22 @@ con C2ME. Memoria: el heap en vuelo es sobre todo la cache del LOD (`byte[]`)
 y los chunks retenidos a propósito (`long[]`); compartir contenedores de un
 solo valor por defecto se descartó (≤ 65 MB, error si otro mod escribe directo).
 
-## 37. Tipo de mundo "Tierra real" — 2026-10-01
+## 37. Ganchos para tipos de mundo (mod Farlands, "Tierra real") — 2026-10-02
 
-Pedido: un tipo de mundo aparte (nunca por defecto) con la Tierra real a
-escala 1:8 (1:6 opcional), en variante cilíndrica y "tierra plana" con
-farlands congeladas en el borde, integrado con el LOD y con `cubico/`. El
-diseño completo y los hitos están en `docs/tierra-real/` (H0 a H10); acá van
-las decisiones que fijan el código.
+Tierra real (la Tierra a escala 1:8 y 1:6, cilíndrica y plana) es un mod
+aparte, **Farlands** (repo `Farlands-lod`, mod id `farlands`, numeración
+propia; diseño y decisiones en su `docs/tierra-real/`). El LOD no lo conoce:
+expone ganchos genéricos que cualquier tipo de mundo puede usar.
 
-- **Generador:** el `NoiseBasedChunkGenerator` de vanilla con
-  `noise_settings` propios y una función de densidad propia
-  (`tierra_superficie`; la densidad `superficie - y` se arma en el JSON), no un `ChunkGenerator` nuevo: cuevas,
-  acuíferos, menas, estructuras, `cubico/` y `GeneradorAproximado` siguen
-  andando sin tocarlos. `initial_density_without_jaggedness` es la misma
-  densidad, así que la superficie estimada es exacta.
-- **Datos:** ETOPO 2022 30″ (superficie del hielo), preprocesado una vez a
-  `.lodt` (teselas de 256×256: elevación int16 con diferencia por fila +
-  bioma uint8, Deflate, índice al principio; caché LRU con tope de bytes).
-  Clima y cobertura del suelo para biomas en H4. Verificación de licencias y
-  tamaños en `docs/tierra-real/02-datos.md`.
-- **Superficie:** `tierra/AlturaTierra` es la única fuente de verdad
-  (generador y LOD): y = 63 + elevación × exageración / metros por bloque,
-  bicúbica Catmull-Rom recortada al rango de los datos. 0,14 µs por columna
-  con la tesela en caché (presupuesto 0,5 µs; el resto es para el detalle
-  de H8).
-- **Piso y techo:** el fondo de la fosa más honda de los datos (Marianas,
-  abismo Sirena, -10 775 m en la grilla de 30″) apoya en el lecho de roca:
-  `min_y` es el múltiplo de 16 en o bajo ese bloque y el lecho de roca es
-  macizo hasta él. 1:8: `min_y` -1296, height 2672; 1:6: -1744, 3488. Entra en el límite de
-  vanilla (4064): no hace falta formato de guardado propio.
-- **Biomas** (H4): fuente `minecraftlodmod:tierra` (`FuenteBiomasTierra`)
-  desde el clima de Köppen (Beck et al. 2023, 1 km, guardado en el byte de
-  bioma del `.lodt`), la elevación y la latitud (`ClasificadorBiomas`); la
-  tabla clave → bioma va en el `world_preset`. Reglas de superficie de
-  vanilla, salvo el lecho de roca (macizo hasta la fosa) y la pizarra
-  profunda (a más de 64 bloques bajo la superficie, no por y). El fluido
-  global es agua solo bajo el mar; bajo tierra firme, aire.
-- **Detalle y agua** (H8): ruido fractal con amplitud según la pendiente de
-  la bicúbica (`DetalleTierra`); agua por masas (`AguaContinental`: océano,
-  lagos con su nivel, depresiones secas) desde Köppen + Natural Earth,
-  guardada en el `.lodt` v2 y usada por el selector de fluido por columna.
-- **Cuevas y menas** (H9): cuevas propias por profundidad bajo el suelo
-  (`tierra_cuevas`), lava a más de 160 bloques en tierra firme; las alturas
-  de `height_range` (menas, geodas) se miden desde la superficie de la
-  columna (mixin, solo en Tierra real).
-- **Vuelta al mundo** (H10): la cilíndrica es periódica en x con la vuelta
-  al ecuador redondeada a múltiplo de 16 (`Costura`; 5 003 776 a 1:8);
-  `AlturaTierra` envuelve x y los ruidos propios se mezclan en 512 bloques
-  antes de la costura. `CosturaTierra` lleva a jugador, vehículo y entidades
-  una vuelta atrás con teletransporte relativo pasando ±C/2 + 32, con
-  precarga del otro lado y espera de la llegada cargada (NeoForge carga
-  síncrono el chunk de destino al mover una entidad).
-- **Polos de la cilíndrica:** `tierra_borde` con `proyeccion` cilíndrica:
-  farlands congeladas pasando |z| = C/4 y barrera de hielo de 128 bloques
-  antes del polo norte (el mar Ártico). Sin borde del mundo de vanilla.
-- **Proyecciones** (`tierra/Proyeccion`): equirectangular (norte -z, este
-  +x) y azimutal equidistante centrada en el polo norte (el polo sur, el
-  borde del disco, a ~2,5 M bloques a 1:8).
-- **Riesgos que el diseño ya contempla:** fluido global de vanilla (lava
-  bajo y -54: océanos de lava) → agua en toda la altura (H3); pizarra
-  profunda y menas atadas a `y` absoluto → por profundidad bajo la
-  superficie (H4, H9); horizonte curvo corto con R = 796 km (H5);
-  estiramiento ×17 de la Antártida en la tierra plana (H8).
-- **Paquete `tierra/`** (autorizado para esto): H1 y H2 son lógica pura con
-  tests (`GeoTiff`, `FormatoLodt`, `EscritorLodt`, `LectorLodt`,
-  `PreparadorDatos`, `Proyeccion*`, `FuenteTierra`, `AlturaTierra`).
+- `generation/FuenteAltura`: la altura de la superficie, si es simple y el
+  nivel del agua por columna. `GeneradorAproximado.altura()` la usa en vez de
+  buscar la superficie en la densidad (0 evaluaciones de densidad en Tierra
+  real); `cubico/GeneracionVertical.superficieExacta` la usa para la franja
+  (esquinas 5×5, `simple`, nivel del agua). `-Dminecraftlodmod.sinAtajoAltura`
+  la apaga para medir.
+- `config/ConfigLod.cubicoPorDefecto`: un tipo de mundo prende por defecto las
+  opciones de `cubico/` en sus niveles (`ConfigLod.cubico(nivel, opcion)`).
+- `generation/PlanetaMundo`: radio del planeta en bloques y relieve lejano
+  para la curvatura y el horizonte real (`RenderLod.radioPlanetaActivo`, solo
+  con la opción de curvatura prendida).
+- `core/HorizonteCurvo.radioChunks` con relieve como parámetro.

@@ -789,7 +789,7 @@ public final class RenderLod {
             // Horizonte real: hasta dónde se ve la superficie curva desde los ojos, en vez del radio del
             // preset; el auto-ajuste lo sigue recortando en la misma proporción que al del preset.
             int horizonte = HorizonteCurvo.radioChunks(camara.y - mc.level.getSeaLevel(), radioPlanetaActivo(),
-                    com.example.minecraftlodmod.tierra.TierraReal.relieveHorizonte(mc.level),
+                    relieveHorizonte(mc.level),
                     distanciaVanillaChunks + 2, ParametrosCalidad.RADIO_MAX);
             radioChunks = (int) Math.round(horizonte * (double) radioChunks / Math.max(1, c.radioLodChunks()));
             GeneradorLocal.radioHorizonteCliente = horizonte;
@@ -1473,13 +1473,20 @@ public final class RenderLod {
     /**
      * Radio de la curvatura en uso, en bloques (0 = sin curvatura). Solo con la
      * opción prendida (por pedido del usuario, Tierra real no la fuerza: horizonte
-     * plano para depurar); en un mundo Tierra real el radio es el del planeta a
-     * su escala ({@code docs/tierra-real/04-integracion-lod.md}).
+     * plano para depurar); en un tipo de mundo planeta (Tierra real, del mod
+     * Farlands) el radio es el del planeta a su escala ({@link
+     * com.example.minecraftlodmod.generation.PlanetaMundo}).
      */
     static double radioPlanetaActivo() {
         if (!ConfigLod.CLIENTE.curvatura.get()) return 0;
-        double tierra = com.example.minecraftlodmod.tierra.TierraReal.radioPlaneta(Minecraft.getInstance().level);
-        return tierra > 0 ? tierra : radioCurvatura();
+        var planeta = com.example.minecraftlodmod.generation.PlanetaMundo.de(Minecraft.getInstance().level);
+        return planeta != null ? planeta.radioBloques(Minecraft.getInstance().level) : radioCurvatura();
+    }
+
+    /** Relieve lejano del horizonte real: el del tipo de mundo planeta, o {@link HorizonteCurvo#RELIEVE}. */
+    private static double relieveHorizonte(net.minecraft.world.level.Level nivel) {
+        var planeta = com.example.minecraftlodmod.generation.PlanetaMundo.de(nivel);
+        return planeta != null ? planeta.relieveHorizonte(nivel) : HorizonteCurvo.RELIEVE;
     }
 
     /** Far de la proyección de vanilla que necesita el LOD con shaderpack (0 = no tocarlo). */
