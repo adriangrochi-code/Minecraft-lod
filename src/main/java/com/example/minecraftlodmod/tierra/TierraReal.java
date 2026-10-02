@@ -268,7 +268,7 @@ public final class TierraReal {
         return null;
     }
 
-    private static AlturaTierra alturaDe(ServerLevel nivel) {
+    static AlturaTierra alturaDe(ServerLevel nivel) {
         if (nivel.getChunkSource().getGenerator() instanceof NoiseBasedChunkGenerator g) {
             SuperficieTierra s = SuperficieTierra.de(g.generatorSettings().value());
             if (s != null) return s.altura();

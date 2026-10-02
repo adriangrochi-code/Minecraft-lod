@@ -29,6 +29,14 @@ public interface Proyeccion {
         return 2 * Math.PI * RADIO_TIERRA_M / metrosPorBloque() / 360.0;
     }
 
+    /**
+     * Período en x del mundo (la vuelta al ecuador, {@link Costura}), o 0 si
+     * no es periódico (la Tierra plana).
+     */
+    default double periodoX() {
+        return 0;
+    }
+
     /** Lleva una longitud a [-180, 180). */
     static double normalizarLongitud(double lon) {
         double l = (lon + 180.0) % 360.0;

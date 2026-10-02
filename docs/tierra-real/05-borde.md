@@ -61,3 +61,35 @@
     envuelto** (el horizonte se ve continuo aunque los chunks reales no);
   - entidades y vehículos (botes, caballos, minecarts) cruzan con el jugador.
   - Riesgo: es el hito más difícil; se hace último.
+
+**Implementado en H10 (2026-10-02):**
+- **Mundo periódico en x** (`tierra/Costura`): la vuelta al ecuador C se
+  redondea a múltiplo de 16 (5 003 776 bloques a 1:8, 6 671 712 a 1:6; k =
+  C/360) y `AlturaTierra` envuelve x a [-C/2, C/2) antes de consultar: el
+  terreno en x y en x ± C es el mismo bloque a bloque (también agua, clima y
+  biomas). Pasando el antimeridiano se genera la continuación, idéntica.
+- **Ruidos propios** (detalle de `DetalleTierra`, cuevas de `CuevasTierra`):
+  en los 512 bloques antes de +C/2 se mezclan con su valor una vuelta antes
+  (peso con curva suave), así en +C/2 valen lo mismo que en -C/2, sin escalón.
+  Las cuevas reciben C por el JSON (`periodo_x` de `tierra_cuevas`; un test
+  compara con `Costura.circunferencia`). Lo de vanilla (menas, árboles,
+  estructuras, ruido de las reglas de superficie) no es periódico: del otro
+  lado de la costura cambia, como entre dos chunks cualquiera.
+- **El salto** (`tierra/CosturaTierra`): pasando la costura por más de 32
+  bloques, el jugador va una vuelta atrás con teletransporte **relativo**
+  (conserva velocidad, mirada y vuelo), sin pantalla de carga; su vehículo y
+  los demás pasajeros, y los animales con rienda, con él. Al cliente se le
+  manda el vehículo de nuevo en la posición nueva (si no, quedaba quieto en
+  un chunk que el cliente ya descargó y el jugador veía solo cielo). Otras
+  entidades (mobs, ítems, botes vacíos) cruzan solas si el chunk de llegada
+  está cargado. Los 32 bloques de margen evitan el rebote.
+- **Precarga y espera:** desde 1 024 bloques (más la distancia de vista)
+  antes de la costura, un ticket carga los chunks del otro lado alrededor de
+  donde va a aparecer el jugador. El salto espera a que los 3×3 chunks de
+  llegada estén cargados: NeoForge carga el chunk de destino de forma
+  síncrona al mover una entidad (`Entity#setPosRaw`) y, si se estaba
+  generando, trababa el servidor decenas de segundos. Mientras espera, el
+  jugador sigue en la continuación, que es el mismo terreno.
+- **LOD:** `FuenteAltura` usa `AlturaTierra`, que ya es periódica: el
+  horizonte aproximado se dibuja a través de la costura sin nada especial.
+- **Polos:** siguen sin borde en la cilíndrica (z > C/4); queda para después.

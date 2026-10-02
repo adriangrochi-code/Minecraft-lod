@@ -55,6 +55,7 @@
       "type": "minecraft:interpolated",
       "argument": {
         "type": "minecraftlodmod:tierra_cuevas",
+          "periodo_x": 5003776,
         "argument": {
           "type": "minecraft:add",
           "argument1": {

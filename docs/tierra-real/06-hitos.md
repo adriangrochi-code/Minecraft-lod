@@ -190,3 +190,29 @@ la cifra famosa.)
   - Los carvers de vanilla (cuevas y cañones) siguen con y absoluto (-56 a
     180): suman cuevas en esa banda; no se tocaron.
   - Vetas grandes (`ore_veins`) y acuíferos siguen apagados.
+- **H10 (2026-10-02):** circunnavegación este-oeste (`tierra/Costura`,
+  `tierra/CosturaTierra`; detalle en `05-borde.md`). Servidor dedicado
+  "Tierra real 1:8" + cliente en Xvfb conectado; costura en x = ±2 501 888,
+  probada en Chukotka (66° N, z -916 078):
+  - Superficie a los dos lados: misma altura columna por columna (y 91) de
+    x = C/2 - 6 a C/2 + 6 y en las copias una vuelta antes; cambian menas,
+    vetas y la capa de tierra (features y ruido de vanilla, por chunk).
+  - Entidades: un chancho sin IA y un soporte de armadura invocados 40
+    bloques pasada la costura aparecen en x - C (-2 501 847,5) al tick
+    siguiente.
+  - Jugador en carrito sobre rieles impulsores (8 bloques/s): cruza de
+    2 501 905 a -2 501 851 sin bajarse, con el carrito; el cliente ve el
+    terreno del otro lado. Primera versión: el carrito quedaba en un chunk que
+    el cliente ya había descargado y el jugador veía solo cielo; se arregló
+    mandándole el vehículo de nuevo.
+  - A pie: ~1 s de cielo mientras llegan los chunks del otro lado (render por
+    software), después el terreno.
+  - Trabas: la primera prueba trabó el servidor 23 s al cruzar (el chunk de
+    llegada todavía se generaba y NeoForge lo carga síncrono al mover al
+    jugador); con la espera de la llegada cargada, **ninguna** ("Can't keep
+    up" no aparece al cruzar). Aparte, con la franja vertical prendida
+    `cubico/CompletadoVertical` traba el servidor 30-40 s al llegar a zonas
+    nuevas (pedido en `NOTES.md`); H10 se probó con
+    `-Dminecraftlodmod.tierraSinCubico=true`.
+  - Sin probar (Pista B, en `NOTES.md`): bote y caballo (vehículos que maneja
+    el cliente), élitros, horizonte del LOD a través de la costura.

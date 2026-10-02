@@ -34,11 +34,25 @@ public final class DetalleTierra {
      * @param rango     rugosidad: lo que sube la bicúbica en ~3 muestras, en metros
      */
     public static double conDetalle(double x, double z, double elevacion, double rango) {
+        return conDetalle(x, z, elevacion, rango, 0);
+    }
+
+    /** Franja antes de la costura en la que el ruido se mezcla con el de una vuelta antes ({@link Costura}). */
+    static final double ANCHO_COSTURA = 512;
+
+    /**
+     * Como {@link #conDetalle(double, double, double, double)}, periódico en x
+     * con período {@code periodoX} (0 = no periódico; x ya envuelto a [-C/2, C/2)).
+     */
+    public static double conDetalle(double x, double z, double elevacion, double rango, double periodoX) {
         double amplitud = Math.min(AMPLITUD_MAXIMA_M, FRACCION_RANGO * rango);
         double t = Math.min(1, Math.abs(elevacion) / COSTA_M);
         amplitud *= t * t * (3 - 2 * t);
         if (amplitud < 0.5) return elevacion;
-        double r = elevacion + amplitud * crestas(x / ONDA_MAYOR, z / ONDA_MAYOR);
+        double ruido = crestas(x / ONDA_MAYOR, z / ONDA_MAYOR);
+        double w = Costura.peso(x, periodoX, ANCHO_COSTURA);
+        if (w > 0) ruido += (crestas((x - periodoX) / ONDA_MAYOR, z / ONDA_MAYOR) - ruido) * w;
+        double r = elevacion + amplitud * ruido;
         // Nunca cambia de lado del nivel del mar.
         return elevacion > 0 ? Math.max(r, elevacion * 0.25) : Math.min(r, elevacion * 0.25);
     }

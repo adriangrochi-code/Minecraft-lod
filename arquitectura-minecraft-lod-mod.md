@@ -1098,6 +1098,13 @@ las decisiones que fijan el código.
   (`tierra_cuevas`), lava a más de 160 bloques en tierra firme; las alturas
   de `height_range` (menas, geodas) se miden desde la superficie de la
   columna (mixin, solo en Tierra real).
+- **Vuelta al mundo** (H10): la cilíndrica es periódica en x con la vuelta
+  al ecuador redondeada a múltiplo de 16 (`Costura`; 5 003 776 a 1:8);
+  `AlturaTierra` envuelve x y los ruidos propios se mezclan en 512 bloques
+  antes de la costura. `CosturaTierra` lleva a jugador, vehículo y entidades
+  una vuelta atrás con teletransporte relativo pasando ±C/2 + 32, con
+  precarga del otro lado y espera de la llegada cargada (NeoForge carga
+  síncrono el chunk de destino al mover una entidad).
 - **Proyecciones** (`tierra/Proyeccion`): equirectangular (norte -z, este
   +x) y azimutal equidistante centrada en el polo norte (el polo sur, el
   borde del disco, a ~2,5 M bloques a 1:8).

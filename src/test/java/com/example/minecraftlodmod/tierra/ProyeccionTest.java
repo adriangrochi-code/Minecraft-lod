@@ -9,10 +9,10 @@ class ProyeccionTest {
     @Test
     void circunferenciaYRadioDelDiscoA1en8() {
         ProyeccionCilindrica cil = new ProyeccionCilindrica(8);
-        assertEquals(5_003_778, cil.bloquesPorGrado() * 360, 1); // ~5,0 M bloques (01-decisiones.md)
+        assertEquals(5_003_776, cil.bloquesPorGrado() * 360, 1e-6); // ~5,0 M bloques, múltiplo de 16 (H10)
         ProyeccionAzimutal azi = new ProyeccionAzimutal(8);
         assertEquals(2_501_889, azi.radioDisco(), 1);
-        assertEquals(6_671_704, new ProyeccionCilindrica(6).bloquesPorGrado() * 360, 1);
+        assertEquals(6_671_712, new ProyeccionCilindrica(6).bloquesPorGrado() * 360, 1e-6);
     }
 
     @Test

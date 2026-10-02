@@ -33,8 +33,20 @@ public final class CuevasTierra {
      * @param base densidad de la superficie, {@code superficie - y}: es la profundidad bajo el suelo
      */
     public static double densidad(double x, double y, double z, double base) {
+        return densidad(x, y, z, base, 0);
+    }
+
+    /** Franja antes de la costura en la que se mezcla con las cuevas de una vuelta antes ({@link Costura}). */
+    static final double ANCHO_COSTURA = 512;
+
+    /** Como {@link #densidad(double, double, double, double)}, periódica en x con período {@code periodoX} (0 = no). */
+    public static double densidad(double x, double y, double z, double base, double periodoX) {
         if (base <= 0 || base > PROFUNDIDAD_MAXIMA + 40) return base; // aire, o muy hondo: nada que calcular
-        return Math.min(base, cuevas(x, y, z, base));
+        x = Costura.envolver(x, periodoX);
+        double d = cuevas(x, y, z, base);
+        double w = Costura.peso(x, periodoX, ANCHO_COSTURA);
+        if (w > 0) d += (cuevas(x - periodoX, y, z, base) - d) * w;
+        return Math.min(base, d);
     }
 
     /** Densidad de las cuevas solas a esa profundidad (positiva = roca). */

@@ -20,6 +20,9 @@ package com.example.minecraftlodmod.tierra;
  * la grilla está en la fosa de las Marianas (abismo Sirena, -10 775 m en
  * 11,971° N, 144,371° E; el Challenger Deep queda más arriba porque la grilla
  * promedia ~1 km).
+ *
+ * En la cilíndrica todo es periódico en x con la vuelta al ecuador
+ * ({@link Costura}, H10): x se envuelve antes de consultar.
  */
 public final class AlturaTierra {
 
@@ -32,6 +35,8 @@ public final class AlturaTierra {
     private final double factor;
     private final double elevMinima, elevMaxima;
     private final boolean detalle;
+    /** Período en x (vuelta al ecuador en la cilíndrica, H10), 0 si no hay. */
+    private final double periodoX;
     private final ThreadLocal<double[]> rango = ThreadLocal.withInitial(() -> new double[1]);
 
     public AlturaTierra(FuenteTierra fuente, Proyeccion proyeccion, double exageracionVertical) {
@@ -44,9 +49,15 @@ public final class AlturaTierra {
         this.detalle = detalle;
         this.fuente = fuente;
         this.proyeccion = proyeccion;
+        this.periodoX = proyeccion.periodoX();
         this.factor = exageracionVertical / proyeccion.metrosPorBloque();
         this.elevMinima = fuente.cabecera().elevMinima();
         this.elevMaxima = fuente.cabecera().elevMaxima();
+    }
+
+    /** Período en x del mundo (la vuelta al ecuador), 0 si no es periódico ({@link Costura}). */
+    public double periodoX() {
+        return periodoX;
     }
 
     public Proyeccion proyeccion() {
@@ -55,11 +66,12 @@ public final class AlturaTierra {
 
     /** Elevación en metros bajo el punto (x, z) del mundo, dentro del rango de los datos. */
     public double elevacionMetros(double x, double z) {
+        x = Costura.envolver(x, periodoX);
         double lat = proyeccion.latitud(x, z), lon = Proyeccion.normalizarLongitud(proyeccion.longitud(x, z));
         double e;
         if (detalle) {
             double[] r = rango.get();
-            e = DetalleTierra.conDetalle(x, z, fuente.elevacion(lat, lon, r), r[0]);
+            e = DetalleTierra.conDetalle(x, z, fuente.elevacion(lat, lon, r), r[0], periodoX);
         } else {
             e = fuente.elevacion(lat, lon);
         }
@@ -74,11 +86,12 @@ public final class AlturaTierra {
     }
 
     public double latitud(double x, double z) {
-        return proyeccion.latitud(x, z);
+        return proyeccion.latitud(Costura.envolver(x, periodoX), z);
     }
 
     /** Clase de clima (Köppen 1..30, 0 = sin dato/mar) de la muestra más cercana a (x, z). */
     public int claseClima(double x, double z) {
+        x = Costura.envolver(x, periodoX);
         return fuente.claseBioma(proyeccion.latitud(x, z), Proyeccion.normalizarLongitud(proyeccion.longitud(x, z)));
     }
 
@@ -89,6 +102,7 @@ public final class AlturaTierra {
      * ({@link AguaContinental}).
      */
     public int nivelAguaY(double x, double z) {
+        x = Costura.envolver(x, periodoX);
         int n = fuente.nivelAgua(proyeccion.latitud(x, z), Proyeccion.normalizarLongitud(proyeccion.longitud(x, z)));
         if (n == AguaContinental.SECO) return Integer.MIN_VALUE;
         return (int) Math.ceil(NIVEL_MAR + n * factor);

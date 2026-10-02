@@ -336,6 +336,22 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   `run/crash-reports/crash-2026-10-01_20.54.36-server.txt` en esa máquina.
   Mientras tanto Tierra real no la prende por defecto.
 
+- **`CompletadoVertical` traba el hilo del servidor (2026-10-02, medido en
+  H10):** con un jugador conectado en Tierra real (franja vertical prendida),
+  al llegar a una zona nueva el servidor quedó 30-40 s sin responder y el
+  cliente se desconectó por "Timed out". Pilas del hilo del servidor (muestreo
+  cada 3 s, todas iguales): `CompletadoVertical.tick:182` → `mezclar:294` →
+  `DecoracionVertical.decorar:140` (`feature.placeWithBiomeCheck(nivel, …)`)
+  → `ServerChunkCache.getChunk` → `managedBlock`: las features escriben en los
+  chunks vecinos a través del `ServerLevel` y cada vecino que no está cargado
+  se carga **o genera** de forma síncrona en el hilo del servidor (en Tierra,
+  columnas de 2 672 de alto). El tope de tiempo por tick de `mezclar` no lo
+  frena porque la espera está adentro de una sola feature. Propuesta: no
+  mezclar una columna hasta que sus 8 vecinos estén cargados
+  (`ServerChunkCache.hasChunk`), o decorar con un `WorldGenRegion` acotado a
+  los chunks cargados, y si falta un vecino dejar la banda en la cola. Para
+  probar H10 se usó `-Dminecraftlodmod.tierraSinCubico=true`.
+
 - ~~El repo no compila desde GitHub~~ (`.gitignore` con `build/` ignoraba
   `vulkanmod/render/chunk/build/`). **Resuelto 2026-10-01:** la sesión del LOD
   ancló las rutas y subió la carpeta; `claude/tierra-real` lo juntó y
@@ -366,6 +382,13 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   (`/tp 0 1300 2503900` en un mundo "Tierra plana 1:8"): las grietas, las
   paredes de las farlands congeladas, el bioma (nieve, cielo frío) y la
   precisión del render a 2,5 M bloques (titileo de vértices, nubes).
+- Pendiente de Pista B (H10): dar la vuelta al mundo en la PC. Probado en
+  Xvfb con carrito y a pie (`docs/tierra-real/06-hitos.md`); falta: cruzar
+  **en bote o a caballo** (el cliente maneja el vehículo: va por
+  `ClientboundMoveVehiclePacket`, sin probar porque en Xvfb no hay teclado),
+  **con élitros** (llegada antes de que se carguen los chunks: el salto
+  espera), y ver el horizonte del LOD a través del antimeridiano. Se cruza en
+  x = ±2 501 888 (1:8), p. ej. `/tp 2501700 120 -916078` (Chukotka).
 
 ## Mejoras notadas, no aplicadas todavía
 
