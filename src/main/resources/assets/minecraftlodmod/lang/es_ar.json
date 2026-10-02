@@ -202,5 +202,9 @@
   "minecraftlodmod.configuration.msCargaChunks.tooltip": "Milisegundos de cada tick (de 50) que el juego dedica a recibir chunks del servidor; el servidor manda tantos como entran. Vanilla usa 7: con más, los chunks aparecen antes al moverse o entrar al mundo, a cambio de algo más de trabajo mientras llegan. Sirve también en servidores.",
   "minecraftlodmod.configuration.anilloReal": "Anillo real",
   "minecraftlodmod.configuration.anilloReal.tooltip": "Genera chunks de verdad (no aproximados) hasta esta cantidad de chunks más allá de tu distancia de render, siguiéndote al moverte. Lo primero que ves del LOD después del terreno normal queda con árboles y el relieve real, como en Voxy; más lejos sigue el horizonte aproximado. Usa algo de CPU al moverte y los chunks quedan guardados en el mundo (16 chunks son unos pocos MB). 0 = apagado.",
-  "minecraftlodmod.configuration.anilloReal.apagado": "Apagado"
+  "minecraftlodmod.configuration.anilloReal.apagado": "Apagado",
+  "minecraftlodmod.configuration.chunksEnRam": "Chunks en RAM",
+  "minecraftlodmod.configuration.chunksEnRam.tooltip": "Mantiene cargados en memoria los chunks hasta esta cantidad más allá de tu distancia de render (sin animarlos ni mandarlos a la pantalla). Al caminar, lo que entra a la vista ya está listo y aparece enseguida; lo que dejás atrás queda en memoria hasta el límite de abajo, así volver es inmediato. Usa RAM, casi nada de CPU. 0 = apagado.",
+  "minecraftlodmod.configuration.ramChunksMb": "RAM para chunks retenidos",
+  "minecraftlodmod.configuration.ramChunksMb.tooltip": "Memoria para los chunks que quedan cargados detrás tuyo. Al pasarla se liberan los que hace más tiempo que no ves. Dejá margen: no subas esto por encima de un tercio de la RAM asignada a Minecraft."
 }

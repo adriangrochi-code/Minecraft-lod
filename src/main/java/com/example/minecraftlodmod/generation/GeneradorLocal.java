@@ -94,6 +94,7 @@ public final class GeneradorLocal {
 
     private final LinkedHashSet<Pendiente> pendientes = new LinkedHashSet<>();
     private final PregeneradorChunks pregenerador = new PregeneradorChunks(this);
+    private final ChunksEnRam chunksEnRam = new ChunksEnRam();
     private final GeneradorAproximado aproximado = new GeneradorAproximado(this);
 
     /** Cada cuántos ticks se reconstruyen los niveles grandes de lo recién generado (5 s). */
@@ -350,9 +351,11 @@ public final class GeneradorLocal {
             int radioAnillo = anillo > 0 ? servidor.getPlayerList().getViewDistance() + anillo : 0;
             int radio = pregenerar ? Math.max(ConfigLod.CLIENTE.radioPregeneracion.get(), radioAnillo) : radioAnillo;
             pregenerador.tick(servidor, pregenerar || anillo > 0, radio);
+            chunksEnRam.tick(servidor, ConfigLod.CLIENTE.chunksEnRam.get(), ConfigLod.CLIENTE.ramChunksMb.get());
         } catch (RuntimeException e) {
             pregeneradorRoto = true;
             pregenerador.soltarTodo();
+            chunksEnRam.soltarTodo();
             LOG.error("LOD: la pregeneración falló y se apaga hasta reiniciar el mundo", e);
         }
     }
