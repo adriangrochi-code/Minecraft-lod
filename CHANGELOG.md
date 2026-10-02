@@ -6,6 +6,18 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.10 — Sin huecos cerca al volar alto
+- **Arreglo:** volando alto (o con la sincronización vertical), el suelo
+  cercano desaparecía y quedaban huecos con el cielo, paredes de piedra y
+  copas de árboles flotando. Vanilla (y Sodium) no dibujan las secciones que
+  están a más de *distancia de render × 16* bloques en vertical de la
+  cámara, pero el LOD daba por hecho que vanilla dibujaba la columna entera
+  y no la dibujaba él. Ahora, cuando la superficie de una columna queda
+  fuera de esa franja, el LOD la dibuja (a nivel del suelo nada cambia: no
+  se rearman celdas al caminar por colinas).
+- El error `jdk.attach module not found` del log con Vulkan no es una caída:
+  es el aviso de que el Java de Modrinth no trae ese módulo, y el juego sigue.
+
 ## 0.26.9 — Contrato Voxy: agua translúcida y materiales del pack
 - Con la opción "Contrato Voxy" y un shaderpack que la soporta
   (Complementary r5.9), el agua lejana ya no es un plano azul opaco: se

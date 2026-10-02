@@ -47,6 +47,15 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   - en multiplayer el LOD vertical necesita los datos LOD en el cliente
     (hoy solo singleplayer, como el resto del LOD por red).
 
+- **Catalejo con Vulkan (0.26.10, sin resolver):** en Xvfb con lavapipe, al
+  hacer zoom con el LOD texturizado apareció una vez geometría magenta con
+  rayas (textura faltante estirada) en el cielo; en la siguiente prueba
+  igual, no. Sin LOD o con colores planos no pasa. Pedirle al usuario el log
+  completo (`logs/latest.log` o `crash-reports/`) del cierre con el catalejo:
+  lo que pegó es solo el aviso de `jdk.attach`, que no corta nada. En su PC
+  el depthFix falla (sin `jdk.attach`), acá funciona: probar con
+  `-Dminecraftlodmod.sinDepthFix=true`.
+
 - **Shaders de Voxy, etapa B (0.26.8, opción experimental `contratoVoxy`):**
   el LOD se dibuja con `voxy_opaque` del pack (`render/DibujoVoxy`), `VOXY`
   definido para todo el pack, `vx*` y `vxDepthTex*` en Iris. Verificado en

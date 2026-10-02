@@ -785,6 +785,9 @@ public final class RenderLod {
         Map<Long, RangoSecciones> parciales = new HashMap<>();
         Set<Long> consultados = new HashSet<>();
         long vanilla2 = (long) distanciaVanilla * distanciaVanilla;
+        RangoSecciones columnaEntera = new RangoSecciones(mc.level.getMinSection(), mc.level.getMaxSection() - 1);
+        RangoSecciones visibleVertical = RangoSecciones.verticalVisible((int) Math.floor(camara.y),
+                mc.options.getEffectiveRenderDistance());
         for (int dx = -distanciaVanilla; dx <= distanciaVanilla; dx++) {
             for (int dz = -distanciaVanilla; dz <= distanciaVanilla; dz++) {
                 if ((long) dx * dx + (long) dz * dz < vanilla2) {
@@ -794,10 +797,17 @@ public final class RenderLod {
                         // Con la sincronización vertical, vanilla tiene solo parte de la columna:
                         // el LOD dibuja el resto (LOD vertical, ver cubico/ClienteVertical).
                         RangoSecciones parcial = ClienteVertical.rango(chunkX + dx, chunkZ + dz);
-                        if (parcial == null) {
+                        // Y lejos en vertical (volando alto) vanilla no dibuja la superficie aunque
+                        // tenga la columna: el LOD dibuja lo que quedó fuera de su franja.
+                        RangoSecciones dibujado = recortarVertical(mc, chunkX + dx, chunkZ + dz,
+                                parcial != null ? parcial : columnaEntera, visibleVertical);
+                        if (dibujado == null) {
+                            continue; // vanilla no dibuja nada de la superficie: toda del LOD
+                        }
+                        if (dibujado.equals(columnaEntera)) {
                             deVanilla.add(claveChunk);
                         } else {
-                            parciales.put(claveChunk, parcial);
+                            parciales.put(claveChunk, dibujado);
                         }
                     }
                 }
@@ -1898,6 +1908,33 @@ public final class RenderLod {
         }
         return true;
     }
+
+    /**
+     * Parte de la columna que vanilla dibuja de verdad: {@code tiene} (lo que el cliente
+     * tiene cargado), recortado a {@code visible} ({@link RangoSecciones#verticalVisible})
+     * solo si la superficie queda afuera; si no, igual (así caminar por colinas no rearma
+     * las celdas). null = vanilla no dibuja la superficie de esta columna.
+     */
+    private static RangoSecciones recortarVertical(Minecraft mc, int chunkX, int chunkZ, RangoSecciones tiene,
+                                                   RangoSecciones visible) {
+        int minimo = Integer.MAX_VALUE, maximo = Integer.MIN_VALUE;
+        int x0 = chunkX * 16, z0 = chunkZ * 16;
+        for (int[] p : PUNTOS_SUPERFICIE) {
+            int y = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                    x0 + p[0], z0 + p[1]) - 1;
+            minimo = Math.min(minimo, y >> 4);
+            maximo = Math.max(maximo, y >> 4);
+        }
+        if (minimo >= visible.min() && maximo <= visible.max()) {
+            return tiene;
+        }
+        RangoSecciones dibujado = tiene.interseccion(visible);
+        // Sin superficie adentro: que la dibuje toda el LOD (lo de vanilla queda tapado o es aire).
+        return dibujado == null || maximo < dibujado.min() || minimo > dibujado.max() ? null : dibujado;
+    }
+
+    /** Puntos de una columna donde se mira la altura de la superficie: centro y esquinas. */
+    private static final int[][] PUNTOS_SUPERFICIE = {{8, 8}, {0, 0}, {15, 0}, {0, 15}, {15, 15}};
 
     private static double prioridad(PlanCeldas.Celda celda, Vec3 camara, double miraX, double miraZ) {
         double mitad = celda.ladoEnBloques() / 2.0;

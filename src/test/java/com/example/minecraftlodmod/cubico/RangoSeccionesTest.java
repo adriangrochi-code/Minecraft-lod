@@ -36,4 +36,19 @@ class RangoSeccionesTest {
         assertEquals(new RangoSecciones(40, 56),
                 RangoSecciones.mover(new RangoSecciones(0, 16), new RangoSecciones(40, 56)));
     }
+
+    @Test
+    void laFranjaVerticalQueDibujaVanillaSeAchicaUnaSeccionDeCadaLado() {
+        // Cámara a y=260 con 8 chunks: vanilla dibuja orígenes de sección entre 132 y 388
+        // (secciones 9 a 24); el LOD le deja 10 a 23.
+        assertEquals(new RangoSecciones(10, 23), RangoSecciones.verticalVisible(260, 8));
+        // Cámara en y=-70: orígenes entre -198 y 58 → secciones -12 a 3, achicado -11 a 2.
+        assertEquals(new RangoSecciones(-11, 2), RangoSecciones.verticalVisible(-70, 8));
+    }
+
+    @Test
+    void laInterseccionEsNullSiNoSeTocan() {
+        assertEquals(new RangoSecciones(5, 8), new RangoSecciones(0, 8).interseccion(new RangoSecciones(5, 20)));
+        assertNull(new RangoSecciones(0, 4).interseccion(new RangoSecciones(5, 20)));
+    }
 }

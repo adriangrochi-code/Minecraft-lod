@@ -878,6 +878,15 @@ laterales por sección según el rango del vecino. Las islas flotantes y el
 relieve fuera del rango se siguen viendo. Gana memoria, red y mallas del
 cliente; no CPU ni memoria del servidor.
 
+**Franja vertical de vanilla (0.26.10):** vanilla y Sodium no dibujan las
+secciones a más de *distancia de render × 16* bloques en vertical de la cámara
+(`SectionOcclusionGraph#getRelativeFrom`). Cuando la superficie de una columna
+queda fuera de esa franja (`RangoSecciones.verticalVisible`, achicada una
+sección de cada lado), el LOD la trata como parcial con esa franja, o como
+toda suya si la superficie no entra; con la superficie adentro no cambia nada
+(no hay rearmados al caminar). Sin esto, volando alto el suelo cercano no lo
+dibujaba nadie.
+
 **Etapa 2 (pendiente):** no generar ni cargar en el servidor lo lejano en
 vertical (empezando por la generación); con formato de guardado propio para
 pasar de 4064 de alto.
