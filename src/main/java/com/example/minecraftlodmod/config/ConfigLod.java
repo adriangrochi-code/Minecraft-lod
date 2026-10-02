@@ -269,12 +269,13 @@ public final class ConfigLod {
                             "cliente; en un servidor dedicado lo elige según el hardware.")
                     .defineEnum("preset", ParametrosCalidad.Seleccion.AUTOMATICO,
                             EnumSet.complementOf(EnumSet.of(ParametrosCalidad.Seleccion.PERSONALIZADO)));
-            generacionParalela = b.comment("EXPERIMENTAL: generar chunks vanilla en paralelo. Vanilla calcula ruido y biomas",
+            generacionParalela = b.comment("Generar chunks vanilla en paralelo. Vanilla calcula ruido y biomas",
                             "en varios hilos pero superficie, cuevas (carvers) y features de a un chunk por vez; con",
                             "esto van al pool de hilos (las features con candados sobre los 3x3 chunks que tocan).",
                             "Más chunks nuevos por segundo con varios núcleos. Algún mod de generación que no sea",
-                            "seguro entre hilos podría fallar: apagalo en ese caso.")
-                    .define("generacionParalela", false);
+                            "seguro entre hilos podría fallar: apagalo en ese caso. Medido: terreno nuevo a la vista",
+                            "un 25% antes (35-37 s contra 47-48 s, distancia 12, 4 núcleos).")
+                    .define("generacionParalela", true);
             b.pop();
 
             b.comment("Lo que el servidor le sirve a los clientes en multiplayer.").push("red");

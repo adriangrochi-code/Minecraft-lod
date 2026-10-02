@@ -1064,3 +1064,7 @@ sus tickets de nivel 33 tienen la misma prioridad que el borde de la vista y
 en terreno nuevo la ahogaban (607/625 faltantes a los 80 s → completa en 37-39 s).
 Perfil del vuelo por terreno nuevo: casi todo el CPU es ruido
 (`wgen_fill_noise`) y el hilo `worldgen`; el del servidor casi no aparece.
+
+**0.26.19 — generación en paralelo por defecto:** medido con la misma prueba
+(vista 12, terreno nuevo): 35-37 s con `generacionParalela` contra 47-48 s
+sin ella. Pasa a estar prendida por defecto; sigue sin aplicarse con C2ME.

@@ -24,10 +24,9 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 - **Anillo real (0.26.15, `anilloReal`):** medir en la A275 si generar 16
   chunks más allá de vanilla al moverse baja los FPS o traba el servidor
   integrado; si sí, bajar el valor por defecto.
-- **Generación en paralelo (0.26.14, `generacionParalela`):** en Xvfb
-  (4 núcleos) 1024 chunks nuevos tardan lo mismo con y sin la opción
-  (7,5/7,7 s contra 7,6/5,6 s), sin errores de hilos. Medir en el i5-9400
-  (6 núcleos) o en un servidor con más núcleos; si no gana, sacarla.
+- **Generación en paralelo (prendida desde 0.26.19):** en singleplayer gana
+  ~25% (vista en 35-37 s contra 47-48 s). Vigilar errores de mods de
+  generación de terceros en los equipos reales (no se probó con mods).
 - **Velocidad de carga de chunks (0.26.14, `msCargaChunks`, MixinLoteChunks):**
   en Xvfb (llvmpipe, 4 núcleos) 7 ms y 14 ms cargan 1021 chunks en el mismo
   tiempo (~14 s): el límite ahí es el servidor, no el cliente. Queda en 7

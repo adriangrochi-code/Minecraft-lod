@@ -6,6 +6,19 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.19 — Generación en paralelo prendida por defecto
+- **Generación de chunks en paralelo** (opción del servidor
+  `generacionParalela`) pasa a estar **prendida por defecto**: superficie,
+  cuevas y estructuras de los chunks nuevos se reparten entre los núcleos en
+  vez de ir de a uno.
+- Medido en singleplayer (distancia 12, teletransporte a terreno nunca
+  generado, 4 núcleos): la vista se completa en 35-37 s con la opción y en
+  47-48 s sin ella (3 pruebas cada una) → unos 25 % más rápido.
+- Si un mod de generación de terreno falla o tira errores raros, apagala en
+  `config/minecraftlodmod-server.toml`. El log avisa una vez cuando está activa.
+- Ya tenés un `minecraftlodmod-server.toml` con `generacionParalela = false`
+  (el valor viejo): cambialo a mano a `true` para usarla.
+
 ## 0.26.18 — Primero lo que tenés a la vista
 - **Arreglo importante de carga en terreno nuevo:** el anillo real y los
   chunks en RAM (0.26.15-0.26.17) pedían chunks alrededor de la vista con la
