@@ -42,4 +42,24 @@ public record RangoSecciones(int min, int max) {
         int max = actual.max <= objetivo.max + 1 ? Math.max(actual.max, objetivo.max) : objetivo.max;
         return new RangoSecciones(min, max);
     }
+
+    /** Lo común con {@code otro}, o null si no se tocan. */
+    public RangoSecciones interseccion(RangoSecciones otro) {
+        int a = Math.max(min, otro.min), b = Math.min(max, otro.max);
+        return a <= b ? new RangoSecciones(a, b) : null;
+    }
+
+    /**
+     * Secciones que el renderer de chunks dibuja en vertical desde la cámara: vanilla
+     * (y Sodium) descartan las que están a más de {@code distanciaChunks × 16} bloques
+     * de altura de ella ({@code SectionOcclusionGraph#getRelativeFrom}). Se achica una
+     * sección de cada lado: el LOD se superpone en el borde en vez de dejar un hueco
+     * mientras su malla se rearma.
+     */
+    public static RangoSecciones verticalVisible(int camaraY, int distanciaChunks) {
+        int alcance = distanciaChunks * 16;
+        int min = Math.floorDiv(camaraY - alcance + 15, 16) + 1;
+        int max = Math.floorDiv(camaraY + alcance, 16) - 1;
+        return new RangoSecciones(min, Math.max(min, max));
+    }
 }

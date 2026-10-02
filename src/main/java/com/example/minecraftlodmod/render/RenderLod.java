@@ -218,6 +218,8 @@ public final class RenderLod {
     /** Radio del último plan, en chunks (el del preset, el del auto-ajuste o el del horizonte real). */
     private int radioEnUso;
     private long verticesUltimoFrame;
+    /** Celdas salteadas por estar fuera del campo de visión en el último cuadro (estadística). */
+    private long celdasFueraDeVista;
 
     /** Replanificaciones (hilo de render, dentro del cuadro) desde la última estadística, y la más larga. */
     private int planesDesdeEstadistica;
@@ -242,11 +244,11 @@ public final class RenderLod {
         long mallas = mallasArmadas.sumThenReset();
         long nanos = nanosArmado.sumThenReset();
         Runtime rt = Runtime.getRuntime();
-        LOG.info("LOD stats: fps={} | dibujo LOD {} ms/frame, {} llamadas/frame, {} vértices dibujados/frame | "
+        LOG.info("LOD stats: fps={} | dibujo LOD {} ms/frame, {} llamadas/frame, {} vértices dibujados/frame, {} celdas fuera de vista | "
                         + "{} piezas, {} vértices ({} triángulos), VRAM LOD ~{} MB | mallas armadas {} ({} ms prom) "
                         + "| ocultas por relieve {} ({} ms) | planes {} (máx {} ms) | cache RAM {} MB | secciones cliente {} ({} columnas parciales; {}) | luz cielo #{} | heap {} / {} MB",
                 mc.getFps(), String.format("%.2f", nanosDibujo / 1e6 / Math.max(1, framesDesdeEstadistica)),
-                llamadasUltimoFrame, verticesUltimoFrame, piezas, vertices, vertices / 2, bytesVram >> 20, mallas,
+                llamadasUltimoFrame, verticesUltimoFrame, celdasFueraDeVista, piezas, vertices, vertices / 2, bytesVram >> 20, mallas,
                 mallas == 0 ? 0 : String.format("%.1f", nanos / 1e6 / mallas),
                 piezasOcultas, String.format("%.1f", nanosOclusion / 1e6),
                 planesDesdeEstadistica, String.format("%.1f", nanosPlanMaximo / 1e6),
@@ -786,6 +788,9 @@ public final class RenderLod {
         Map<Long, RangoSecciones> parciales = new HashMap<>();
         Set<Long> consultados = new HashSet<>();
         long vanilla2 = (long) distanciaVanilla * distanciaVanilla;
+        RangoSecciones columnaEntera = new RangoSecciones(mc.level.getMinSection(), mc.level.getMaxSection() - 1);
+        RangoSecciones visibleVertical = RangoSecciones.verticalVisible((int) Math.floor(camara.y),
+                mc.options.getEffectiveRenderDistance());
         for (int dx = -distanciaVanilla; dx <= distanciaVanilla; dx++) {
             for (int dz = -distanciaVanilla; dz <= distanciaVanilla; dz++) {
                 if ((long) dx * dx + (long) dz * dz < vanilla2) {
@@ -795,10 +800,17 @@ public final class RenderLod {
                         // Con la sincronización vertical, vanilla tiene solo parte de la columna:
                         // el LOD dibuja el resto (LOD vertical, ver cubico/ClienteVertical).
                         RangoSecciones parcial = ClienteVertical.rango(chunkX + dx, chunkZ + dz);
-                        if (parcial == null) {
+                        // Y lejos en vertical (volando alto) vanilla no dibuja la superficie aunque
+                        // tenga la columna: el LOD dibuja lo que quedó fuera de su franja.
+                        RangoSecciones dibujado = recortarVertical(mc, chunkX + dx, chunkZ + dz,
+                                parcial != null ? parcial : columnaEntera, visibleVertical);
+                        if (dibujado == null) {
+                            continue; // vanilla no dibuja nada de la superficie: toda del LOD
+                        }
+                        if (dibujado.equals(columnaEntera)) {
                             deVanilla.add(claveChunk);
                         } else {
-                            parciales.put(claveChunk, parcial);
+                            parciales.put(claveChunk, dibujado);
                         }
                     }
                 }
@@ -1198,6 +1210,7 @@ public final class RenderLod {
     private void dibujarLod(Minecraft mc, RenderLevelStageEvent evento, Vec3 camara) {
         llamadasUltimoFrame = 0;
         verticesUltimoFrame = 0;
+        celdasFueraDeVista = 0;
         avanzarFundidos(System.nanoTime());
         float intensidadLluvia = lluvia(mc);
         float minimoLluvia = (mc.options.getEffectiveRenderDistance() + 4) * 16f;
@@ -1469,6 +1482,10 @@ public final class RenderLod {
         final double inicioCurva, radioPlaneta;
         /** Pasada translúcida del contrato Voxy: solo el grupo del agua; si no, solo las 6 caras. */
         boolean soloAgua;
+        /** Para no mandar a la GPU las celdas fuera del campo de visión. */
+        final CampoVision campo;
+        /** Alto del mundo relativo a la cámara: la caja vertical de cada celda. */
+        final float minY, maxY;
 
         Malla(Matrix4f modelView, Matrix4f proyeccion, ShaderInstance shader, Uniform desplazamiento,
               DesplazamientoCelda desplazamientoPrograma, Uniform fundido, Vec3 camara, boolean curvaPorCelda,
@@ -1483,6 +1500,10 @@ public final class RenderLod {
             this.curvaPorCelda = curvaPorCelda;
             this.inicioCurva = inicioCurva;
             this.radioPlaneta = radioPlaneta;
+            this.campo = new CampoVision(proyeccion, modelView);
+            net.minecraft.client.multiplayer.ClientLevel nivel = Minecraft.getInstance().level;
+            this.minY = nivel == null ? -4096f : (float) (nivel.getMinBuildHeight() - camara.y);
+            this.maxY = nivel == null ? 4096f : (float) (nivel.getMaxBuildHeight() - camara.y);
         }
 
         /**
@@ -1504,6 +1525,17 @@ public final class RenderLod {
             if (curvaPorCelda) {
                 double mitad = lado / 2.0;
                 oy -= (float) HorizonteCurvo.bajada(Math.hypot(ox + mitad, oz + mitad), inicioCurva, radioPlaneta);
+            }
+            // Fuera del campo de visión: ni se manda (la GPU procesaba sus vértices para recortarlos).
+            // Con curvatura por vértice la celda baja hasta lo de su esquina más lejana.
+            float curvaAbajo = curvaPorCelda || radioPlaneta <= 0 ? 0f : (float) HorizonteCurvo.bajada(
+                    Math.hypot(Math.max(Math.abs(ox), Math.abs(ox + lado)), Math.max(Math.abs(oz), Math.abs(oz + lado))),
+                    inicioCurva, radioPlaneta);
+            float bajadaCelda = (float) -camara.y - oy;
+            if (!campo.tocaCaja(ox, minY - bajadaCelda - curvaAbajo - 1f, oz,
+                    (float) (ox + lado), maxY - bajadaCelda + 1f, (float) (oz + lado))) {
+                celdasFueraDeVista++;
+                return;
             }
             if (fundido != null) {
                 fundido.set(visible, entra ? 1f : 0f);
@@ -1911,6 +1943,33 @@ public final class RenderLod {
         }
         return true;
     }
+
+    /**
+     * Parte de la columna que vanilla dibuja de verdad: {@code tiene} (lo que el cliente
+     * tiene cargado), recortado a {@code visible} ({@link RangoSecciones#verticalVisible})
+     * solo si la superficie queda afuera; si no, igual (así caminar por colinas no rearma
+     * las celdas). null = vanilla no dibuja la superficie de esta columna.
+     */
+    private static RangoSecciones recortarVertical(Minecraft mc, int chunkX, int chunkZ, RangoSecciones tiene,
+                                                   RangoSecciones visible) {
+        int minimo = Integer.MAX_VALUE, maximo = Integer.MIN_VALUE;
+        int x0 = chunkX * 16, z0 = chunkZ * 16;
+        for (int[] p : PUNTOS_SUPERFICIE) {
+            int y = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                    x0 + p[0], z0 + p[1]) - 1;
+            minimo = Math.min(minimo, y >> 4);
+            maximo = Math.max(maximo, y >> 4);
+        }
+        if (minimo >= visible.min() && maximo <= visible.max()) {
+            return tiene;
+        }
+        RangoSecciones dibujado = tiene.interseccion(visible);
+        // Sin superficie adentro: que la dibuje toda el LOD (lo de vanilla queda tapado o es aire).
+        return dibujado == null || maximo < dibujado.min() || minimo > dibujado.max() ? null : dibujado;
+    }
+
+    /** Puntos de una columna donde se mira la altura de la superficie: centro y esquinas. */
+    private static final int[][] PUNTOS_SUPERFICIE = {{8, 8}, {0, 0}, {15, 0}, {0, 15}, {15, 15}};
 
     private static double prioridad(PlanCeldas.Celda celda, Vec3 camara, double miraX, double miraZ) {
         double mitad = celda.ladoEnBloques() / 2.0;

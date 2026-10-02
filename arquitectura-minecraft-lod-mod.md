@@ -75,6 +75,11 @@ magic: 4 bytes | version: 1 byte | region_x,z: 4 bytes c/u | dimension_id: 1 byt
 
 - Enganche vía `RenderLevelStageEvent` de NeoForge (etapa posterior a bloques sólidos vanilla), como pasada de render separada del terreno cercano (compatible con Embeddium, que maneja el terreno vanilla normal).
 - Buffers agrupados **por región**, no por nodo individual — minimiza draw calls, crítico en iGPU (Vega 8).
+- **Descarte por campo de visión (0.26.11, `render/CampoVision`):** cada celda
+  (caja con la altura del mundo, bajada de la curvatura incluida) se prueba
+  contra los 4 planos laterales de proyección × vista antes de dibujarla; sin
+  near ni far, para no depender de la convención de profundidad de cada
+  camino (OpenGL, Vulkan, shaderpacks). Medido: ~3× menos vértices por cuadro.
 - **Blend entre niveles de LOD:** dithering por alpha con patrón Bayer fijo (screen-door transparency) vía `discard` en el fragment shader — no geometría interpolada (transvoxel), por ser mucho más barato en GPU integrada.
   - Duración: ~6-10 frames por transición.
   - Límite de nodos en blend simultáneo (ej. 20-30) para no duplicar demasiados draw calls a la vez con movimiento rápido.
@@ -877,6 +882,15 @@ como "de vanilla": arma solo sus secciones fuera del rango, con caras
 laterales por sección según el rango del vecino. Las islas flotantes y el
 relieve fuera del rango se siguen viendo. Gana memoria, red y mallas del
 cliente; no CPU ni memoria del servidor.
+
+**Franja vertical de vanilla (0.26.10):** vanilla y Sodium no dibujan las
+secciones a más de *distancia de render × 16* bloques en vertical de la cámara
+(`SectionOcclusionGraph#getRelativeFrom`). Cuando la superficie de una columna
+queda fuera de esa franja (`RangoSecciones.verticalVisible`, achicada una
+sección de cada lado), el LOD la trata como parcial con esa franja, o como
+toda suya si la superficie no entra; con la superficie adentro no cambia nada
+(no hay rearmados al caminar). Sin esto, volando alto el suelo cercano no lo
+dibujaba nadie.
 
 **Etapa 2 (pendiente):** no generar ni cargar en el servidor lo lejano en
 vertical (empezando por la generación); con formato de guardado propio para
