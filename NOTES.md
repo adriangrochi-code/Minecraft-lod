@@ -388,6 +388,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   **con élitros** (llegada antes de que se carguen los chunks: el salto
   espera), y ver el horizonte del LOD a través del antimeridiano. Se cruza en
   x = ±2 501 888 (1:8), p. ej. `/tp 2501700 120 -916078` (Chukotka).
+  Medir también el parpadeo al cruzar a pie: en Xvfb ~0,7-1 s de cielo, todo
+  del lado del cliente (`06-hitos.md`); con placa de video y `cubico/`
+  (columnas recortadas) debería ser bastante menos. Sacarlo del todo pediría
+  correr en el cliente el terreno ya armado una vuelta (chunks y secciones
+  del render, con VulkanMod): no se hizo.
 - Pendiente de Pista B: ver los polos de la cilíndrica (`/tp 1000 120
   -1250700`: frente y barrera de hielo del polo norte, grietas y farlands
   más allá; el sur en z +1 250 944).

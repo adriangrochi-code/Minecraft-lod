@@ -206,7 +206,16 @@ la cifra famosa.)
     el cliente ya había descargado y el jugador veía solo cielo; se arregló
     mandándole el vehículo de nuevo.
   - A pie: ~1 s de cielo mientras llegan los chunks del otro lado (render por
-    software), después el terreno.
+    software), después el terreno. Medido después (capturas cada ~150 ms +
+    `ChunkWatchEvent.Sent` en el servidor, servidor dedicado sin `cubico/`):
+    el servidor manda los 9 chunks más cercanos en 43 ms y 100 en 660 ms; en
+    pantalla, cielo hasta ~700 ms, terreno completo a ~1 s. Mandando la
+    llegada de golpe (ritmo de 64 chunks por tick, sin esperar al cliente) se
+    mandaron 100 en 102 ms **y la pantalla no cambió** (cielo hasta ~930 ms):
+    el tiempo es del cliente (leer los chunks de 2 672 de alto, la luz y
+    armar la geometría), como en cualquier teletransporte de vanilla. En un
+    solo jugador el servidor integrado ya manda todo de una vez. Se descartó
+    el cambio.
   - Trabas: la primera prueba trabó el servidor 23 s al cruzar (el chunk de
     llegada todavía se generaba y NeoForge lo carga síncrono al mover al
     jugador); con la espera de la llegada cargada, **ninguna** ("Can't keep
