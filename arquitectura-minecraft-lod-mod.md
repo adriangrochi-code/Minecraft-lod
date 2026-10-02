@@ -1068,3 +1068,10 @@ Perfil del vuelo por terreno nuevo: casi todo el CPU es ruido
 **0.26.19 — generación en paralelo por defecto:** medido con la misma prueba
 (vista 12, terreno nuevo): 35-37 s con `generacionParalela` contra 47-48 s
 sin ella. Pasa a estar prendida por defecto; sigue sin aplicarse con C2ME.
+
+**0.26.20 — extracción por paleta:** perfilando el vuelo, la mitad del CPU
+propio era `Block.getId` (búsqueda en mapa por bloque) dentro de
+`ColoresBloque.rgb`, más los mapas de forma y material. `LectorSeccionMinecraft`
+arma `InfoEstado` (estado, id, material, forma) una vez por entrada de la
+paleta de la sección (hasta 256; si no, memo por estado) y la fila de la
+sección de arriba una vez por columna: 228-235 → 105-116 µs por sección.

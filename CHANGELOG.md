@@ -6,6 +6,15 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.20 — Extracción del LOD al doble de velocidad
+- Leer una sección para el LOD cuesta la mitad: antes cada bloque buscaba su
+  estado en varios mapas (id del bloque, material, forma, el bloque de
+  arriba); ahora la información se calcula una vez por estado de la paleta
+  de la sección y cada bloque va directo por su índice. Medido: 228-235 µs →
+  105-116 µs por sección (sección mezclada de 10 estados).
+- En terreno nuevo, el LOD de lo que cargás compite menos con la generación
+  de los chunks: ese CPU queda para el mundo.
+
 ## 0.26.19 — Generación en paralelo prendida por defecto
 - **Generación de chunks en paralelo** (opción del servidor
   `generacionParalela`) pasa a estar **prendida por defecto**: superficie,
