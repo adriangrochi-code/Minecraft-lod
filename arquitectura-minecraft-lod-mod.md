@@ -1042,3 +1042,14 @@ Pedido: acelerar el juego en general (chunks y FPS), no solo el LOD. En orden:
   segundo, de vanilla hacia afuera hasta `DISTANCIA_NIVEL1`, lo que falta
   pasa adelante de la ventana (tope 256); las celdas cercanas incompletas se
   rearman cada 2 s.
+
+## 35. Chunks en RAM para cargar antes — 2026-10-02
+
+Vanilla deserializa cada chunk (`ChunkSerializer.read`) en el hilo del
+servidor recién cuando entra a la distancia de vista, y lo suelta al salir.
+Moverlo a otro hilo (como C2ME) toca `PoiManager` y la luz, que no son
+seguros entre hilos: descartado. En cambio, `generation/ChunksEnRam` usa RAM:
+ticket propio de nivel 33 (completo, sin ticks ni envío) para un colchón de
+`chunksEnRam` chunks más allá de la vista (de a 32 por pasada, prioridad de
+vista, no con MSPT > 40 ms) y retención LRU de lo que queda atrás hasta
+`ramChunksMb` (~96 KB por chunk medido). Solo singleplayer.

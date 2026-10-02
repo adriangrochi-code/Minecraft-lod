@@ -6,6 +6,21 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.16 — Chunks en RAM para que carguen antes
+- **Chunks en RAM** (Generación, 8 chunks por defecto, 0 = apagado): los
+  chunks hasta esa distancia más allá de tu distancia de render se mantienen
+  cargados en memoria, sin animarlos ni mandarlos a la pantalla. Al caminar,
+  lo que entra a la vista ya está listo; vanilla lo leía del disco y lo
+  armaba de a uno en el hilo del servidor recién en ese momento. Se piden de
+  a poco, primero lo que mirás, y nunca con el servidor atrasado.
+- **RAM para chunks retenidos** (384 MB por defecto): lo que dejás atrás
+  queda cargado hasta ese límite y se suelta primero lo que hace más tiempo
+  que no ves, así volver por el mismo camino es inmediato.
+- Medido en el equipo de pruebas: el colchón de 8 chunks con distancia 12
+  ocupa unos 100 MB. Ahí la carga ya era rápida (disco y procesador
+  rápidos) y no se notó diferencia; donde debería notarse es en la Lenovo.
+  Si en la Lenovo te falta RAM, bajá las dos opciones.
+
 ## 0.26.15 — Sin huecos en el LOD y terreno real justo después de vanilla
 - **Huecos en acantilados y laderas (el "anillo con huecos" lejano):** en el
   terreno aproximado, la parte de abajo de cada columna se guardaba "sin

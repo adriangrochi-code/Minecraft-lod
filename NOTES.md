@@ -10,6 +10,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Chunks en RAM (0.26.16, `chunksEnRam`/`ramChunksMb`):** en Xvfb el
+  colchón cuesta ~100 MB (8 chunks, vista 12) y no cambió el tiempo de carga
+  (el cliente tiene todo al segundo del teletransporte con o sin). Medir en
+  la A275 caminando/volando: si no se nota, bajar el valor por defecto o
+  apagarlo.
 - **Anillo con huecos en 4 direcciones (0.26.15):** no se reprodujo tal cual
   en Xvfb (radio 160). Arreglados tres motivos de huecos que encajan: caras
   laterales del terreno aproximado descartadas por luz 0 (verificado en la

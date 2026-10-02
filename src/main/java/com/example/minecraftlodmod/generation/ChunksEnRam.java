@@ -44,7 +44,7 @@ public final class ChunksEnRam {
     static final long MSPT_MAXIMO_NANOS = 40_000_000L;
     /**
      * Memoria por chunk cargado, para pasar el presupuesto en MB a cantidad.
-     * Medido con un histograma del heap (ver CHANGELOG 0.26.16).
+     * Medido: colchón de 8 chunks con vista 12 (~1056 chunks) = ~100 MB de heap.
      */
     static final int KB_POR_CHUNK = 96;
 
