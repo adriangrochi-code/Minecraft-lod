@@ -10,6 +10,10 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Generación en paralelo (0.26.14, `generacionParalela`):** en Xvfb
+  (4 núcleos) 1024 chunks nuevos tardan lo mismo con y sin la opción
+  (7,5/7,7 s contra 7,6/5,6 s), sin errores de hilos. Medir en el i5-9400
+  (6 núcleos) o en un servidor con más núcleos; si no gana, sacarla.
 - **Velocidad de carga de chunks (0.26.14, `msCargaChunks`, MixinLoteChunks):**
   en Xvfb (llvmpipe, 4 núcleos) 7 ms y 14 ms cargan 1021 chunks en el mismo
   tiempo (~14 s): el límite ahí es el servidor, no el cliente. Queda en 7

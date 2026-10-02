@@ -28,9 +28,12 @@ cuál es cuál.
   (el límite era el servidor); probá subirlo y contame.
 - **Generación en paralelo** (opción experimental del servidor
   `generacionParalela`, apagada): superficie, cuevas y features de los
-  chunks nuevos se reparten entre los núcleos en vez de ir de a uno.
+  chunks nuevos se reparten entre los núcleos en vez de ir de a uno. En el
+  equipo de pruebas (4 núcleos) no ganó tiempo: probalo en un servidor con
+  más núcleos y apagalo si algún mod de generación falla.
 - **Menos RAM por estado de bloque** (siempre, salvo con FerriteCore): los
-  ~26 mil estados de bloque comparten una tabla de vecinos por bloque.
+  ~26 mil estados de bloque comparten una tabla de vecinos por bloque
+  (~15 MB menos, cliente y servidor).
 - Arreglado un caso raro en el que el cache del LOD podía quedarse con la
   versión vieja de un nodo recién guardado.
 
