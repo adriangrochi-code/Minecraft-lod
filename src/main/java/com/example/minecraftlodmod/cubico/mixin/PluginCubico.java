@@ -22,7 +22,7 @@ public class PluginCubico implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String clase, String mixin) {
-        if (mixin.endsWith("MixinBeardifier")) {
+        if (mixin.endsWith("MixinBeardifier") || mixin.endsWith("MixinAcuifero")) {
             return LoadingModList.get().getModFileById("c2me") == null;
         }
         if (mixin.endsWith("MixinVecinosEstado")) {

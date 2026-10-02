@@ -1110,3 +1110,12 @@ cambia nada (el umbral ya pasa los 2 px donde termina el nivel 0).
 - Descartado: tabla de oclusión ambiental por capa en `GreedyMesher` (mismos
   quads, 5% más lento: arma la capa entera para pocas caras).
 
+**0.26.24 — acuífero (`cubico/mixin/MixinAcuifero`, `@Overwrite` de
+`NoiseBasedAquifer#computeSubstance`):** los 12 centros vecinos dependen solo
+de la celda de acuífero; se guardan desempaquetados los de la última celda
+(mismo orden, desempates y siembra que vanilla). 40 M llamadas iguales a
+vanilla, 328 → 261 ns (el acuífero es ~19% del CPU de `wgen_fill_noise`). No
+con C2ME. Memoria: el heap en vuelo es sobre todo la cache del LOD (`byte[]`)
+y los chunks retenidos a propósito (`long[]`); compartir contenedores de un
+solo valor por defecto se descartó (≤ 65 MB, error si otro mod escribe directo).
+

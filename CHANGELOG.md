@@ -6,6 +6,14 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.24 — Generación de chunks un poco más rápida
+- El acuífero de vanilla (agua y lava subterráneas) buscaba, para cada bloque
+  de aire o cueva, los 12 centros de acuífero vecinos desde cero. Ahora
+  recuerda los de la última celda, que comparten casi todos los bloques
+  seguidos. Mismo terreno: comparado contra vanilla en 40 millones de
+  bloques, sin ninguna diferencia. Medido: 328 → 261 ns por bloque (−20%),
+  ~4% menos CPU al generar chunks nuevos. No se aplica si tenés C2ME.
+
 ## 0.26.23 — Optimizaciones sin cambio visual
 - El shader del terreno LOD ya no tiene `discard`: el fundido entre niveles
   pasó a un programa aparte que solo usan las mallas que entran o salen. Un
