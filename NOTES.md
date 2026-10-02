@@ -766,3 +766,7 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   confirmar que no se nota pérdida de detalle; probar 3 px en la A275 si la
   GPU sigue siendo el límite.
 
+- **Shader sin discard (0.26.23):** medir el tiempo de GPU del cuadro en la
+  1060 y la A275 contra la 0.26.22 (en llvmpipe no se nota; en GPU real
+  debería, por el early-Z). Confirmar que el fundido entre niveles se ve igual.
+

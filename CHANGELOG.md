@@ -6,6 +6,18 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.23 — Optimizaciones sin cambio visual
+- El shader del terreno LOD ya no tiene `discard`: el fundido entre niveles
+  pasó a un programa aparte que solo usan las mallas que entran o salen. Un
+  shader con `discard` apaga en la GPU la prueba de profundidad temprana, así
+  que antes se pintaba cada píxel del LOD aunque quedara tapado. Los datos
+  fijos por cara ya no se interpolan por píxel. La imagen es la misma.
+- Extracción del LOD al doble de velocidad por bloque (287 → 145 ns): un
+  solo objeto por vóxel en vez de cinco copias, la mezcla de biomas solo
+  para los bloques que se tiñen y solo su canal, y la luz de los vecinos
+  en una pasada. Comprobado contra el código anterior: 54 millones de
+  vóxeles idénticos.
+
 ## 0.26.22 — Menos carga de GPU en los presets altos
 - Nueva opción **Píxeles mínimos por vóxel** (Calidad, 2 px por defecto): por
   más detalle que pida el preset, el LOD ya no dibuja vóxeles más chicos que
