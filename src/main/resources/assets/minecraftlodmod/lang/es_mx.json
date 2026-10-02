@@ -197,5 +197,7 @@
   "minecraftlodmod.configuration.maxParticulas": "Máximo de partículas",
   "minecraftlodmod.configuration.maxParticulas.tooltip": "Tope de partículas vivas al mismo tiempo; las nuevas se descartan al llegar. Evita caídas de FPS con explosiones o mods que lanzan muchas partículas.",
   "minecraftlodmod.configuration.maxParticulas.vanilla": "Sin tope",
-  "minecraftlodmod.configuration.unidad.bloques": "%s bloques"
+  "minecraftlodmod.configuration.unidad.bloques": "%s bloques",
+  "minecraftlodmod.configuration.msCargaChunks": "Velocidad de carga de chunks",
+  "minecraftlodmod.configuration.msCargaChunks.tooltip": "Milisegundos de cada tick (de 50) que el juego dedica a recibir chunks del servidor; el servidor manda tantos como entran. Vanilla usa 7: con más, los chunks aparecen antes al moverse o entrar al mundo, a cambio de algo más de trabajo mientras llegan. Sirve también en servidores."
 }

@@ -13,6 +13,7 @@
     "MixinDistanciaParticulas",
     "MixinGameRenderer",
     "MixinMotorParticulas",
+    "MixinLoteChunks",
     "MixinMinecraft",
     "MixinRenderTarget",
     "MixinObjetivosIris",

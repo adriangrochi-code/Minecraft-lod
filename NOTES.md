@@ -10,6 +10,15 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Velocidad de carga de chunks (0.26.14, `msCargaChunks`, MixinLoteChunks):**
+  en Xvfb (llvmpipe, 4 núcleos) 7 ms y 14 ms cargan 1021 chunks en el mismo
+  tiempo (~14 s): el límite ahí es el servidor, no el cliente. Queda en 7
+  (vanilla) por defecto; probar en la GTX 1060 / A275 si subirlo acelera algo
+  y, si sí, cambiar el valor por defecto.
+- **Ocultar entidades tapadas (0.26.14):** verificado en Xvfb con vacas tras
+  una pared (imagen idéntica). Falta ver en hardware real que no titilen al
+  moverse rápido (elytra) ni con shaderpacks.
+
 - **Generación por franja vertical (0.26.1, cubico/GeneracionVertical):**
   medida solo en servidor dedicado (tiempos), sin mirar el terreno. Falta
   recorrer en el juego un mundo alto con la opción prendida: que el borde

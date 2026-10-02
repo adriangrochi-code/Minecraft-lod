@@ -197,5 +197,7 @@
   "minecraftlodmod.configuration.maxParticulas": "Max particles",
   "minecraftlodmod.configuration.maxParticulas.tooltip": "Cap on particles alive at once; new ones are dropped once reached. Avoids FPS drops with explosions or mods that spawn many particles.",
   "minecraftlodmod.configuration.maxParticulas.vanilla": "No cap",
-  "minecraftlodmod.configuration.unidad.bloques": "%s blocks"
+  "minecraftlodmod.configuration.unidad.bloques": "%s blocks",
+  "minecraftlodmod.configuration.msCargaChunks": "Chunk loading speed",
+  "minecraftlodmod.configuration.msCargaChunks.tooltip": "Milliseconds of each tick (out of 50) the game spends receiving chunks from the server; the server sends as many as fit. Vanilla uses 7: with more, chunks show up sooner when moving or joining, at the cost of a bit more work while they arrive. Works on servers too."
 }

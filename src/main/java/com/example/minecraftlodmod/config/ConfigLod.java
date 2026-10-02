@@ -46,6 +46,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue distanciaEntidades;
         public final ModConfigSpec.IntValue distanciaParticulas;
         public final ModConfigSpec.IntValue maxParticulas;
+        public final ModConfigSpec.IntValue msCargaChunks;
         public final ModConfigSpec.BooleanValue hudRendimiento;
         public final ModConfigSpec.BooleanValue hudDetalleLod;
         public final ModConfigSpec.BooleanValue logDepuracion;
@@ -105,6 +106,10 @@ public final class ConfigLod {
             maxParticulas = b.comment("Tope total de partículas vivas; " + MAX_PARTICULAS_VANILLA + " = sin tope propio (vanilla",
                             "admite " + MAX_PARTICULAS_VANILLA + " por tipo).")
                     .defineInRange("maxParticulas", MAX_PARTICULAS_VANILLA, 500, MAX_PARTICULAS_VANILLA);
+            msCargaChunks = b.comment("Milisegundos por tick (de 50) que el cliente dedica a recibir chunks; el servidor",
+                            "manda tantos como entran (vanilla: 7). Más = los chunks aparecen antes al moverse,",
+                            "con algo más de trabajo en el hilo principal mientras llegan.")
+                    .defineInRange("msCargaChunks", 7, 7, 25);
             generacionAproximada = b.comment("Horizonte aproximado: estimar el terreno lejano nunca generado directo del",
                             "generador del mundo (sin generar chunks) hasta el radio de LOD. Lo real lo reemplaza al",
                             "explorar o pregenerar. Solo singleplayer por ahora.")

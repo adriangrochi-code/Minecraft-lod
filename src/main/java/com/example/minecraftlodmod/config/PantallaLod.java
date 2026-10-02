@@ -91,7 +91,9 @@ public final class PantallaLod extends Screen {
                                 v -> Component.translatable(CLAVE + "unidad.bloques", v)),
                         entero("maxParticulas", Impacto.MEDIO, 500, ConfigLod.MAX_PARTICULAS_VANILLA, 500, c.maxParticulas,
                                 v -> v >= ConfigLod.MAX_PARTICULAS_VANILLA ? texto("maxParticulas.vanilla")
-                                        : Component.literal(String.valueOf(v)))),
+                                        : Component.literal(String.valueOf(v))),
+                        entero("msCargaChunks", Impacto.BAJO, 7, 25, 1, c.msCargaChunks,
+                                v -> Component.literal(v + " ms"))),
                 List.of(preset,
                         entero("fpsObjetivo", Impacto.NINGUNO, ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX, 1,
                                 c.fpsObjetivo, v -> Component.literal(v + " FPS")).siempreQue(personalizado),
