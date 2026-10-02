@@ -1075,3 +1075,9 @@ propio era `Block.getId` (búsqueda en mapa por bloque) dentro de
 arma `InfoEstado` (estado, id, material, forma) una vez por entrada de la
 paleta de la sección (hasta 256; si no, memo por estado) y la fila de la
 sección de arriba una vez por columna: 228-235 → 105-116 µs por sección.
+
+**0.26.21 — atajo exacto del `Beardifier`:** `cubico/LimitesBeardifier` +
+`MixinBeardifier`: caja de alcance de piezas (±12 en horizontal; en vertical
+de su caja y su suelo) y uniones (núcleo 24³); fuera, los `hasNext()` de los
+dos bucles de `compute` dan false (redirect, sin objeto por punto) y el aporte
+queda en 0. Test contra el `Beardifier` de vanilla. Vuelo: 6,4 % → 0,5 % del CPU.

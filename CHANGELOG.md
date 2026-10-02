@@ -6,6 +6,17 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.21 — Generación de terreno más liviana cerca de estructuras
+- Al generar chunks, vanilla ajusta el terreno alrededor de aldeas, ciudades
+  antiguas y otras estructuras evaluando cada punto de toda la altura de la
+  columna contra cada pieza cercana, aunque cada pieza solo afecta a menos de
+  12 bloques. Ahora cada chunk arma una caja con el alcance de sus piezas y
+  fuera de ella el ajuste es 0 sin recorrer nada. El terreno sale idéntico
+  (comprobado contra vanilla en más de 10 000 puntos al azar).
+- Medido en un vuelo por terreno nuevo: esa parte pasó del 6,4 % al 0,5 % del
+  CPU de la generación.
+- No se aplica si tenés C2ME.
+
 ## 0.26.20 — Extracción del LOD al doble de velocidad
 - Leer una sección para el LOD cuesta la mitad: antes cada bloque buscaba su
   estado en varios mapas (id del bloque, material, forma, el bloque de
