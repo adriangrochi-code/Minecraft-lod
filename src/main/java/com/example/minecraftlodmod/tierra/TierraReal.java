@@ -53,6 +53,7 @@ public final class TierraReal {
     static {
         FUNCIONES.register("tierra_superficie", () -> SuperficieTierra.CODEC_MAPA);
         FUNCIONES.register("tierra_borde", () -> BordeTierra.CODEC_MAPA);
+        FUNCIONES.register("tierra_cuevas", () -> CuevasTierraFuncion.CODEC_MAPA);
         FUENTES_BIOMAS.register("tierra", () -> FuenteBiomasTierra.CODEC);
     }
 
@@ -235,6 +236,9 @@ public final class TierraReal {
                         .then(Commands.argument("lat", DoubleArgumentType.doubleArg(-90, 90))
                                 .then(Commands.argument("lon", DoubleArgumentType.doubleArg(-180, 180))
                                         .executes(TierraReal::ir))))
+                .then(Commands.literal("menas")
+                        .then(Commands.argument("radio", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 4))
+                                .executes(TierraReal::menas)))
                 .then(Commands.literal("columna")
                         .then(Commands.argument("x", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
                                 .then(Commands.argument("z", com.mojang.brigadier.arguments.IntegerArgumentType.integer())
@@ -243,6 +247,18 @@ public final class TierraReal {
                         .then(Commands.argument("lat", DoubleArgumentType.doubleArg(-90, 90))
                                 .then(Commands.argument("lon", DoubleArgumentType.doubleArg(-180, 180))
                                         .executes(TierraReal::medir)))));
+    }
+
+    /** Superficie típica de vanilla: la referencia de las alturas de {@code height_range} (ver MixinAlturaRelativa). */
+    public static final int SUPERFICIE_VANILLA = 72;
+
+    private static final Map<ServerLevel, java.util.Optional<com.example.minecraftlodmod.generation.FuenteAltura>> FUENTES =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /** La superficie de un nivel de Tierra real (cacheada por nivel), o {@code null} si no es Tierra real. */
+    public static com.example.minecraftlodmod.generation.FuenteAltura fuenteDe(ServerLevel nivel) {
+        return FUENTES.computeIfAbsent(nivel, n -> java.util.Optional.ofNullable(
+                alturaDe(n) == null ? null : com.example.minecraftlodmod.generation.FuenteAltura.de(n))).orElse(null);
     }
 
     static BordeTierra bordeDe(ServerLevel nivel) {
@@ -351,6 +367,54 @@ public final class TierraReal {
         LOG.info("[Tierra real] {}", texto);
         fuente.sendSuccess(() -> Component.literal(texto), false);
         return n;
+    }
+
+    /**
+     * {@code /tierra menas <radio>}: en los chunks a ese radio del que ejecuta,
+     * cuenta las menas por profundidad bajo la superficie de su columna (bandas
+     * de 32 bloques), para ver que siguen al suelo y no a y absoluto.
+     */
+    private static int menas(CommandContext<CommandSourceStack> c) {
+        CommandSourceStack fuente = c.getSource();
+        ServerLevel nivel = fuente.getLevel();
+        var sup = fuenteDe(nivel);
+        if (sup == null) {
+            fuente.sendFailure(Component.literal("Esta dimensión no es Tierra real (o faltan los datos)"));
+            return 0;
+        }
+        int radio = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(c, "radio");
+        BlockPos centro = BlockPos.containing(fuente.getPosition());
+        java.util.TreeMap<String, int[]> cuenta = new java.util.TreeMap<>();
+        int bandas = 8;
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        for (int cx = (centro.getX() >> 4) - radio; cx <= (centro.getX() >> 4) + radio; cx++) {
+            for (int cz = (centro.getZ() >> 4) - radio; cz <= (centro.getZ() >> 4) + radio; cz++) {
+                ChunkAccess chunk = nivel.getChunk(cx, cz);
+                for (int x = cx * 16; x < cx * 16 + 16; x++) {
+                    for (int z = cz * 16; z < cz * 16 + 16; z++) {
+                        int s = sup.altura(x, z);
+                        for (int prof = 0; prof < bandas * 32; prof++) {
+                            int y = s - prof;
+                            if (y < nivel.getMinBuildHeight()) break;
+                            var estado = chunk.getBlockState(p.set(x, y, z));
+                            String b = estado.getBlock().getDescriptionId();
+                            if (prof > 0 && (estado.isAir() || !estado.getFluidState().isEmpty())) {
+                                String hueco = estado.isAir() ? "(aire)" : estado.getFluidState().is(net.minecraft.tags.FluidTags.LAVA) ? "(lava)" : "(agua)";
+                                cuenta.computeIfAbsent(hueco, k -> new int[bandas])[prof / 32]++;
+                            } else if (b.endsWith("_ore")) {
+                                String nombre = b.substring(b.lastIndexOf('.') + 1).replace("deepslate_", "");
+                                cuenta.computeIfAbsent(nombre, k -> new int[bandas])[prof / 32]++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        StringBuilder t = new StringBuilder("menas y huecos por profundidad bajo el suelo (bandas de 32 bloques):");
+        cuenta.forEach((k, v) -> t.append(' ').append(k).append(java.util.Arrays.toString(v)).append(';'));
+        LOG.info("[Tierra real] {}", t);
+        fuente.sendSuccess(() -> Component.literal(t.toString()), false);
+        return cuenta.size();
     }
 
     private static int aguaHasta(ChunkAccess chunk, BlockPos.MutableBlockPos p, ServerLevel nivel) {

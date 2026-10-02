@@ -56,21 +56,24 @@
       "argument": {
         "type": "minecraftlodmod:tierra_borde",
         "argument": {
-          "type": "minecraft:add",
-          "argument1": {
-            "type": "minecraft:flat_cache",
-            "argument": {
-              "type": "minecraftlodmod:tierra_superficie",
-              "proyeccion": "azimutal",
-              "metros_por_bloque": 8.0
+          "type": "minecraftlodmod:tierra_cuevas",
+          "argument": {
+            "type": "minecraft:add",
+            "argument1": {
+              "type": "minecraft:flat_cache",
+              "argument": {
+                "type": "minecraftlodmod:tierra_superficie",
+                "proyeccion": "azimutal",
+                "metros_por_bloque": 8.0
+              }
+            },
+            "argument2": {
+              "type": "minecraft:y_clamped_gradient",
+              "from_y": -4064,
+              "to_y": 4062,
+              "from_value": 4064.0,
+              "to_value": -4062.0
             }
-          },
-          "argument2": {
-            "type": "minecraft:y_clamped_gradient",
-            "from_y": -4064,
-            "to_y": 4062,
-            "from_value": 4064.0,
-            "to_value": -4062.0
           }
         },
         "metros_por_bloque": 8.0,

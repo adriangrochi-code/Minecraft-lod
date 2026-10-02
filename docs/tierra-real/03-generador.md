@@ -42,7 +42,15 @@ registrada con su codec). Así se reutilizan, sin tocarlos:
 ## `noise_settings`
 
 - `noise`: `min_y`/`height` de `01-decisiones.md`; tamaño de celda vanilla.
-- `final_density`: `min(superficie - y, cuevas)` donde las cuevas de vanilla
+- `final_density`: `min(superficie - y, cuevas)`. **Implementado en H9**
+  con cuevas propias (`tierra/CuevasTierra`, función
+  `minecraftlodmod:tierra_cuevas` que envuelve `superficie - y`, que es la
+  profundidad): túneles (dos ruidos 3D cerca de cero), cavernas (más grandes
+  con la profundidad), entre 12 y 400 bloques bajo el suelo, con entradas
+  raras. Las de vanilla no se reutilizan: dependen de y absoluto y están
+  envueltas en cachés del `NoiseChunk` que no se pueden evaluar a otra
+  altura. Lava en las cuevas de tierra firme a más de 160 bloques bajo el
+  suelo (el selector de fluido); agua bajo el mar y los lagos. donde las cuevas de vanilla
   se **re-referencian a la profundidad bajo la superficie** (las de vanilla
   dependen de `y` absoluto en -64..320; hito propio, `06-hitos.md`). Primera
   versión: sin cuevas de ruido, solo carvers.

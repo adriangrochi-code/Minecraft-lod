@@ -1033,6 +1033,10 @@ las decisiones que fijan el código.
   la bicúbica (`DetalleTierra`); agua por masas (`AguaContinental`: océano,
   lagos con su nivel, depresiones secas) desde Köppen + Natural Earth,
   guardada en el `.lodt` v2 y usada por el selector de fluido por columna.
+- **Cuevas y menas** (H9): cuevas propias por profundidad bajo el suelo
+  (`tierra_cuevas`), lava a más de 160 bloques en tierra firme; las alturas
+  de `height_range` (menas, geodas) se miden desde la superficie de la
+  columna (mixin, solo en Tierra real).
 - **Proyecciones** (`tierra/Proyeccion`): equirectangular (norte -z, este
   +x) y azimutal equidistante centrada en el polo norte (el polo sur, el
   borde del disco, a ~2,5 M bloques a 1:8).

@@ -169,3 +169,24 @@ la cifra famosa.)
     teselas) y ríos (opcionales en el plan); pendientes. El LOD aproximado
     todavía dibuja el agua solo al nivel del mar (lagos altos: Pista B /
     después).
+- **H9 (2026-10-02):** cuevas por profundidad (`CuevasTierra`) y alturas de
+  `height_range` desde la superficie (`tierra/mixin/MixinAlturaRelativa`:
+  menas, geodas, lagos de lava subterráneos; referencia y 72, la superficie
+  típica de vanilla). `/tierra menas <radio>` cuenta menas y huecos por
+  profundidad bajo el suelo. Servidor, 3×3 chunks:
+
+  | Lugar (suelo) | carbón (0-32 / 32-64) | diamante (64-96 / 96-128 / 128-160) | oro (64-96) |
+  |---|---|---|---|
+  | Alpes (y ~430) | 729 / 304 | 34 / 57 / 32 | 136 |
+  | Madrid (y ~137) | 473 / 456 | 18 / 49 / 42 | 143 |
+  | Atlántico (fondo y -411) | 665 / 425 | 19 / 47 / 14 | 129 |
+
+  La misma distribución en los tres (antes, bajo el mar no había menas y en
+  los Alpes estaban 400 bloques más abajo). Cuevas, con la columna entera:
+  huecos en todas las bandas hasta ~200 bloques y lava desde 160.
+  - Con la franja vertical (por defecto) las cuevas a más de 32 bloques
+    aparecen cuando un jugador baja (`cubico/CompletadoVertical`); por RCON
+    no se ve porque los chunks se descargan enseguida: **probar jugando**.
+  - Los carvers de vanilla (cuevas y cañones) siguen con y absoluto (-56 a
+    180): suman cuevas en esa banda; no se tocaron.
+  - Vetas grandes (`ore_veins`) y acuíferos siguen apagados.
