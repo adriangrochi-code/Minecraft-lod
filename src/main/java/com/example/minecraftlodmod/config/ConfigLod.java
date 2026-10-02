@@ -28,6 +28,9 @@ public final class ConfigLod {
     private ConfigLod() {
     }
 
+    /** Tope de partículas por tipo de dibujo de vanilla; como valor de {@code maxParticulas}, sin tope propio. */
+    public static final int MAX_PARTICULAS_VANILLA = 16384;
+
     public static final class Cliente {
         public final ModConfigSpec.EnumValue<ParametrosCalidad.Seleccion> seleccion;
         public final ModConfigSpec.IntValue radioLodChunks;
@@ -39,6 +42,10 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue autoAjuste;
         public final ModConfigSpec.BooleanValue lodActivo;
         public final ModConfigSpec.BooleanValue vanillaReducida;
+        public final ModConfigSpec.BooleanValue ocultarEntidadesTapadas;
+        public final ModConfigSpec.IntValue distanciaEntidades;
+        public final ModConfigSpec.IntValue distanciaParticulas;
+        public final ModConfigSpec.IntValue maxParticulas;
         public final ModConfigSpec.BooleanValue hudRendimiento;
         public final ModConfigSpec.BooleanValue hudDetalleLod;
         public final ModConfigSpec.BooleanValue logDepuracion;
@@ -86,6 +93,18 @@ public final class ConfigLod {
                             "preset (Mínimo 5, Bajo 6, Medio 8, Alto 10, Ultra/Horizonte 12 chunks) y el LOD dibuja el resto.",
                             "Más FPS y menos chunks cargados; nunca sube la distancia que elegiste en Video.")
                     .define("vanillaReducida", false);
+            ocultarEntidadesTapadas = b.comment("No dibujar entidades ni bloques con entidad (cofres, carteles, cabezas) tapados por",
+                            "el terreno: un hilo aparte lo prueba con rayos. Mucho menos trabajo de CPU con granjas o",
+                            "bases grandes detrás de paredes. Sin efecto si el mod EntityCulling está instalado.")
+                    .define("ocultarEntidadesTapadas", true);
+            distanciaEntidades = b.comment("Distancia máxima (bloques) para dibujar entidades (salvo jugadores) y bloques con",
+                            "entidad. 0 = la de vanilla.")
+                    .defineInRange("distanciaEntidades", 0, 0, 256);
+            distanciaParticulas = b.comment("Distancia máxima (bloques) a la que aparecen partículas (vanilla: 32).")
+                    .defineInRange("distanciaParticulas", 32, 4, 32);
+            maxParticulas = b.comment("Tope total de partículas vivas; " + MAX_PARTICULAS_VANILLA + " = sin tope propio (vanilla",
+                            "admite " + MAX_PARTICULAS_VANILLA + " por tipo).")
+                    .defineInRange("maxParticulas", MAX_PARTICULAS_VANILLA, 500, MAX_PARTICULAS_VANILLA);
             generacionAproximada = b.comment("Horizonte aproximado: estimar el terreno lejano nunca generado directo del",
                             "generador del mundo (sin generar chunks) hasta el radio de LOD. Lo real lo reemplaza al",
                             "explorar o pregenerar. Solo singleplayer por ahora.")

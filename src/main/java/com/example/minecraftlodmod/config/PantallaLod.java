@@ -84,6 +84,14 @@ public final class PantallaLod extends Screen {
         paginas.add(new Pagina(pestana("lod"), List.of(
                 List.of(interruptor("lodActivo", Impacto.VARIABLE, c.lodActivo),
                         interruptor("vanillaReducida", Impacto.ALTO, c.vanillaReducida)),
+                List.of(interruptor("ocultarEntidadesTapadas", Impacto.MEDIO, c.ocultarEntidadesTapadas),
+                        entero("distanciaEntidades", Impacto.MEDIO, 0, 256, 8, c.distanciaEntidades,
+                                v -> v == 0 ? texto("distanciaEntidades.vanilla") : Component.translatable(CLAVE + "unidad.bloques", v)),
+                        entero("distanciaParticulas", Impacto.BAJO, 4, 32, 2, c.distanciaParticulas,
+                                v -> Component.translatable(CLAVE + "unidad.bloques", v)),
+                        entero("maxParticulas", Impacto.MEDIO, 500, ConfigLod.MAX_PARTICULAS_VANILLA, 500, c.maxParticulas,
+                                v -> v >= ConfigLod.MAX_PARTICULAS_VANILLA ? texto("maxParticulas.vanilla")
+                                        : Component.literal(String.valueOf(v)))),
                 List.of(preset,
                         entero("fpsObjetivo", Impacto.NINGUNO, ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX, 1,
                                 c.fpsObjetivo, v -> Component.literal(v + " FPS")).siempreQue(personalizado),

@@ -186,5 +186,16 @@
   "minecraftlodmod.configuration.pixelesMaximos": "Píxeles máximos por vóxel",
   "minecraftlodmod.configuration.pixelesMaximos.tooltip": "El detalle del LOD se elige por cuánto ocupa cada vóxel en pantalla, no por la distancia: con este tope ningún vóxel se ve más grande que esto, por lejos o grande que sea (uno de 1 km a 100 km se ve igual de chico que uno de 8 bloques a 800). Ni el preset ni el auto-ajuste lo pasan: si falta rendimiento, recortan el radio. Más bajo = más nítido y más caro.",
   "minecraftlodmod.configuration.escaladoSoloSiGana": "Escalado solo si da más FPS",
-  "minecraftlodmod.configuration.escaladoSoloSiGana.tooltip": "Cada 2 minutos mide unos segundos con escalado y otros sin él, y lo deja prendido solo si los cuadros salen más rápidos. Bajar la resolución solo gana cuando la placa de video está al límite dibujando píxeles; si el límite es el procesador (lo más común en Minecraft), el escalado cuesta y se apaga solo. El resultado queda en el log."
+  "minecraftlodmod.configuration.escaladoSoloSiGana.tooltip": "Cada 2 minutos mide unos segundos con escalado y otros sin él, y lo deja prendido solo si los cuadros salen más rápidos. Bajar la resolución solo gana cuando la placa de video está al límite dibujando píxeles; si el límite es el procesador (lo más común en Minecraft), el escalado cuesta y se apaga solo. El resultado queda en el log.",
+  "minecraftlodmod.configuration.ocultarEntidadesTapadas": "Ocultar entidades tapadas",
+  "minecraftlodmod.configuration.ocultarEntidadesTapadas.tooltip": "No dibuja entidades ni bloques con entidad (cofres, carteles, cabezas, estandartes) que el terreno tapa: un hilo aparte lo prueba con rayos desde la cámara. Ahorra mucho CPU en granjas, aldeas o bases grandes detrás de paredes. Sin efecto si EntityCulling está instalado.",
+  "minecraftlodmod.configuration.distanciaEntidades": "Distancia de entidades",
+  "minecraftlodmod.configuration.distanciaEntidades.tooltip": "Distancia máxima a la que se dibujan entidades (salvo jugadores) y bloques con entidad. Más corta, menos CPU con muchas entidades a la vista.",
+  "minecraftlodmod.configuration.distanciaEntidades.vanilla": "Vanilla",
+  "minecraftlodmod.configuration.distanciaParticulas": "Distancia de partículas",
+  "minecraftlodmod.configuration.distanciaParticulas.tooltip": "Distancia máxima a la que aparecen partículas (vanilla: 32 bloques). Más corta, menos partículas que simular y dibujar.",
+  "minecraftlodmod.configuration.maxParticulas": "Máximo de partículas",
+  "minecraftlodmod.configuration.maxParticulas.tooltip": "Tope de partículas vivas al mismo tiempo; las nuevas se descartan al llegar. Evita caídas de FPS con explosiones o mods que lanzan muchas partículas.",
+  "minecraftlodmod.configuration.maxParticulas.vanilla": "Sin tope",
+  "minecraftlodmod.configuration.unidad.bloques": "%s bloques"
 }
