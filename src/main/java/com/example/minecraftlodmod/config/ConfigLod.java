@@ -28,6 +28,9 @@ public final class ConfigLod {
     private ConfigLod() {
     }
 
+    /** Tope de partículas por tipo de dibujo de vanilla; como valor de {@code maxParticulas}, sin tope propio. */
+    public static final int MAX_PARTICULAS_VANILLA = 16384;
+
     public static final class Cliente {
         public final ModConfigSpec.EnumValue<ParametrosCalidad.Seleccion> seleccion;
         public final ModConfigSpec.IntValue radioLodChunks;
@@ -38,7 +41,14 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue fpsObjetivo;
         public final ModConfigSpec.BooleanValue autoAjuste;
         public final ModConfigSpec.BooleanValue lodActivo;
+        public final ModConfigSpec.BooleanValue vanillaReducida;
+        public final ModConfigSpec.BooleanValue ocultarEntidadesTapadas;
+        public final ModConfigSpec.IntValue distanciaEntidades;
+        public final ModConfigSpec.IntValue distanciaParticulas;
+        public final ModConfigSpec.IntValue maxParticulas;
+        public final ModConfigSpec.IntValue msCargaChunks;
         public final ModConfigSpec.BooleanValue hudRendimiento;
+        public final ModConfigSpec.BooleanValue hudDetalleLod;
         public final ModConfigSpec.BooleanValue logDepuracion;
         public final ModConfigSpec.BooleanValue sincroVertical;
         public final ModConfigSpec.BooleanValue contratoVoxy;
@@ -52,6 +62,9 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue pregenerar;
         public final ModConfigSpec.BooleanValue generacionAproximada;
         public final ModConfigSpec.IntValue radioPregeneracion;
+        public final ModConfigSpec.IntValue anilloReal;
+        public final ModConfigSpec.IntValue chunksEnRam;
+        public final ModConfigSpec.IntValue ramChunksMb;
         public final ModConfigSpec.BooleanValue texturasLod;
         public final ModConfigSpec.BooleanValue descartarCuevas;
         public final ModConfigSpec.BooleanValue oclusionAmbiental;
@@ -80,6 +93,26 @@ public final class ConfigLod {
                     .define("autoAjuste", true);
             lodActivo = b.comment("Dibujar el LOD. Apagarlo sirve para comparar contra vanilla; la generación sigue.")
                     .define("lodActivo", true);
+            vanillaReducida = b.comment("Modo híbrido: con el LOD activo, la distancia de render de vanilla se acota según el",
+                            "preset (Mínimo 5, Bajo 6, Medio 8, Alto 10, Ultra/Horizonte 12 chunks) y el LOD dibuja el resto.",
+                            "Más FPS y menos chunks cargados; nunca sube la distancia que elegiste en Video.")
+                    .define("vanillaReducida", false);
+            ocultarEntidadesTapadas = b.comment("No dibujar entidades ni bloques con entidad (cofres, carteles, cabezas) tapados por",
+                            "el terreno: un hilo aparte lo prueba con rayos. Mucho menos trabajo de CPU con granjas o",
+                            "bases grandes detrás de paredes. Sin efecto si el mod EntityCulling está instalado.")
+                    .define("ocultarEntidadesTapadas", true);
+            distanciaEntidades = b.comment("Distancia máxima (bloques) para dibujar entidades (salvo jugadores) y bloques con",
+                            "entidad. 0 = la de vanilla.")
+                    .defineInRange("distanciaEntidades", 0, 0, 256);
+            distanciaParticulas = b.comment("Distancia máxima (bloques) a la que aparecen partículas (vanilla: 32).")
+                    .defineInRange("distanciaParticulas", 32, 4, 32);
+            maxParticulas = b.comment("Tope total de partículas vivas; " + MAX_PARTICULAS_VANILLA + " = sin tope propio (vanilla",
+                            "admite " + MAX_PARTICULAS_VANILLA + " por tipo).")
+                    .defineInRange("maxParticulas", MAX_PARTICULAS_VANILLA, 500, MAX_PARTICULAS_VANILLA);
+            msCargaChunks = b.comment("Milisegundos por tick (de 50) que el cliente dedica a recibir chunks; el servidor",
+                            "manda tantos como entran (vanilla: 7). Más = los chunks aparecen antes al moverse,",
+                            "con algo más de trabajo en el hilo principal mientras llegan.")
+                    .defineInRange("msCargaChunks", 7, 7, 25);
             generacionAproximada = b.comment("Horizonte aproximado: estimar el terreno lejano nunca generado directo del",
                             "generador del mundo (sin generar chunks) hasta el radio de LOD. Lo real lo reemplaza al",
                             "explorar o pregenerar. Solo singleplayer por ahora.")
@@ -91,6 +124,17 @@ public final class ConfigLod {
             radioPregeneracion = b.comment("Radio de la pregeneración, en chunks. 256 ≈ 200 mil chunks (del orden de",
                             "1-2 GB y decenas de minutos); 2048 ≈ 13 millones (cientos de GB, días).")
                     .defineInRange("radioPregeneracion", 256, 16, ParametrosCalidad.RADIO_MAX);
+            anilloReal = b.comment("Anillo real: chunks vanilla generados (no aproximados) hasta esta cantidad de chunks",
+                            "más allá de la distancia de render, siguiendo al jugador. Lo primero que se ve del LOD",
+                            "queda con árboles y el terreno de verdad, como en Voxy. Usa CPU al moverse y los chunks",
+                            "quedan guardados en el mundo. 0 = apagado. Solo singleplayer por ahora.")
+                    .defineInRange("anilloReal", 16, 0, 64);
+            chunksEnRam = b.comment("Chunks en RAM: los chunks hasta esta cantidad más allá de la distancia de render se",
+                            "mantienen cargados (sin ticks ni envío), así al caminar ya están listos; lo que dejás",
+                            "atrás queda en memoria hasta el presupuesto de abajo. 0 = apagado. Solo singleplayer.")
+                    .defineInRange("chunksEnRam", 8, 0, 32);
+            ramChunksMb = b.comment("RAM (MB) para chunks retenidos detrás tuyo (aparte del colchón de adelante).")
+                    .defineInRange("ramChunksMb", 384, 64, 8192);
             ocultarTapado = b.comment("No armar ni dibujar el LOD escondido detrás de montañas (oclusión por relieve).")
                     .define("ocultarTapado", true);
             texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
@@ -157,8 +201,12 @@ public final class ConfigLod {
             invertirJitter = b.comment("XeSS/DLSS: pasar el desplazamiento sub-píxel con el signo contrario. Probar si la imagen",
                             "tiembla o queda borrosa quieta con XeSS o DLSS (depende de la convención de cada uno).")
                     .define("invertirJitter", false);
-            hudRendimiento = b.comment("Mostrar arriba de la pantalla FPS, tiempos de cuadro, CPU, RAM y el trabajo del LOD.")
+            hudRendimiento = b.comment("Mostrar arriba a la izquierda FPS (actual, mínimo y promedio), CPU, RAM, GPU y VRAM,",
+                            "con colores según el uso.")
                     .define("hudRendimiento", true);
+            hudDetalleLod = b.comment("Con el HUD de rendimiento: segunda línea con el trabajo del LOD (dibujo, vértices,",
+                            "extracción, límite CPU/GPU). Apagado: solo la primera línea.")
+                    .define("hudDetalleLod", true);
             logDepuracion = b.comment("Escribir logs/minecraftlodmod-depuracion.log: una línea por segundo con el",
                             "rendimiento, la posición y lo que hace el mod, más eventos (tirones, cambios de config).")
                     .define("logDepuracion", false);
@@ -220,6 +268,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue radioServidoMaximo;
         public final ModConfigSpec.IntValue nodosPorSegundo;
         public final ModConfigSpec.IntValue rafagaNodos;
+        public final ModConfigSpec.BooleanValue generacionParalela;
         public final ModConfigSpec.BooleanValue permitirSincroVertical;
         public final ModConfigSpec.BooleanValue generacionVertical;
         public final ModConfigSpec.IntValue margenGeneracionAbajo;
@@ -236,6 +285,12 @@ public final class ConfigLod {
                             "cliente; en un servidor dedicado lo elige según el hardware.")
                     .defineEnum("preset", ParametrosCalidad.Seleccion.AUTOMATICO,
                             EnumSet.complementOf(EnumSet.of(ParametrosCalidad.Seleccion.PERSONALIZADO)));
+            generacionParalela = b.comment("EXPERIMENTAL: generar chunks vanilla en paralelo. Vanilla calcula ruido y biomas",
+                            "en varios hilos pero superficie, cuevas (carvers) y features de a un chunk por vez; con",
+                            "esto van al pool de hilos (las features con candados sobre los 3x3 chunks que tocan).",
+                            "Más chunks nuevos por segundo con varios núcleos. Algún mod de generación que no sea",
+                            "seguro entre hilos podría fallar: apagalo en ese caso.")
+                    .define("generacionParalela", false);
             b.pop();
 
             b.comment("Lo que el servidor le sirve a los clientes en multiplayer.").push("red");

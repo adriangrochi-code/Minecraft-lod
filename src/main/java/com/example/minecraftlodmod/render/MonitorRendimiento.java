@@ -38,15 +38,19 @@ import java.util.Locale;
  * segundo, arma una {@link Muestra} con FPS, tiempos de cuadro, CPU, RAM,
  * tick del servidor integrado, costo del LOD y ritmo de generación.
  *
- *  - HUD (opción {@code hudRendimiento}): dos líneas arriba al centro,
- *    ocultas con F1 o con F3 abierto.
+ *  - HUD (opción {@code hudRendimiento}), arriba a la izquierda, oculto con F1
+ *    o con F3 abierto: FPS | MIN | AVG (desde que se entró al mundo), CPU %,
+ *    RAM, GPU % y VRAM, con colores según el valor ({@link ColoresHud}); debajo,
+ *    una línea con el estado del LOD.
  *  - Log de depuración (opción {@code logDepuracion}): una línea por segundo
  *    en {@code logs/minecraftlodmod-depuracion.log} con todo eso más la
  *    posición y velocidad del jugador, y líneas de EVENTO (entrar o salir de
  *    un mundo, cambios de config, tirones de FPS). Separado del
  *    latest.log para poder mandarlo y compararlo entre equipos.
  *
- * La GPU no se muestra: Minecraft solo la mide con F3 abierto.
+ * GPU % y VRAM: en Windows, los contadores del sistema ({@link MedidorGpuWindows});
+ * si no, el tiempo de GPU del cuadro ({@link BalanceCpuGpu}, sin dato con Vulkan)
+ * y {@link MedidorVram}.
  */
 public final class MonitorRendimiento {
 
@@ -60,8 +64,16 @@ public final class MonitorRendimiento {
     public record Muestra(double fps, double promedioMs, double peorMs, double fpsUnoPorCientoBajo,
                           double cpuJuego, double cpuSistema, long ramUsadaMb, long ramMaximaMb,
                           double msServidor, RenderLod.Resumen lod, double extraidosPorSegundo,
-                          double aproximadosPorSegundo, int pendientes, PregeneradorChunks.Estado pregeneracion) {
+                          double aproximadosPorSegundo, int pendientes, PregeneradorChunks.Estado pregeneracion,
+                          double gpuPorcentaje, long vramUsadaMb, long vramTotalMb, long vramLibreMb,
+                          double fpsMinimo, double fpsPromedio) {
     }
+
+    /** MIN y AVG del HUD: desde que se entró al mundo, sin los primeros segundos (carga). */
+    static final long DESCARTE_SESION_NANOS = 5_000_000_000L;
+    private long inicioSesionNanos = System.nanoTime();
+    private double fpsMinimoSesion = Double.POSITIVE_INFINITY, sumaFpsSesion;
+    private int muestrasSesion;
 
     private final RenderLod render;
     private final GeneradorLocal generador;
@@ -112,6 +124,12 @@ public final class MonitorRendimiento {
         double segundos = (ahora - inicioVentanaNanos) / 1e9;
         inicioVentanaNanos = ahora;
         promedioAnteriorMs = r.promedioMs();
+        if (Minecraft.getInstance().level != null && ahora - inicioSesionNanos > DESCARTE_SESION_NANOS
+                && r.fps() > 0) {
+            fpsMinimoSesion = Math.min(fpsMinimoSesion, r.fps());
+            sumaFpsSesion += r.fps();
+            muestrasSesion++;
+        }
         ultima = muestrear(r, segundos);
         escribirMuestra(ultima);
     }
@@ -126,6 +144,19 @@ public final class MonitorRendimiento {
         extraidosAntes = extraidos;
         aproximadosAntes = aproximados;
         boolean conServidor = servidor != null && generador.store() != null;
+        boolean medir = ConfigLod.CLIENTE.hudRendimiento.get() || ConfigLod.CLIENTE.logDepuracion.get();
+        // Primero los contadores de Windows (los del Administrador de tareas: cualquier placa, también con
+        // Vulkan); si no hay, la medición del juego.
+        MedidorGpuWindows windows = MedidorGpuWindows.INSTANCIA;
+        double gpu = medir ? windows.gpuPorcentaje() : -1;
+        if (gpu < 0) {
+            double gpuMs = balance.ultimoGpuMs();
+            gpu = Double.isNaN(gpuMs) || r.promedioMs() <= 0 ? -1 : Math.min(100, 100 * gpuMs / r.promedioMs());
+        }
+        MedidorVram.Vram vram = medir ? MedidorVram.INSTANCIA.medir() : MedidorVram.Vram.SIN_DATO;
+        if (medir && windows.vramUsadaMb() >= 0 && windows.vramTotalMb() > 0) {
+            vram = new MedidorVram.Vram(windows.vramUsadaMb(), windows.vramTotalMb(), -1);
+        }
         return new Muestra(r.fps(), r.promedioMs(), r.peorMs(), r.fpsUnoPorCientoBajo(),
                 so == null ? -1 : so.getProcessCpuLoad() * 100, so == null ? -1 : so.getCpuLoad() * 100,
                 (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20,
@@ -133,7 +164,9 @@ public final class MonitorRendimiento {
                 mc.level == null ? null : render.resumen(),
                 conServidor ? porSegExtraidos : 0, conServidor ? porSegAproximados : 0,
                 conServidor ? generador.cantidadPendientes() : 0,
-                conServidor ? generador.estadoPregeneracion() : null);
+                conServidor ? generador.estadoPregeneracion() : null,
+                gpu, vram.usadaMb(), vram.totalMb(), vram.libreMb(),
+                muestrasSesion == 0 ? -1 : fpsMinimoSesion, muestrasSesion == 0 ? -1 : sumaFpsSesion / muestrasSesion);
     }
 
     private void dibujarHud(GuiGraphics g, DeltaTracker delta) {
@@ -144,7 +177,9 @@ public final class MonitorRendimiento {
             return;
         }
         Font fuente = mc.font;
-        if (m != hudDe) {
+        boolean detalle = ConfigLod.CLIENTE.hudDetalleLod.get();
+        if (m != hudDe || detalle != hudConDetalle) {
+            hudConDetalle = detalle;
             // Los datos cambian una vez por ventana: armar y medir el texto en cada cuadro era
             // trabajo (y basura) por nada.
             hudDe = m;
@@ -156,16 +191,13 @@ public final class MonitorRendimiento {
         }
         Component[] lineas = hudLineas;
         int anchoMaximo = hudAncho;
-        float escala = Math.min(1f, (g.guiWidth() - 8f) / Math.max(1, anchoMaximo));
+        float escala = Math.min(1f, (g.guiWidth() - 6f) / Math.max(1, anchoMaximo));
         g.pose().pushPose();
         g.pose().scale(escala, escala, 1f);
-        float anchoVisible = g.guiWidth() / escala;
-        int y = 2;
+        int y = 3;
         for (Component linea : lineas) {
-            int ancho = fuente.width(linea);
-            int x = (int) ((anchoVisible - ancho) / 2);
-            g.fill(x - 2, y - 1, x + ancho + 2, y + fuente.lineHeight, 0x90000000);
-            g.drawString(fuente, linea, x, y, 0xFFFFFF, false);
+            // Arriba a la izquierda, texto con sombra y sin fondo (como el contador de FPS clásico).
+            g.drawString(fuente, linea, 3, y, ColoresHud.BLANCO, true);
             y += fuente.lineHeight + 2;
         }
         g.pose().popPose();
@@ -174,14 +206,12 @@ public final class MonitorRendimiento {
     /** Texto del HUD de la última muestra ({@link #dibujarHud}). */
     private Muestra hudDe;
     private Component[] hudLineas;
+    private boolean hudConDetalle;
     private int hudAncho;
 
     private Component[] lineasHud(Muestra m) {
-        Component linea1 = Component.translatable("minecraftlodmod.hud.linea1",
-                entero(m.fps()), decimal(m.promedioMs()), decimal(m.peorMs()), entero(m.fpsUnoPorCientoBajo()),
-                entero(m.cpuJuego()), entero(m.cpuSistema()), m.ramUsadaMb(), m.ramMaximaMb(),
-                m.msServidor() < 0 ? "-" : decimal(m.msServidor()));
-        if (m.lod() == null) {
+        Component linea1 = lineaPrincipal(m);
+        if (m.lod() == null || !ConfigLod.CLIENTE.hudDetalleLod.get()) {
             return new Component[]{linea1};
         }
         Component linea2 = Component.literal("v" + version() + "  ·  ")
@@ -191,6 +221,50 @@ public final class MonitorRendimiento {
                 m.pendientes(), entero(m.aproximadosPorSegundo()), pregeneracion(m.pregeneracion())))
                 .append(Component.translatable("minecraftlodmod.hud.limite", balance.diagnostico()));
         return new Component[]{linea1, linea2};
+    }
+
+    /** "45 | MIN 45 | AVG 30 | CPU 34% | RAM 2.1/4.0 GB | GPU 70% | VRAM 1.2/6.0 GB", con colores. */
+    static Component lineaPrincipal(Muestra m) {
+        net.minecraft.network.chat.MutableComponent l = Component.empty();
+        l.append(valor(entero(m.fps()), ColoresHud.fps(m.fps())));
+        separador(l).append(etiqueta("MIN ")).append(valor(entero(m.fpsMinimo()), ColoresHud.fps(m.fpsMinimo())));
+        separador(l).append(etiqueta("AVG ")).append(valor(entero(m.fpsPromedio()), ColoresHud.fps(m.fpsPromedio())));
+        separador(l).append(etiqueta("CPU ")).append(valor(porcentaje(m.cpuJuego()), ColoresHud.uso(m.cpuJuego())));
+        double ram = m.ramMaximaMb() > 0 ? 100.0 * m.ramUsadaMb() / m.ramMaximaMb() : -1;
+        separador(l).append(etiqueta("RAM ")).append(valor(gb(m.ramUsadaMb()) + "/" + gb(m.ramMaximaMb()) + " GB",
+                ColoresHud.uso(ram)));
+        separador(l).append(etiqueta("GPU ")).append(valor(porcentaje(m.gpuPorcentaje()), ColoresHud.uso(m.gpuPorcentaje())));
+        separador(l).append(etiqueta("VRAM "));
+        if (m.vramUsadaMb() >= 0 && m.vramTotalMb() > 0) {
+            l.append(valor(gb(m.vramUsadaMb()) + "/" + gb(m.vramTotalMb()) + " GB",
+                    ColoresHud.uso(100.0 * m.vramUsadaMb() / m.vramTotalMb())));
+        } else if (m.vramLibreMb() >= 0) {
+            l.append(valor(gb(m.vramLibreMb()) + " GB", ColoresHud.BLANCO))
+                    .append(etiqueta(" " + Component.translatable("minecraftlodmod.hud.libre").getString()));
+        } else {
+            l.append(valor("-", ColoresHud.GRIS));
+        }
+        return l;
+    }
+
+    private static net.minecraft.network.chat.MutableComponent separador(net.minecraft.network.chat.MutableComponent l) {
+        return l.append(Component.literal(" | ").withStyle(s -> s.withColor(ColoresHud.GRIS)));
+    }
+
+    private static Component etiqueta(String texto) {
+        return Component.literal(texto).withStyle(s -> s.withColor(ColoresHud.BLANCO));
+    }
+
+    private static Component valor(String texto, int color) {
+        return Component.literal(texto).withStyle(s -> s.withColor(color));
+    }
+
+    private static String porcentaje(double v) {
+        return v < 0 || Double.isNaN(v) ? "-" : Math.round(v) + "%";
+    }
+
+    private static String gb(long mb) {
+        return String.format(Locale.ROOT, "%.1f", mb / 1024.0);
     }
 
     private static String pregeneracion(PregeneradorChunks.Estado e) {
@@ -207,6 +281,10 @@ public final class MonitorRendimiento {
 
     @SubscribeEvent
     public void alConectar(ClientPlayerNetworkEvent.LoggingIn evento) {
+        inicioSesionNanos = System.nanoTime();
+        fpsMinimoSesion = Double.POSITIVE_INFINITY;
+        sumaFpsSesion = 0;
+        muestrasSesion = 0;
         evento("MUNDO", "entrada" + (Minecraft.getInstance().getSingleplayerServer() != null ? " (singleplayer)" : " (servidor)"));
         evento("CONFIG", resumenConfig());
     }
@@ -241,6 +319,9 @@ public final class MonitorRendimiento {
         s.append(String.format(Locale.ROOT, " fps=%.0f ms=%.2f peor=%.1f bajo1%%=%.0f cpu=%.0f%% cpuSistema=%.0f%% ram=%d/%dMB servidor=%s",
                 m.fps(), m.promedioMs(), m.peorMs(), m.fpsUnoPorCientoBajo(), m.cpuJuego(), m.cpuSistema(),
                 m.ramUsadaMb(), m.ramMaximaMb(), m.msServidor() < 0 ? "-" : String.format(Locale.ROOT, "%.1fms", m.msServidor())));
+        s.append(String.format(Locale.ROOT, " gpu=%s vram=%d/%dMB vramLibre=%dMB fpsMin=%.0f fpsProm=%.0f",
+                m.gpuPorcentaje() < 0 ? "-" : String.format(Locale.ROOT, "%.0f%%", m.gpuPorcentaje()),
+                m.vramUsadaMb(), m.vramTotalMb(), m.vramLibreMb(), m.fpsMinimo(), m.fpsPromedio()));
         if (mc.player != null) {
             Vec3 p = mc.player.position();
             double velocidad = posicionAnterior == null ? 0 : p.distanceTo(posicionAnterior);

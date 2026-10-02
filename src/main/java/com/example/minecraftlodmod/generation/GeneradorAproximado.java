@@ -113,6 +113,8 @@ public final class GeneradorAproximado {
     private EspiralChunks espiral;
     private int centroX, centroZ;
     private final List<Long> candidatos = new ArrayList<>();
+    /** Ticks hasta la próxima revisión del anillo cercano ({@link #revisarAnilloCercano}). */
+    private int ticksAnillo;
     private final Set<Long> enVuelo = ConcurrentHashMap.newKeySet();
     /** Chunks de un lote que cedió el turno a la extracción real: vuelven a la ventana en el próximo tick. */
     private final java.util.Queue<Long> devueltos = new java.util.concurrent.ConcurrentLinkedQueue<>();
@@ -212,6 +214,10 @@ public final class GeneradorAproximado {
         int maximoChunks = cargado ? 1 : Math.max(1, Math.min(enVueloMaximo, scheduler.limiteConcurrenciaActual() - 1));
         Contexto ctx = contexto;
         int alcanceReal = servidor.getPlayerList().getViewDistance() + 1;
+        if (--ticksAnillo <= 0) {
+            ticksAnillo = TICKS_ANILLO_CERCANO;
+            revisarAnilloCercano(ctx, store, jx, jz, alcanceReal, jugador.getX(), jugador.getZ());
+        }
         lanzarRegiones(ctx, store, scheduler, cargado ? 1 : REGIONES_EN_VUELO);
         int revisados = 0;
         while (candidatos.size() < VENTANA && revisados < REVISIONES_POR_TICK && !espiralAgotada) {
@@ -304,6 +310,54 @@ public final class GeneradorAproximado {
             it = candidatos.iterator();
         }
     }
+
+    /** Cada cuánto (ticks) se revisa el anillo justo después de vanilla. */
+    static final int TICKS_ANILLO_CERCANO = 20;
+    /** Ancho (chunks) del anillo revisado: hasta donde se aproxima en vóxeles de 2 bloques. */
+    static final int ANCHO_ANILLO_CERCANO = (int) (TerrenoAproximado.DISTANCIA_NIVEL1 / 16);
+    /** Tope por revisión (los más cercanos): la ventana se ordena entera en cada tick. */
+    static final int MAXIMO_ANILLO = 256;
+
+    /**
+     * Lo primero que se ve del LOD es lo que está justo después de vanilla, y
+     * la espiral no lo garantiza: se re-centra recién a {@link #RECENTRAR_CHUNKS}
+     * y, terminada, se revisa cada {@link #REVISAR_ESPIRAL_NANOS}. Al caminar,
+     * el borde en la dirección de avance quedaba aproximado en grueso (estaba
+     * lejos) o sin nada hasta un minuto. Cada segundo, del borde de vanilla
+     * hacia afuera, los chunks sin LOD (o más grueso de lo que pide su
+     * distancia) pasan adelante de la ventana, aunque esté llena.
+     */
+    private void revisarAnilloCercano(Contexto ctx, RegionFileStore store, int jx, int jz, int alcanceReal,
+                                      double px, double pz) {
+        List<Long> urgentes = new ArrayList<>();
+        for (int d = alcanceReal + 1; d <= alcanceReal + ANCHO_ANILLO_CERCANO && urgentes.size() < MAXIMO_ANILLO; d++) {
+            for (int i = -d; i <= d; i++) {
+                agregarSiFalta(ctx, store, jx + i, jz - d, px, pz, urgentes);
+                agregarSiFalta(ctx, store, jx + i, jz + d, px, pz, urgentes);
+                if (i != -d && i != d) {
+                    agregarSiFalta(ctx, store, jx - d, jz + i, px, pz, urgentes);
+                    agregarSiFalta(ctx, store, jx + d, jz + i, px, pz, urgentes);
+                }
+            }
+        }
+        if (!urgentes.isEmpty()) {
+            java.util.Set<Long> nuevos = new java.util.HashSet<>(urgentes);
+            candidatos.removeIf(nuevos::contains);
+            candidatos.addAll(0, urgentes);
+            revisionesAnillo.addAndGet(urgentes.size());
+        }
+    }
+
+    private void agregarSiFalta(Contexto ctx, RegionFileStore store, int x, int z, double px, double pz,
+                                List<Long> urgentes) {
+        long clave = ChunkPos.asLong(x, z);
+        if (!enVuelo.contains(clave) && !tieneLod(store, ctx.dimension(), x, z, nivelPara(x, z, px, pz))) {
+            urgentes.add(clave);
+        }
+    }
+
+    /** Chunks que la revisión del anillo cercano mandó adelante (log de depuración). */
+    private final java.util.concurrent.atomic.AtomicLong revisionesAnillo = new java.util.concurrent.atomic.AtomicLong();
 
     /** Hilo del pool: los chunks del lote desde {@code desde} vuelven a la ventana sin hacerse. */
     private void devolver(List<long[]> lote, int desde) {
@@ -458,7 +512,7 @@ public final class GeneradorAproximado {
      */
     static boolean tieneLod(RegionFileStore store, byte dimension, int x, int z, int nivel) {
         RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimension, x, z);
-        if (store.contiene(region, GeneradorLocal.claveMarca(x, z))) {
+        if (GeneradorLocal.tieneMarca(store, region, x, z)) {
             return true;
         }
         if (nivel <= 0 || nivel >= TerrenoAproximado.NIVEL_MIN) {
@@ -807,14 +861,16 @@ public final class GeneradorAproximado {
         long cedidas = cesiones.getAndSet(0);
         long evaluaciones = EVALUACIONES.sumThenReset();
         long atajo = CONSULTAS_ATAJO.sumThenReset();
-        if (n > 0 || regiones > 0 || cedidas > 0 || evaluaciones > 0 || atajo > 0) {
+        long delAnillo = revisionesAnillo.getAndSet(0);
+        if (n > 0 || regiones > 0 || cedidas > 0 || evaluaciones > 0 || delAnillo > 0 || atajo > 0) {
             LOG.info("LOD horizonte aproximado: anillo {} de {}, {} chunks ({} /s), {} nodos por región "
                             + "(anillo {} de {}), {} ms de cálculo en el pool, {} veces cedió el turno a chunks reales, "
-                            + "{} evaluaciones de densidad, {} columnas por atajo",
+                            + "{} evaluaciones de densidad, {} chunks adelantados por el anillo cercano, "
+                            + "{} columnas por atajo",
                     espiral.anillo(), espiral.radio(), n,
                     String.format("%.0f", n / ((ahora - ultimoLogNanos) / 1e9)), regiones,
                     espiralRegion == null ? 0 : espiralRegion.anillo(), espiralRegion == null ? 0 : espiralRegion.radio(),
-                    nanos / 1_000_000, cedidas, evaluaciones, atajo);
+                    nanos / 1_000_000, cedidas, evaluaciones, delAnillo, atajo);
         }
         ultimoLogNanos = ahora;
     }

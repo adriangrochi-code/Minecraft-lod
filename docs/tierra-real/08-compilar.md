@@ -27,7 +27,7 @@ git merge origin/claude/acceso-extra-xhb3yf
    dos ramas tocaron el final del archivo. Resolver quedándose con **las
    dos cosas**: la sección 32 como está en `claude/acceso-extra-xhb3yf`
    (tiene los puntos 0.26.4 y 0.26.5 y el "Pendiente" nuevo) y, después, la
-   sección 33 de Tierra real completa.
+   sección 36 de Tierra real completa.
 2. `CHANGELOG.md` y `gradle.properties` entran sin conflicto (versión 0.26.5
    del LOD). Sigue valiendo: Tierra real no sube `mod_version` hasta juntar.
 3. **Arreglo de un test** (`AlturaTierraTest`): en los tests de NeoForge los

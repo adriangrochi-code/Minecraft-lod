@@ -993,7 +993,68 @@ luz, guardado, red y otros mods lo asumen); se achica lo que guarda cada secció
 (`PalettedContainer` 40 B, detector 40 B, `Data`, paleta de un valor: ~150 B);
 compresión de secciones lejanas en el cliente (hoy todo es servidor).
 
-## 33. Tipo de mundo "Tierra real" — 2026-10-01
+## 33. Optimizaciones del juego fuera del LOD — 2026-10-02
+
+Pedido: acelerar el juego en general (chunks y FPS), no solo el LOD. En orden:
+
+1. **Modo híbrido (`config/DistanciaVanilla`, opción `vanillaReducida`):**
+   con el LOD activo, la distancia de vanilla se acota según el preset (5 a
+   12 chunks) en `Options#getEffectiveRenderDistance` y en la del servidor
+   integrado. Medido: 4-5 → 9-10 FPS pidiendo 16 chunks.
+2. **Entidades tapadas (`render/OcultamientoEntidades` + `RayosVisibilidad`):**
+   lo que vanilla quiso dibujar (ya pasó el frustum) se prueba en un hilo
+   aparte con rayos al centro y las esquinas de la caja (DDA bloque por
+   bloque, bloques `isSolidRender`); el cuadro siguiente saltea lo tapado.
+   Conservador: lo nuevo, una prueba vieja o hecha con la cámara en otro
+   lugar cuentan como visibles; nada en espectador, en la pasada de sombras
+   de Iris ni para lo que brilla. Idea de EntityCulling (si está, no corre).
+   Medido: 105 → 51 entidades dibujadas con la imagen idéntica.
+3. **Límites:** distancia de entidades y bloques con entidad, distancia de
+   partículas (vanilla 32) y tope total de partículas vivas.
+4. **Ritmo de chunks (`msCargaChunks`):** el cliente pide los chunks que
+   entran en N ms por tick (vanilla 7, `ChunkBatchSizeCalculator`). En Xvfb no
+   cambió nada (el límite era el servidor): queda en 7, a probar en hardware.
+5. **Generación en paralelo (`cubico/GeneracionParalela`, opción de servidor
+   experimental `generacionParalela`):** vanilla corre superficie, carvers y
+   features de a un chunk por vez desde el mailbox de worldgen. Superficie y
+   carvers (solo escriben su chunk) van al pool de fondo; features, con
+   candados rayados por chunk sobre los 3×3 que escribe, tomados en orden.
+   Idea de C2ME (si está, no corre).
+6. **Vecinos de estados de bloque (`cubico/TablaEstados`):** una tabla por
+   bloque con índice en base mixta en vez de un `ArrayTable` por estado
+   (~26 mil tablas). Idea de FerriteCore (MIT; si está, no corre).
+
+## 34. Sin huecos cerca y terreno real después de vanilla (como Voxy) — 2026-10-02
+
+- **Luz del terreno aproximado:** el subsuelo de una columna se guarda con
+  luz 0 y el descarte de caras sin luz (sección 25) borraba las paredes de
+  acantilados. Los chunks aproximados se mallan con sus vecinos laterales al
+  mismo nivel (reales o aproximados) y sus costados restantes llevan luz
+  plena (`GeometriaLod#costadosAlAire`); en las teselas, solo los interiores
+  (los bordes siguen dependiendo de la luz para no dibujar paredes enterradas).
+- **Bordes entre niveles:** una celda oculta los costados de su borde contra
+  el chunk vecino solo si la celda de al lado tiene el mismo nivel (firma de
+  vecinas en `EstadoCelda`, rearmado si cambia).
+- **Anillo real (`anilloReal`):** el pregenerador (`PregeneradorChunks`) con
+  radio vista + N, re-centrado cada radio/8 chunks: lo primero después de
+  vanilla es terreno real, como en Voxy (que solo muestra chunks reales).
+- **Anillo cercano (`GeneradorAproximado#revisarAnilloCercano`):** cada
+  segundo, de vanilla hacia afuera hasta `DISTANCIA_NIVEL1`, lo que falta
+  pasa adelante de la ventana (tope 256); las celdas cercanas incompletas se
+  rearman cada 2 s.
+
+## 35. Chunks en RAM para cargar antes — 2026-10-02
+
+Vanilla deserializa cada chunk (`ChunkSerializer.read`) en el hilo del
+servidor recién cuando entra a la distancia de vista, y lo suelta al salir.
+Moverlo a otro hilo (como C2ME) toca `PoiManager` y la luz, que no son
+seguros entre hilos: descartado. En cambio, `generation/ChunksEnRam` usa RAM:
+ticket propio de nivel 33 (completo, sin ticks ni envío) para un colchón de
+`chunksEnRam` chunks más allá de la vista (de a 32 por pasada, prioridad de
+vista, no con MSPT > 40 ms) y retención LRU de lo que queda atrás hasta
+`ramChunksMb` (~96 KB por chunk medido). Solo singleplayer.
+
+## 36. Tipo de mundo "Tierra real" — 2026-10-01
 
 Pedido: un tipo de mundo aparte (nunca por defecto) con la Tierra real a
 escala 1:8 (1:6 opcional), en variante cilíndrica y "tierra plana" con

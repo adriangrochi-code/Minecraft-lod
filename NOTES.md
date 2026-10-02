@@ -10,6 +10,33 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Chunks en RAM (0.26.16, `chunksEnRam`/`ramChunksMb`):** en Xvfb el
+  colchón cuesta ~100 MB (8 chunks, vista 12) y no cambió el tiempo de carga
+  (el cliente tiene todo al segundo del teletransporte con o sin). Medir en
+  la A275 caminando/volando: si no se nota, bajar el valor por defecto o
+  apagarlo.
+- **Anillo con huecos en 4 direcciones (0.26.15):** no se reprodujo tal cual
+  en Xvfb (radio 160). Arreglados tres motivos de huecos que encajan: caras
+  laterales del terreno aproximado descartadas por luz 0 (verificado en la
+  isla: huecos cerrados), bordes de celda entre niveles distintos y costados
+  que dan a vanilla. Confirmar en la A275 y en la 1060 con el preset y la
+  distancia de esos equipos.
+- **Anillo real (0.26.15, `anilloReal`):** medir en la A275 si generar 16
+  chunks más allá de vanilla al moverse baja los FPS o traba el servidor
+  integrado; si sí, bajar el valor por defecto.
+- **Generación en paralelo (0.26.14, `generacionParalela`):** en Xvfb
+  (4 núcleos) 1024 chunks nuevos tardan lo mismo con y sin la opción
+  (7,5/7,7 s contra 7,6/5,6 s), sin errores de hilos. Medir en el i5-9400
+  (6 núcleos) o en un servidor con más núcleos; si no gana, sacarla.
+- **Velocidad de carga de chunks (0.26.14, `msCargaChunks`, MixinLoteChunks):**
+  en Xvfb (llvmpipe, 4 núcleos) 7 ms y 14 ms cargan 1021 chunks en el mismo
+  tiempo (~14 s): el límite ahí es el servidor, no el cliente. Queda en 7
+  (vanilla) por defecto; probar en la GTX 1060 / A275 si subirlo acelera algo
+  y, si sí, cambiar el valor por defecto.
+- **Ocultar entidades tapadas (0.26.14):** verificado en Xvfb con vacas tras
+  una pared (imagen idéntica). Falta ver en hardware real que no titilen al
+  moverse rápido (elytra) ni con shaderpacks.
+
 - **Generación por franja vertical (0.26.1, cubico/GeneracionVertical):**
   medida solo en servidor dedicado (tiempos), sin mirar el terreno. Falta
   recorrer en el juego un mundo alto con la opción prendida: que el borde
@@ -46,6 +73,26 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
     si tironea, repartirlo en varios ticks, las más cercanas primero;
   - en multiplayer el LOD vertical necesita los datos LOD en el cliente
     (hoy solo singleplayer, como el resto del LOD por red).
+
+- **HUD: GPU y VRAM por contadores de Windows (0.26.13, sin probar):**
+  `render/MedidorGpuWindows` (PDH por JNA, hilo propio). Verificar en la PC:
+  que el GPU % se parezca al del Administrador de tareas (con OpenGL y con
+  Vulkan), que la VRAM total sea la de la placa (en la A275/3500U es la
+  memoria dedicada chica de la APU) y que el log diga «uso de GPU y VRAM
+  desde los contadores de Windows». Si dice «sin contadores», el HUD queda
+  con la medición del juego.
+
+- **Fusión de caras (medido después de 0.26.11, Xvfb, mundo de benchmark):**
+  por qué se corta una fusión (pares vecinos al empezar cada quad): estado de
+  bloque 190k, oclusión ambiental 116k, altura 33k, color 7,6k. Probado:
+  - fusionar por textura de la cara en vez de estado exacto: −1% de vértices
+    (queda en el código, no cambia la imagen);
+  - tolerancia de color en vóxeles grandes: 0% (los colores salen por estado,
+    sin variación por bloque) → descartado;
+  - oclusión solo hasta vóxeles de 4: 0% en lo dibujado (lo que se ve cerca
+    son vóxeles chicos) → descartado. Oclusión apagada del todo: −18%.
+  Lo que domina son las celdas finas cerca del borde de vanilla: la perilla
+  real es «Píxeles máximos» (y la oclusión ambiental).
 
 - **Catalejo con Vulkan (0.26.10, sin resolver):** en Xvfb con lavapipe, al
   hacer zoom con el LOD texturizado apareció una vez geometría magenta con
@@ -303,7 +350,7 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 ## Tierra real (rama `claude/tierra-real`)
 
 - Diseño y resultados: `docs/tierra-real/` (hitos y medidas en `06-hitos.md`),
-  sección 33 de la arquitectura. Hechos H0–H3.
+  sección 36 de la arquitectura. Hechos H0–H3.
 - Datos: `.minecraft/minecraftlodmod/tierra/tierra.lodt` (formato v2, con
   agua), preparado como dice `docs/tierra-real/02-datos.md` (ETOPO 30″ +
   Köppen + Natural Earth; 672 MB, ~5 min, `-Xmx10g`). Sin el archivo, el mundo

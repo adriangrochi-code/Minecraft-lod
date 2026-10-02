@@ -82,7 +82,18 @@ public final class PantallaLod extends Screen {
                 () -> preset.pendiente() == ParametrosCalidad.Seleccion.PERSONALIZADO;
 
         paginas.add(new Pagina(pestana("lod"), List.of(
-                List.of(interruptor("lodActivo", Impacto.VARIABLE, c.lodActivo)),
+                List.of(interruptor("lodActivo", Impacto.VARIABLE, c.lodActivo),
+                        interruptor("vanillaReducida", Impacto.ALTO, c.vanillaReducida)),
+                List.of(interruptor("ocultarEntidadesTapadas", Impacto.MEDIO, c.ocultarEntidadesTapadas),
+                        entero("distanciaEntidades", Impacto.MEDIO, 0, 256, 8, c.distanciaEntidades,
+                                v -> v == 0 ? texto("distanciaEntidades.vanilla") : Component.translatable(CLAVE + "unidad.bloques", v)),
+                        entero("distanciaParticulas", Impacto.BAJO, 4, 32, 2, c.distanciaParticulas,
+                                v -> Component.translatable(CLAVE + "unidad.bloques", v)),
+                        entero("maxParticulas", Impacto.MEDIO, 500, ConfigLod.MAX_PARTICULAS_VANILLA, 500, c.maxParticulas,
+                                v -> v >= ConfigLod.MAX_PARTICULAS_VANILLA ? texto("maxParticulas.vanilla")
+                                        : Component.literal(String.valueOf(v))),
+                        entero("msCargaChunks", Impacto.BAJO, 7, 25, 1, c.msCargaChunks,
+                                v -> Component.literal(v + " ms"))),
                 List.of(preset,
                         entero("fpsObjetivo", Impacto.NINGUNO, ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX, 1,
                                 c.fpsObjetivo, v -> Component.literal(v + " FPS")).siempreQue(personalizado),
@@ -141,6 +152,12 @@ public final class PantallaLod extends Screen {
 
         paginas.add(new Pagina(pestana("generacion"), List.of(
                 List.of(interruptor("generacionAproximada", Impacto.MEDIO, c.generacionAproximada)),
+                List.of(entero("anilloReal", Impacto.MEDIO, 0, 64, 4, c.anilloReal,
+                                v -> v == 0 ? texto("anilloReal.apagado") : Component.literal(v + " chunks"))),
+                List.of(entero("chunksEnRam", Impacto.BAJO, 0, 32, 2, c.chunksEnRam,
+                                v -> v == 0 ? texto("anilloReal.apagado") : Component.literal(v + " chunks")),
+                        entero("ramChunksMb", Impacto.NINGUNO, 64, 8192, 64, c.ramChunksMb,
+                                v -> Component.literal(v + " MB"))),
                 List.of(interruptor("pregenerar", Impacto.ALTO, c.pregenerar),
                         entero("radioPregeneracion", Impacto.NINGUNO, 16, ParametrosCalidad.RADIO_MAX, 16,
                                 c.radioPregeneracion, v -> Component.literal(v + " chunks"))))));
@@ -148,6 +165,7 @@ public final class PantallaLod extends Screen {
         List<ModoEscalado> modos = Escalado.modosDisponibles();
         paginas.add(new Pagina(pestana("experimental"), List.of(
                 List.of(interruptor("hudRendimiento", Impacto.BAJO, c.hudRendimiento),
+                        interruptor("hudDetalleLod", Impacto.NINGUNO, c.hudDetalleLod),
                         interruptor("logDepuracion", Impacto.BAJO, c.logDepuracion)),
                 List.of(interruptor("contratoVoxy", Impacto.VARIABLE, c.contratoVoxy)),
                 List.of(interruptor("sincroVertical", Impacto.VARIABLE, c.sincroVertical),

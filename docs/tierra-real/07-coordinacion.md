@@ -9,7 +9,7 @@
   - `config/ConfigLod.java`: sección propia `[tierra]`;
   - `MinecraftLodMod.java`: una línea de registro;
   - `CHANGELOG.md`: una sola entrada al juntar;
-  - `arquitectura-minecraft-lod-mod.md`: sección 33 nueva (no editar las otras);
+  - `arquitectura-minecraft-lod-mod.md`: sección 36 nueva (era 33; la otra sesión usó 33-35; no editar las otras);
   - `NOTES.md`: subsección propia.
 - **Puntos de contacto con el código de la otra sesión** (no reescribir,
   solo enganchar): `generation/GeneradorAproximado` (atajo `FuenteAltura`),

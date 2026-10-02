@@ -105,6 +105,12 @@ public final class RegionFileStore implements AutoCloseable {
     private final AtomicBoolean vaciadoUrgentePedido = new AtomicBoolean();
     /** Nodos leídos de disco, todavía comprimidos; acceso sincronizado sobre el propio cache. */
     private final BoundedRegionCache cacheLectura;
+    /**
+     * Sube (bajo el candado del cache) con cada escritura o invalidación: una
+     * lectura de disco solo entra al cache si no hubo ninguna desde que
+     * empezó, si no podría cachear la versión vieja de un nodo recién guardado.
+     */
+    private long versionEscrituras;
 
     /**
      * @param periodoEscrituraMs cada cuánto se bajan los pendientes a disco;
@@ -160,6 +166,7 @@ public final class RegionFileStore implements AutoCloseable {
         long clave = claveCache(region, claveNodo);
         if (clave != SIN_CACHE) {
             synchronized (cacheLectura) {
+                versionEscrituras++;
                 cacheLectura.quitar(clave);
             }
         }
@@ -191,6 +198,7 @@ public final class RegionFileStore implements AutoCloseable {
      * desapareció (compactación o invalidación) se reintenta con el índice nuevo.
      */
     private byte[] leerComprimido(ClaveRegion region, long claveNodo) {
+        long version = versionActual();
         byte[] enMemoria = buscarEnMemoria(region, claveNodo);
         if (enMemoria != null) {
             return enMemoria;
@@ -230,10 +238,18 @@ public final class RegionFileStore implements AutoCloseable {
             }
             if (clave != SIN_CACHE) {
                 synchronized (cacheLectura) {
-                    cacheLectura.poner(clave, deDisco);
+                    if (versionEscrituras == version) {
+                        cacheLectura.poner(clave, deDisco);
+                    }
                 }
             }
             return deDisco;
+        }
+    }
+
+    private long versionActual() {
+        synchronized (cacheLectura) {
+            return versionEscrituras;
         }
     }
 
@@ -296,6 +312,7 @@ public final class RegionFileStore implements AutoCloseable {
             Indice indice = indiceDe(region);
             headers.remove(region);
             synchronized (cacheLectura) {
+                versionEscrituras++;
                 cacheLectura.limpiar(); // raro (cambio de bloques): más simple que filtrar por región
             }
             try {
@@ -799,6 +816,7 @@ public final class RegionFileStore implements AutoCloseable {
      * @return bytes leídos del disco
      */
     long precargar(ClaveRegion region) {
+        long version = versionActual(); // antes del índice: un nodo guardado después lo deja viejo
         Indice indice = indicePublicado(region);
         if (indice == null) {
             return 0;
@@ -834,6 +852,9 @@ public final class RegionFileStore implements AutoCloseable {
             synchronized (cacheLectura) {
                 if (cacheLectura.bytesUsados() + datos.length > cacheLectura.presupuestoBytes() * LLENADO_PRECARGA) {
                     return leidos;
+                }
+                if (versionEscrituras != version) {
+                    return leidos; // hubo escrituras: la próxima vuelta precarga con el índice nuevo
                 }
                 cacheLectura.poner(claveCache, datos);
             }

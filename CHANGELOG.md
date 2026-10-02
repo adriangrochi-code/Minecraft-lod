@@ -6,6 +6,105 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.16 — Chunks en RAM para que carguen antes
+- **Chunks en RAM** (Generación, 8 chunks por defecto, 0 = apagado): los
+  chunks hasta esa distancia más allá de tu distancia de render se mantienen
+  cargados en memoria, sin animarlos ni mandarlos a la pantalla. Al caminar,
+  lo que entra a la vista ya está listo; vanilla lo leía del disco y lo
+  armaba de a uno en el hilo del servidor recién en ese momento. Se piden de
+  a poco, primero lo que mirás, y nunca con el servidor atrasado.
+- **RAM para chunks retenidos** (384 MB por defecto): lo que dejás atrás
+  queda cargado hasta ese límite y se suelta primero lo que hace más tiempo
+  que no ves, así volver por el mismo camino es inmediato.
+- Medido en el equipo de pruebas: el colchón de 8 chunks con distancia 12
+  ocupa unos 100 MB. Ahí la carga ya era rápida (disco y procesador
+  rápidos) y no se notó diferencia; donde debería notarse es en la Lenovo.
+  Si en la Lenovo te falta RAM, bajá las dos opciones.
+
+## 0.26.15 — Sin huecos en el LOD y terreno real justo después de vanilla
+- **Huecos en acantilados y laderas (el "anillo con huecos" lejano):** en el
+  terreno aproximado, la parte de abajo de cada columna se guardaba "sin
+  luz", y el LOD descarta las caras sin luz (son cuevas). La pared de un
+  acantilado o una ladera empinada desaparecía y se veía el cielo a través.
+  Ahora los costados del terreno aproximado se dibujan con luz plena, y las
+  paredes enterradas entre chunks se ocultan comparando con el chunk de al
+  lado. Lo mismo en las piezas grandes lejanas.
+- **Ranuras donde cambia el nivel de detalle:** el borde de una celda se
+  ocultaba contra el chunk vecino aunque ese vecino se dibujara con vóxeles
+  de otro tamaño. Ahora solo se oculta si la celda de al lado tiene el mismo
+  nivel. Esas ranuras se veían de frente mirando a lo largo de los ejes:
+  las 4 direcciones a 90°.
+- **Borde con el terreno normal:** las paredes del LOD que dan a un chunk de
+  vanilla más bajo (un acantilado frente a la playa) ya no faltan.
+- **Anillo real** (Generación, 16 chunks por defecto, 0 = apagado): genera
+  chunks de verdad hasta esa distancia más allá de tu distancia de render y
+  te sigue al moverte. Lo primero que se ve del LOD después del terreno
+  normal tiene árboles y el relieve real, como en Voxy; más lejos sigue el
+  horizonte aproximado. Los chunks quedan guardados en el mundo (16 chunks
+  son unos pocos MB). Solo singleplayer.
+- **Prioridad y revisión del borde:** cada segundo se revisan los 32 chunks
+  después de vanilla; lo que falta, o está más grueso de lo que pide su
+  distancia, pasa adelante en la cola. Las celdas cercanas incompletas se
+  rearman cada 2 s (antes 10).
+
+## 0.26.14 — Más rápido fuera del LOD: modo híbrido, entidades tapadas, partículas, generación en paralelo
+- **Arreglo importante:** faltaban pedazos de terreno e islas en el LOD. La
+  marca de "chunk ya extraído" usaba la misma clave que un nodo del terreno
+  aproximado fino, así que algunos chunks se daban por hechos sin estarlo.
+  La marca nueva usa otra clave; la vieja se sigue reconociendo.
+- **Modo híbrido** (General, «Modo híbrido (vanilla corta)», apagado por
+  defecto): con el LOD activo, la distancia de vanilla se acota según el
+  preset (Mínimo 5, Bajo 6, Medio 8, Alto 10, Ultra y Horizonte 12 chunks) y
+  el LOD dibuja el resto. Nunca sube la distancia que elegiste. Medido: de
+  4-5 a 9-10 FPS pidiendo 16 chunks.
+- **Ocultar entidades tapadas** (prendido): no se dibujan los animales, mobs,
+  cofres, carteles, cabezas, etc. que el terreno tapa. Un hilo aparte lo
+  prueba con rayos desde la cámara. Medido: de 105 a 51 entidades dibujadas
+  con la misma imagen. Si tenés EntityCulling instalado, manda ese.
+- **Distancia de entidades, distancia de partículas y máximo de
+  partículas** (General): para recortar entidades lejanas, partículas
+  lejanas (vanilla: 32 bloques) y lluvias de partículas.
+- **Velocidad de carga de chunks** (General, 7 ms = vanilla): cuánto del
+  tick dedica el juego a recibir chunks. En las pruebas no cambió nada
+  (el límite era el servidor); probá subirlo y contame.
+- **Generación en paralelo** (opción experimental del servidor
+  `generacionParalela`, apagada): superficie, cuevas y features de los
+  chunks nuevos se reparten entre los núcleos en vez de ir de a uno. En el
+  equipo de pruebas (4 núcleos) no ganó tiempo: probalo en un servidor con
+  más núcleos y apagalo si algún mod de generación falla.
+- **Menos RAM por estado de bloque** (siempre, salvo con FerriteCore): los
+  ~26 mil estados de bloque comparten una tabla de vecinos por bloque
+  (~15 MB menos, cliente y servidor).
+- Arreglado un caso raro en el que el cache del LOD podía quedarse con la
+  versión vieja de un nodo recién guardado.
+
+## 0.26.13 — GPU y VRAM medidas como el Administrador de tareas (Windows)
+- En Windows, el uso de GPU y la VRAM del HUD salen de los contadores de
+  rendimiento del sistema (los mismos del Administrador de tareas): andan
+  con cualquier placa (NVIDIA, AMD, Intel) y también con Vulkan prendido.
+  GPU %: el motor más ocupado de la placa; VRAM: memoria dedicada usada
+  sobre la total de la placa.
+- Se leen en un hilo aparte una vez por segundo (no frenan el juego). Si en
+  tu sistema no están, el HUD usa la medición de antes.
+- Sin probar en Windows todavía (se desarrolló en Linux): fijate que los
+  valores se parezcan a los del Administrador de tareas.
+
+## 0.26.12 — HUD nuevo: FPS | MIN | AVG, CPU, RAM, GPU y VRAM con colores
+- El HUD de rendimiento pasa arriba a la izquierda, con texto con sombra y
+  sin fondo: `FPS | MIN | AVG | CPU % | RAM usada/máx GB | GPU % | VRAM
+  usada/total GB`. MIN y AVG cuentan desde que entraste al mundo (sin los
+  primeros 5 segundos de carga).
+- Colores: los porcentajes y la memoria van de verde a amarillo y a rojo al
+  acercarse al 100%; los FPS en rojo por debajo de 30, amarillo hasta 60.
+- GPU %: parte del cuadro que la GPU está ocupada (con Vulkan no hay
+  medición: «-»). VRAM: con NVIDIA usada/total; con AMD en OpenGL el driver
+  solo da la libre («X GB libre»); con Vulkan, lo que reservó el juego sobre
+  el total de la GPU; Intel y otros, «-».
+- Nueva opción **«Línea del LOD en el HUD»** (pestaña Depuración): apagada,
+  queda solo el primer renglón.
+- El mesher junta caras de distinto estado de bloque con la misma textura
+  (hojas, pasto...): ~1% menos vértices, sin cambios en la imagen.
+
 ## 0.26.11 — El LOD fuera de la vista ya no se manda a la GPU
 - **Rendimiento (GPU):** cada celda del LOD se prueba contra el campo de
   visión antes de dibujarla; las de atrás y los costados no se mandan. Antes

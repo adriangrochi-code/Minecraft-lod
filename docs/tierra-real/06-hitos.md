@@ -5,7 +5,7 @@ Cada hito cierra con build + tests completos + commit (checklist de
 
 | # | Hito | Se prueba | Se mide |
 |---|---|---|---|
-| H0 | Verificar datos/licencias; sección 33 de la arquitectura con estas decisiones | — | — |
+| H0 | Verificar datos/licencias; sección 36 de la arquitectura con estas decisiones | — | — |
 | H1 | Preparador de datos → `.lodt`, lector con caché, recorte de prueba en `src/test/resources` | tests de lectura/índice/caché | MB en disco, µs por consulta |
 | H2 | `Proyeccion` (las dos) + `FuenteTierra` (bicúbica) + `AlturaTierra` (sin detalle) | ida y vuelta lat/lon↔bloque; puntos conocidos | µs por columna (presupuesto < 0,5 µs) |
 | H3 | `SuperficieTierra` + `noise_settings` + `dimension_type` + `world_preset` (piedra y agua, sin biomas) + fluido global agua (sin océanos de lava) + lecho de roca macizo hasta el fondo de la fosa | servidor dedicado: crear mundo, forceload | ms/chunk, **elevación en puntos conocidos** |
@@ -35,7 +35,7 @@ la cifra famosa.)
 ## Resultados
 
 - **H0–H2 (2026-10-01):** ver `02-datos.md` (verificación y medidas) y la
-  sección 33 de la arquitectura. 0,14 µs por columna (bicúbica).
+  sección 36 de la arquitectura. 0,14 µs por columna (bicúbica).
 - **H3 (2026-10-01):** servidor dedicado con `level-type=minecraftlodmod:tierra_real_8`
   y el `.lodt` global de 30″. `/tierra medir <lat> <lon>` (por RCON) en los
   puntos conocidos, **todos iguales a lo esperado**:

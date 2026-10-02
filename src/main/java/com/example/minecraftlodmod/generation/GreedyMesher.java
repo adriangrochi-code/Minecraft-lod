@@ -99,10 +99,30 @@ public final class GreedyMesher {
      */
     public static List<Quad> mallar(SuperVoxel[] grid, int lado, Vecinos vecinos, boolean conOclusion,
                                     int bloquesPorVoxel) {
+        return mallar(grid, lado, vecinos, conOclusion, bloquesPorVoxel, null);
+    }
+
+    /**
+     * Qué dibuja cada cara de un estado de bloque (la textura de esa cara): dos
+     * vóxeles de distinto estado con la misma cara se pueden fusionar (hojas a
+     * distinta distancia del tronco, pasto con o sin nieve al costado...).
+     * Antes se exigía el mismo estado: era lo que más cortaba las fusiones.
+     */
+    public interface Superficies {
+        /** Clave de lo que se ve en esa cara; mismas claves = misma textura y mismo color base. */
+        int clave(int idEstado, Quad.Eje eje, boolean positivo);
+    }
+
+    /**
+     * @param superficies qué dibuja cada cara (null = solo color: sin texturas el estado no se ve)
+     */
+    public static List<Quad> mallar(SuperVoxel[] grid, int lado, Vecinos vecinos, boolean conOclusion,
+                                    int bloquesPorVoxel, Superficies superficies) {
         List<Quad> quads = new ArrayList<>();
         for (Quad.Eje eje : Quad.Eje.values()) {
-            quads.addAll(mallarEje(grid, lado, eje, true, vecinos, conOclusion && eje == Quad.Eje.Y, bloquesPorVoxel));
-            quads.addAll(mallarEje(grid, lado, eje, false, vecinos, false, bloquesPorVoxel));
+            quads.addAll(mallarEje(grid, lado, eje, true, vecinos, conOclusion && eje == Quad.Eje.Y, bloquesPorVoxel,
+                    superficies));
+            quads.addAll(mallarEje(grid, lado, eje, false, vecinos, false, bloquesPorVoxel, superficies));
         }
         return quads;
     }
@@ -177,14 +197,20 @@ public final class GreedyMesher {
      * material, color y estado de bloque (distinto estado = distinta
      * textura, no se pueden dibujar como una sola cara).
      */
-    private static boolean mismaSuperficie(SuperVoxel a, SuperVoxel b) {
+    private static boolean mismaSuperficie(SuperVoxel a, SuperVoxel b, Superficies superficies,
+                                           Quad.Eje eje, boolean positivo) {
         if (a == null || b == null) return false;
-        return a.material() == b.material() && a.estado() == b.estado()
-                && a.r() == b.r() && a.g() == b.g() && a.b() == b.b();
+        if (a.material() != b.material()) return false;
+        if (a.estado() != b.estado() && superficies != null
+                && superficies.clave(a.idEstado(), eje, positivo) != superficies.clave(b.idEstado(), eje, positivo)) {
+            return false;
+        }
+        return a.r() == b.r() && a.g() == b.g() && a.b() == b.b();
     }
 
     private static List<Quad> mallarEje(SuperVoxel[] grid, int lado, Quad.Eje eje, boolean positivo,
-                                        Vecinos vecinos, boolean conOclusion, int escala) {
+                                        Vecinos vecinos, boolean conOclusion, int escala,
+                                        Superficies superficies) {
         List<Quad> resultado = new ArrayList<>();
         // Superficie a la altura real: costados y cara de arriba (la de abajo queda en el piso del vóxel).
         boolean conAltura = escala > 1 && (eje != Quad.Eje.Y || positivo);
@@ -242,7 +268,7 @@ public final class GreedyMesher {
                 }
             }
 
-            fusionarMascara(mascara, oclusion, recortes, visitado, lado, capa, eje, positivo, resultado);
+            fusionarMascara(mascara, oclusion, recortes, visitado, lado, capa, eje, positivo, superficies, resultado);
         }
 
         return resultado;
@@ -251,7 +277,7 @@ public final class GreedyMesher {
     /** Algoritmo greedy 2D estándar: barre la máscara y va extendiendo rectángulos lo más posible. */
     private static void fusionarMascara(SuperVoxel[][] mascara, int[][] oclusion, int[][] recortes,
                                         boolean[][] visitado, int lado, int capa, Quad.Eje eje, boolean positivo,
-                                        List<Quad> quads) {
+                                        Superficies superficies, List<Quad> quads) {
 
         for (int u = 0; u < lado; u++) {
             for (int v = 0; v < lado; v++) {
@@ -268,7 +294,7 @@ public final class GreedyMesher {
                 int anchoV = 1;
                 while (!fijoEnV && v + anchoV < lado
                         && !visitado[u][v + anchoV]
-                        && mismaSuperficie(mascara[u][v + anchoV], referencia)
+                        && mismaSuperficie(mascara[u][v + anchoV], referencia, superficies, eje, positivo)
                         && oclusion[u][v + anchoV] == oclusionReferencia
                         && recortes[u][v + anchoV] == recorteReferencia) {
                     anchoV++;
@@ -280,7 +306,7 @@ public final class GreedyMesher {
                 while (!fijoEnU && u + anchoU < lado) {
                     for (int dv = 0; dv < anchoV; dv++) {
                         if (visitado[u + anchoU][v + dv]
-                                || !mismaSuperficie(mascara[u + anchoU][v + dv], referencia)
+                                || !mismaSuperficie(mascara[u + anchoU][v + dv], referencia, superficies, eje, positivo)
                                 || oclusion[u + anchoU][v + dv] != oclusionReferencia
                                 || recortes[u + anchoU][v + dv] != recorteReferencia) {
                             break filaSiguiente;
