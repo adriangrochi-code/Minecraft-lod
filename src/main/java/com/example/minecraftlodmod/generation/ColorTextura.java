@@ -45,6 +45,56 @@ public final class ColorTextura {
     }
 
     /** Promedio por canal de colores 0xRRGGBB. */
+    /** Qué parte de la textura no es transparente, de 0 (nada) a 255 (toda). */
+    public static int cobertura(int[] pixelesAbgr) {
+        if (pixelesAbgr.length == 0) {
+            return 0;
+        }
+        int llenos = 0;
+        for (int p : pixelesAbgr) {
+            if ((p >>> 24) != 0) {
+                llenos++;
+            }
+        }
+        return Math.round(llenos * 255f / pixelesAbgr.length);
+    }
+
+    /**
+     * Cuánto tiñe una decoración (flor, pasto, cultivo, caña) al bloque de abajo, según
+     * la cobertura de su textura (0-255): 1,5 veces lo que cubre vista de frente, porque
+     * a lo lejos se ven de costado y tapan más suelo; nunca más de 3/4 (el suelo se ve).
+     */
+    public static float pesoCobertura(int cobertura) {
+        return Math.min(0.75f, cobertura / 255f * 1.5f);
+    }
+
+    /** {@code a} hacia {@code b} en la proporción {@code t} (0 = a, 1 = b), canal por canal. */
+    public static int mezclar(int a, int b, float t) {
+        int r = Math.round(((a >> 16) & 0xFF) * (1 - t) + ((b >> 16) & 0xFF) * t);
+        int g = Math.round(((a >> 8) & 0xFF) * (1 - t) + ((b >> 8) & 0xFF) * t);
+        int bl = Math.round((a & 0xFF) * (1 - t) + (b & 0xFF) * t);
+        return (r << 16) | (g << 8) | bl;
+    }
+
+    /**
+     * Promedio de una región de una textura de entidad, dada en píxeles de su
+     * tamaño de vanilla ({@code anchoBase}×{@code altoBase}): con un paquete de
+     * texturas de más resolución se escala. -1 si la región es toda transparente.
+     */
+    public static int promedioRegion(int[] pixelesAbgr, int ancho, int alto, int anchoBase, int altoBase,
+                                     int u0, int v0, int u1, int v1) {
+        int x0 = u0 * ancho / anchoBase, x1 = Math.max(x0 + 1, u1 * ancho / anchoBase);
+        int y0 = v0 * alto / altoBase, y1 = Math.max(y0 + 1, v1 * alto / altoBase);
+        int[] region = new int[(x1 - x0) * (y1 - y0)];
+        int n = 0;
+        for (int y = y0; y < y1; y++) {
+            for (int x = x0; x < x1; x++) {
+                region[n++] = pixelesAbgr[Math.min(alto - 1, y) * ancho + Math.min(ancho - 1, x)];
+            }
+        }
+        return promedio(region);
+    }
+
     public static int promedioRgb(int[] colores, int cantidad) {
         long r = 0, g = 0, b = 0;
         for (int i = 0; i < cantidad; i++) {

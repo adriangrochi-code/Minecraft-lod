@@ -10,6 +10,10 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Cobertura vegetal y camas/cofres (0.26.28):** juzgar en monitor real si el
+  tinte de flores/pasto (`ColorTextura.pesoCobertura`, tope 0,75) se nota
+  demasiado o muy poco a distancia, y si las camas/cofres en una aldea lejana
+  se ven con su color. En Xvfb el cambio de tono medido es chico.
 - **Chunks en RAM (0.26.16, `chunksEnRam`/`ramChunksMb`):** en Xvfb el
   colchón cuesta ~100 MB (8 chunks, vista 12) y no cambió el tiempo de carga
   (el cliente tiene todo al segundo del teletransporte con o sin). Medir en

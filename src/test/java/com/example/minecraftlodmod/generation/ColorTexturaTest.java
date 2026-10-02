@@ -70,4 +70,34 @@ class ColorTexturaTest {
         assertEquals(0x404040, ColorTextura.bilineal(a, b, c, d, 0.5f, 0.5f));
         assertEquals(0x800000, ColorTextura.bilineal(a, b, c, d, 0.5f, 0f));
     }
+
+    @org.junit.jupiter.api.Test
+    void laCoberturaCuentaLosPixelesNoTransparentes() {
+        int lleno = 0xFF00FF00, vacio = 0x00000000;
+        org.junit.jupiter.api.Assertions.assertEquals(255, ColorTextura.cobertura(new int[]{lleno, lleno}));
+        org.junit.jupiter.api.Assertions.assertEquals(64, ColorTextura.cobertura(new int[]{lleno, vacio, vacio, vacio}));
+        org.junit.jupiter.api.Assertions.assertEquals(0, ColorTextura.cobertura(new int[]{vacio}));
+    }
+
+    @org.junit.jupiter.api.Test
+    void mezclarVaDeUnColorAlOtro() {
+        org.junit.jupiter.api.Assertions.assertEquals(0x102030, ColorTextura.mezclar(0x102030, 0xF0E0D0, 0));
+        org.junit.jupiter.api.Assertions.assertEquals(0xF0E0D0, ColorTextura.mezclar(0x102030, 0xF0E0D0, 1));
+        org.junit.jupiter.api.Assertions.assertEquals(0x808080, ColorTextura.mezclar(0x000000, 0xFFFFFF, 0.5f),
+                "mitad de camino (127,5 redondea a 128)");
+    }
+
+    @org.junit.jupiter.api.Test
+    void elPromedioDeUnaRegionEscalaConLaResolucion() {
+        // Textura 4×4 "de 2×2 base": la región base (1,0)-(2,1) es el cuadrante de arriba a la derecha.
+        int rojo = 0xFF0000FF, azul = 0xFFFF0000; // ABGR
+        int[] p = new int[16];
+        for (int y = 0; y < 4; y++) {
+            for (int x = 0; x < 4; x++) {
+                p[y * 4 + x] = x >= 2 && y < 2 ? rojo : azul;
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(0xFF0000, ColorTextura.promedioRegion(p, 4, 4, 2, 2, 1, 0, 2, 1));
+        org.junit.jupiter.api.Assertions.assertEquals(0x0000FF, ColorTextura.promedioRegion(p, 4, 4, 2, 2, 0, 1, 1, 2));
+    }
 }

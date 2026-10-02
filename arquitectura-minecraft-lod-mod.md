@@ -1167,3 +1167,25 @@ celda fallaba. `OctreeNodeCodec.esNodo` (al menos la cabecera) en todos los
 lectores. Escalado "solo si gana" pasó a "apagar solo si pierde" más de 3%
 (`PruebaEscalado.PERDIDA_MAXIMA`); con Iris, apagado solo con shaderpack activo.
 
+
+## 38. Bloques finos y de entidad en el LOD — 2026-10-02
+
+Pedido: que plantas, camas y otros bloques 3D se vean en el LOD casi igual que
+de cerca, sin tocar la zona vanilla. Descartado: reemplazar en vanilla los
+bloques con entidad por cajas (lo cercano tiene que quedar igual).
+
+**0.26.28 — sin geometría nueva:**
+- **Cobertura vegetal:** la decoración sin colisión (pasto, flores, caña) se
+  sigue omitiendo, pero tiñe el vóxel de abajo (`LectorSeccionMinecraft.voxel`)
+  con su color × `ColorTextura.pesoCobertura` (fracción opaca de su textura
+  × 1,5, tope 0,75). La cobertura se calcula por sprite en `PaletaTexturas`
+  (`Paleta.cobertura`) y solo para `MapColor.PLANT` (un cartel, riel o
+  estandarte no tiñe el suelo). Medido en Xvfb: cambio sutil de tono, igual costo.
+- **Camas y cofres:** su modelo de bloque solo tiene la partícula (tablones);
+  `PaletaTexturas.coloresDeEntidad` usa el promedio de la región visible de su
+  textura de entidad (`Sheets.BED_TEXTURES`, `CHEST_*`, base 64×64), color plano.
+- `VERSION_ALGORITMO` no sube: regenerar todo el cache por un tono no vale;
+  se aplica a lo que se extrae desde ahora.
+
+**Siguiente (pendiente):** siluetas en cruz para plantas altas (caña, bambú,
+girasoles) solo en el nivel 0, con pasada de recorte; geometría nueva, a medir.

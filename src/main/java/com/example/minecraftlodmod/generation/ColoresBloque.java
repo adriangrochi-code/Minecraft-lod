@@ -27,10 +27,20 @@ public final class ColoresBloque {
      * Paleta indexada por id global de estado de bloque
      * ({@link Block#getId(BlockState)}); inmutable una vez publicada.
      */
-    public record Paleta(int[] rgbBase, byte[] tinte, int[] tinteFijo) {
+    /**
+     * @param cobertura qué parte de la textura de cada estado no es transparente (0-255): una
+     *                  flor tiñe el suelo de abajo en esa proporción ({@link #cobertura(int)})
+     */
+    public record Paleta(int[] rgbBase, byte[] tinte, int[] tinteFijo, byte[] cobertura) {
         public boolean contiene(int id) {
             return id >= 0 && id < rgbBase.length && rgbBase[id] >= 0;
         }
+    }
+
+    /** Cobertura de la textura del estado (0-255); 0 sin paleta o fuera de rango. */
+    public static int cobertura(int id) {
+        Paleta p = paleta;
+        return p == null || !p.contiene(id) ? 0 : p.cobertura()[id] & 0xFF;
     }
 
     private static volatile Paleta paleta;

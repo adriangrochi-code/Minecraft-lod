@@ -20,6 +20,15 @@ import net.minecraft.world.level.GrassColor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.client.renderer.Sheets;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.level.block.AbstractChestBlock;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.EnderChestBlock;
+import net.minecraft.world.level.block.TrappedChestBlock;
+import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
@@ -132,10 +141,12 @@ public final class PaletaTexturas {
         int[] base = new int[total];
         byte[] tinte = new byte[total];
         int[] fijo = new int[total];
+        byte[] cobertura = new byte[total];
         Arrays.fill(base, -1);
         GeometriaLod.Cara[] carasArriba = new GeometriaLod.Cara[total];
         GeometriaLod.Cara[] carasCostado = new GeometriaLod.Cara[total];
         Map<TextureAtlasSprite, Integer> promedios = new HashMap<>();
+        Map<TextureAtlasSprite, Integer> coberturas = new HashMap<>();
         Map<TextureAtlasSprite, Integer> indices = new HashMap<>();
         Map<TextureAtlasSprite, TextureAtlasSprite> abajoDe = new HashMap<>();
         Map<TextureAtlasSprite, Boolean> revisados = new HashMap<>();
@@ -161,6 +172,11 @@ public final class PaletaTexturas {
                     continue;
                 }
                 base[id] = promedio;
+                // Solo plantas (pasto, flores, caña, cultivos): un cartel o un riel no tiñen el suelo.
+                if (estado.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO) == MapColor.PLANT) {
+                    cobertura[id] = (byte) (int) coberturas.computeIfAbsent(sprite,
+                            sp -> ColorTextura.cobertura(pixeles(sp)));
+                }
                 carasArriba[id] = cara(indice(sprite, indices, sprites), promedio, true);
                 BakedQuad quadCostado = quadCostado(modelo, estado, azar);
                 TextureAtlasSprite spriteCostado = quadCostado != null ? quadCostado.getSprite() : sprite;
@@ -209,6 +225,7 @@ public final class PaletaTexturas {
         List<Integer> promediosHorneadas = new ArrayList<>();
         hornearModelos(aHornear, tesela, sprites.size(), horneadas, promediosHorneadas,
                 base, carasArriba, carasCostado);
+        coloresDeEntidad(base, carasArriba, carasCostado);
         subirAtlas(mc, tesela, sprites, promedios, abajoDe, indices, horneadas, promediosHorneadas);
         if (comoTerreno) {
             LOG.info("LOD: {} texturas de costado con franja (pasto, nieve...)", abajoDe.size());
@@ -228,7 +245,63 @@ public final class PaletaTexturas {
             }
         }
         tabla = new TablaTexturas(carasArriba, carasCostado);
-        return new ColoresBloque.Paleta(base, tinte, fijo);
+        return new ColoresBloque.Paleta(base, tinte, fijo, cobertura);
+    }
+
+    /**
+     * Camas y cofres se dibujan con un renderer de entidad: su modelo de
+     * bloque solo trae la partícula (tablones), así que en el LOD salían color
+     * madera. Acá toman el color de la región visible de su textura de entidad
+     * de 64×64 (colchón de la cabecera/pies; tapa y frente del cofre), plano.
+     * Los estandartes y carteles no tienen colisión: el LOD los omite.
+     */
+    private static void coloresDeEntidad(int[] base, GeometriaLod.Cara[] carasArriba,
+                                         GeometriaLod.Cara[] carasCostado) {
+        Map<TextureAtlasSprite, int[]> pixelesPorSprite = new HashMap<>();
+        int cuenta = 0;
+        for (BlockState estado : Block.BLOCK_STATE_REGISTRY) {
+            int id = Block.BLOCK_STATE_REGISTRY.getId(estado);
+            if (id < 0 || id >= base.length || base[id] < 0) {
+                continue;
+            }
+            try {
+                Block bloque = estado.getBlock();
+                int arriba;
+                int costado;
+                if (bloque instanceof BedBlock cama) {
+                    TextureAtlasSprite s = Sheets.BED_TEXTURES[cama.getColor().getId()].sprite();
+                    int[] px = pixelesPorSprite.computeIfAbsent(s, PaletaTexturas::pixeles);
+                    boolean cabecera = estado.getValue(BedBlock.PART) == BedPart.HEAD;
+                    arriba = regionEntidad(px, s, 6, cabecera ? 6 : 28, 22, cabecera ? 22 : 44);
+                    costado = regionEntidad(px, s, 6, 28, 22, 44); // la manta cuelga a los costados
+                } else if (bloque instanceof AbstractChestBlock<?>) {
+                    net.minecraft.client.resources.model.Material m = bloque instanceof EnderChestBlock
+                            ? Sheets.ENDER_CHEST_LOCATION
+                            : bloque instanceof TrappedChestBlock ? Sheets.CHEST_TRAP_LOCATION : Sheets.CHEST_LOCATION;
+                    TextureAtlasSprite s = m.sprite();
+                    int[] px = pixelesPorSprite.computeIfAbsent(s, PaletaTexturas::pixeles);
+                    arriba = regionEntidad(px, s, 14, 0, 28, 14);
+                    costado = regionEntidad(px, s, 14, 33, 28, 43);
+                } else {
+                    continue;
+                }
+                if (arriba < 0 || costado < 0) {
+                    continue;
+                }
+                base[id] = arriba;
+                carasArriba[id] = new GeometriaLod.Cara(0, arriba, true);
+                carasCostado[id] = new GeometriaLod.Cara(0, costado, false);
+                cuenta++;
+            } catch (RuntimeException e) {
+                // Textura de entidad que falta (resource pack incompleto): queda como estaba.
+            }
+        }
+        LOG.info("LOD: {} estados con color de su textura de entidad (camas, cofres)", cuenta);
+    }
+
+    /** Promedio de un rectángulo dado sobre la textura de 64×64 (escala a la resolución del pack). */
+    private static int regionEntidad(int[] px, TextureAtlasSprite s, int u0, int v0, int u1, int v1) {
+        return ColorTextura.promedioRegion(px, s.contents().width(), s.contents().height(), 64, 64, u0, v0, u1, v1);
     }
 
     private static GeometriaLod.Cara cara(int indice, int promedio, boolean usaColorDelVoxel) {

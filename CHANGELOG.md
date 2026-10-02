@@ -6,6 +6,18 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.28 — Plantas y camas/cofres con su color en el LOD
+Solo cambia la zona del LOD; el terreno cercano (vanilla) queda igual.
+- **Pasto, flores, caña y cultivos tiñen el suelo** en el LOD según cuánto de
+  su textura tapa (una flor tiñe poco, un pasto alto más; hasta 75%). Antes el
+  LOD los omitía y lejos un campo de flores se veía como pasto pelado. Costo:
+  ninguno (no agrega geometría). Carteles, rieles y estandartes no tiñen.
+- **Camas y cofres con su color real** (colchón de cabecera y pies, tapa y
+  frente del cofre, de su textura de entidad) en vez de color madera.
+- Se ve en el terreno extraído desde esta versión; lo ya guardado en el cache
+  del LOD se actualiza cuando se vuelve a extraer (al cambiar bloques), sin
+  regenerar todo.
+
 ## 0.26.27 — Benchmark que mide de verdad y configura según el equipo
 - **Benchmark nuevo.** Además de los 4 lugares de antes, mide la "vista alta"
   (el horizonte entero, lo más pesado del LOD) y un vuelo en línea recta (carga

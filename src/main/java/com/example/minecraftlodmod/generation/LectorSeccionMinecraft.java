@@ -415,6 +415,17 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
             Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
             rgb = ColoresBloque.rgb(info.id(), estado, bioma, origenX + x, origenZ + z);
         }
+        // Flores, pasto, cultivos y caña no se dibujan en el LOD: tiñen el bloque de abajo en
+        // la proporción que cubren, así un campo de flores lejano conserva su color.
+        if (infoEncima != null && infoEncima.forma() == Forma.DECORACION) {
+            int cobertura = ColoresBloque.cobertura(infoEncima.id());
+            if (cobertura > 0) {
+                int rgbDecoracion = biomasAmplias != null ? ColoresBloque.rgb(infoEncima.id(), encima, this, x, y, z)
+                        : ColoresBloque.rgb(infoEncima.id(), encima, biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)],
+                        origenX + x, origenZ + z);
+                rgb = ColorTextura.mezclar(rgb, rgbDecoracion, ColorTextura.pesoCobertura(cobertura));
+            }
+        }
         // Luz de los 6 vecinos en una pasada: la máxima (cielo o bloque) y la de bloque sola.
         int luces = luces(x, y + 1, z);
         luces = maxLuces(luces, luces(x - 1, y, z));
