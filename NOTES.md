@@ -760,3 +760,9 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   espera de CPU puede no ganar; la medición automática lo va a apagar si es así.
 - `-Dminecraftlodmod.pruebaVulkan=true` ahora también ofrece XESS fuera de Windows (con el
   escalador de prueba EscaladorBlit).
+
+- **Píxeles mínimos (0.26.22):** medir FPS en la 1060 con Horizonte/Ultra a
+  1080p antes y después (el piso debería bajar mucho la carga de GPU) y
+  confirmar que no se nota pérdida de detalle; probar 3 px en la A275 si la
+  GPU sigue siendo el límite.
+

@@ -271,16 +271,26 @@ public final class PlanCeldas {
      * sin tope (tests).
      */
     private static volatile double techoPixeles = Double.POSITIVE_INFINITY;
+    /**
+     * Piso del umbral, en píxeles: por más detalle que pida el umbral (preset
+     * × 0,6 cerca), no se eligen vóxeles más finos que la resolución de la
+     * pantalla. Con umbral 1,5 a 720p el nivel 0 (vóxeles de 1 bloque, el
+     * ~85% de los vértices) llegaba a 685 bloques, con vóxeles de 0,75 px;
+     * en Horizonte a 1080p, a más de 3 km. 0 = sin piso (tests).
+     */
+    private static volatile double pisoPixeles = 0;
     /** Distancia (bloques) desde la que solo hay teselas de nivel ≥ {@link NivelesGrandes#NIVEL_MIN}. */
     private static volatile double distanciaSoloGrandes = Double.POSITIVE_INFINITY;
 
     /**
      * @param techoPx         ver {@link #techoPixeles}
+     * @param pisoPx          ver {@link #pisoPixeles}
      * @param soloGrandesDesde bloques: más lejos, el horizonte aproximado por
      *                         región no tiene niveles por sección y no se los pide
      */
-    public static void configurar(double techoPx, double soloGrandesDesde) {
+    public static void configurar(double techoPx, double pisoPx, double soloGrandesDesde) {
         techoPixeles = techoPx > 0 ? techoPx : Double.POSITIVE_INFINITY;
+        pisoPixeles = Math.max(0, pisoPx);
         distanciaSoloGrandes = soloGrandesDesde > 0 ? soloGrandesDesde : Double.POSITIVE_INFINITY;
     }
 
@@ -306,7 +316,7 @@ public final class PlanCeldas {
     /** Como {@link #nivelPara(double, double, double, double)}, hasta {@code nivelMaximo}. */
     public static int nivelPara(double distancia, double fovRadianes, double alturaPantallaPx, double umbralPx,
                                 int nivelMaximo) {
-        double umbral = Math.min(umbralPx * factorUmbral(distancia), techoPixeles);
+        double umbral = Math.min(Math.max(umbralPx * factorUmbral(distancia), pisoPixeles), techoPixeles);
         for (int nivel = nivelMaximo; nivel > 0; nivel--) {
             double tamanoVoxel = 1 << nivel;
             if (LodSelector.errorDePantalla(tamanoVoxel, distancia, fovRadianes, alturaPantallaPx) <= umbral) {

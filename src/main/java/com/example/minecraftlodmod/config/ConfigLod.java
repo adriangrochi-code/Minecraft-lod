@@ -78,6 +78,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue radioCurvaturaKm;
         public final ModConfigSpec.BooleanValue horizonteReal;
         public final ModConfigSpec.DoubleValue pixelesMaximos;
+        public final ModConfigSpec.DoubleValue pixelesMinimos;
 
         Cliente(ModConfigSpec.Builder b) {
             ParametrosCalidad medio = ParametrosCalidad.de(QualityPreset.MEDIO);
@@ -179,6 +180,10 @@ public final class ConfigLod {
                             "por cuánto ocupa en pantalla: con este tope, ni el preset ni el auto-ajuste dejan que un vóxel",
                             "se vea más grande que esto, por lejos o grande que sea. Más bajo = más nítido y más caro.")
                     .defineInRange("pixelesMaximos", 4.0, 1.0, 16.0);
+            pixelesMinimos = b.comment("Tamaño mínimo en pantalla de un vóxel del LOD, en píxeles: aunque el preset pida más",
+                            "detalle, no se dibujan vóxeles más finos que esto (más chicos que un píxel no se distinguen y",
+                            "son la mayor parte del trabajo de la GPU). Más alto = menos carga de GPU.")
+                    .defineInRange("pixelesMinimos", 2.0, 0.5, 8.0);
 
             b.comment("Depuración y funciones experimentales.").push("experimental");
             escalado = b.comment("EXPERIMENTAL: dibujar el mundo a menor resolución y llevarlo a la pantalla con un",

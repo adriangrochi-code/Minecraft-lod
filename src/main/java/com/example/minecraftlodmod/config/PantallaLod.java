@@ -135,6 +135,7 @@ public final class PantallaLod extends Screen {
                         interruptor("horizonteReal", Impacto.VARIABLE, c.horizonteReal)
                                 .siempreQue(curvatura::pendiente)),
                 List.of(decimal("pixelesMaximos", Impacto.ALTO, 1, 16, 0.5, c.pixelesMaximos, " px"),
+                        decimal("pixelesMinimos", Impacto.ALTO, 0.5, 8, 0.5, c.pixelesMinimos, " px"),
                         interruptor("descartarCuevas", Impacto.BAJO, c.descartarCuevas),
                         interruptor("ocultarTapado", Impacto.BAJO, c.ocultarTapado)),
                 List.of(entero("radioLodChunks", Impacto.ALTO, ParametrosCalidad.RADIO_MIN, ParametrosCalidad.RADIO_MAX,

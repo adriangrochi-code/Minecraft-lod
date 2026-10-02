@@ -1081,3 +1081,19 @@ sección de arriba una vez por columna: 228-235 → 105-116 µs por sección.
 de su caja y su suelo) y uniones (núcleo 24³); fuera, los `hasNext()` de los
 dos bucles de `compute` dan false (redirect, sin objeto por punto) y el aporte
 queda en 0. Test contra el `Beardifier` de vanilla. Vuelo: 6,4 % → 0,5 % del CPU.
+
+## 36. Carga de GPU del LOD — 2026-10-02
+
+Medido en Xvfb (llvmpipe: proporciones, no números absolutos): el LOD es ~85%
+del trabajo de GPU; las texturas, ~38% de eso; SSAO, nubes lejanas y fundido,
+casi nada. Por nivel, los vóxeles de 1 bloque (nivel 0) son ~85% de los
+vértices de las mallas.
+
+**0.26.22 — piso de píxeles (`pixelesMinimos`, 2 px por defecto):** en
+`PlanCeldas.nivelPara` el umbral queda entre el piso y el techo
+(`pixelesMaximos`; si chocan, manda el techo). Con umbrales bajos (Alto 1,5,
+Ultra 1,0, Horizonte 0,75, × 0,6 cerca) el nivel 0 llegaba a 1-1,7 km a
+1080p con vóxeles de menos de un píxel. Medido con umbral 1,0, radio 160:
+14,8 M → 9,2 M vértices dibujados, GPU −31%, imagen igual. En Medio no
+cambia nada (el umbral ya pasa los 2 px donde termina el nivel 0).
+

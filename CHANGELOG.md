@@ -6,6 +6,18 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.22 — Menos carga de GPU en los presets altos
+- Nueva opción **Píxeles mínimos por vóxel** (Calidad, 2 px por defecto): por
+  más detalle que pida el preset, el LOD ya no dibuja vóxeles más chicos que
+  eso en pantalla. Los vóxeles de 1 bloque son ~85% de los vértices del LOD,
+  y en Alto, Ultra y Horizonte se estiraban hasta 1-1,7 km con menos de un
+  píxel cada uno: no se distinguían y eran casi todo el trabajo de la GPU.
+- Medido con el umbral de Ultra: vértices dibujados 14,8 M → 9,2 M (−38%),
+  tiempo de GPU del cuadro −31%, sin diferencia visible en la imagen. A
+  1080p, el área con vóxeles de 1 bloque baja a la mitad en Alto, a un tercio
+  en Ultra y a un quinto en Horizonte. En Medio no cambia nada.
+- El log de estadísticas del LOD muestra el tiempo de GPU del cuadro.
+
 ## 0.26.21 — Generación de terreno más liviana cerca de estructuras
 - Al generar chunks, vanilla ajusta el terreno alrededor de aldeas, ciudades
   antiguas y otras estructuras evaluando cada punto de toda la altura de la
