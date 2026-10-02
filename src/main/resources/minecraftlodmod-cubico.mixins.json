@@ -8,6 +8,7 @@
     "AccesoChunk",
     "AccesoGeneradorFeatures",
     "AccesoInfoBlockEntity",
+    "AccesoPasosGeneracion",
     "AccesoSeccionBloques",
     "MixinChunkHolder",
     "MixinDataLayer",
@@ -19,8 +20,10 @@
     "MixinNoiseChunkSuperficie",
     "MixinPalettedContainer",
     "MixinPaqueteChunk",
+    "MixinPasosGeneracion",
     "MixinPlayerChunkSender",
-    "MixinThreadingDetector"
+    "MixinThreadingDetector",
+    "MixinVecinosEstado"
   ],
   "injectors": {
     "defaultRequire": 1

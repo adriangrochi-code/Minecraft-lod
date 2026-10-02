@@ -992,3 +992,34 @@ luz, guardado, red y otros mods lo asumen); se achica lo que guarda cada secció
 **Pendiente:** lo que queda fijo por contenedor
 (`PalettedContainer` 40 B, detector 40 B, `Data`, paleta de un valor: ~150 B);
 compresión de secciones lejanas en el cliente (hoy todo es servidor).
+
+## 33. Optimizaciones del juego fuera del LOD — 2026-10-02
+
+Pedido: acelerar el juego en general (chunks y FPS), no solo el LOD. En orden:
+
+1. **Modo híbrido (`config/DistanciaVanilla`, opción `vanillaReducida`):**
+   con el LOD activo, la distancia de vanilla se acota según el preset (5 a
+   12 chunks) en `Options#getEffectiveRenderDistance` y en la del servidor
+   integrado. Medido: 4-5 → 9-10 FPS pidiendo 16 chunks.
+2. **Entidades tapadas (`render/OcultamientoEntidades` + `RayosVisibilidad`):**
+   lo que vanilla quiso dibujar (ya pasó el frustum) se prueba en un hilo
+   aparte con rayos al centro y las esquinas de la caja (DDA bloque por
+   bloque, bloques `isSolidRender`); el cuadro siguiente saltea lo tapado.
+   Conservador: lo nuevo, una prueba vieja o hecha con la cámara en otro
+   lugar cuentan como visibles; nada en espectador, en la pasada de sombras
+   de Iris ni para lo que brilla. Idea de EntityCulling (si está, no corre).
+   Medido: 105 → 51 entidades dibujadas con la imagen idéntica.
+3. **Límites:** distancia de entidades y bloques con entidad, distancia de
+   partículas (vanilla 32) y tope total de partículas vivas.
+4. **Ritmo de chunks (`msCargaChunks`):** el cliente pide los chunks que
+   entran en N ms por tick (vanilla 7, `ChunkBatchSizeCalculator`). En Xvfb no
+   cambió nada (el límite era el servidor): queda en 7, a probar en hardware.
+5. **Generación en paralelo (`cubico/GeneracionParalela`, opción de servidor
+   experimental `generacionParalela`):** vanilla corre superficie, carvers y
+   features de a un chunk por vez desde el mailbox de worldgen. Superficie y
+   carvers (solo escriben su chunk) van al pool de fondo; features, con
+   candados rayados por chunk sobre los 3×3 que escribe, tomados en orden.
+   Idea de C2ME (si está, no corre).
+6. **Vecinos de estados de bloque (`cubico/TablaEstados`):** una tabla por
+   bloque con índice en base mixta en vez de un `ArrayTable` por estado
+   (~26 mil tablas). Idea de FerriteCore (MIT; si está, no corre).

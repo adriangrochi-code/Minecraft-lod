@@ -241,6 +241,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue radioServidoMaximo;
         public final ModConfigSpec.IntValue nodosPorSegundo;
         public final ModConfigSpec.IntValue rafagaNodos;
+        public final ModConfigSpec.BooleanValue generacionParalela;
         public final ModConfigSpec.BooleanValue permitirSincroVertical;
         public final ModConfigSpec.BooleanValue generacionVertical;
         public final ModConfigSpec.IntValue margenGeneracionAbajo;
@@ -257,6 +258,12 @@ public final class ConfigLod {
                             "cliente; en un servidor dedicado lo elige según el hardware.")
                     .defineEnum("preset", ParametrosCalidad.Seleccion.AUTOMATICO,
                             EnumSet.complementOf(EnumSet.of(ParametrosCalidad.Seleccion.PERSONALIZADO)));
+            generacionParalela = b.comment("EXPERIMENTAL: generar chunks vanilla en paralelo. Vanilla calcula ruido y biomas",
+                            "en varios hilos pero superficie, cuevas (carvers) y features de a un chunk por vez; con",
+                            "esto van al pool de hilos (las features con candados sobre los 3x3 chunks que tocan).",
+                            "Más chunks nuevos por segundo con varios núcleos. Algún mod de generación que no sea",
+                            "seguro entre hilos podría fallar: apagalo en ese caso.")
+                    .define("generacionParalela", false);
             b.pop();
 
             b.comment("Lo que el servidor le sirve a los clientes en multiplayer.").push("red");
