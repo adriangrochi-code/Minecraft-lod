@@ -22,6 +22,9 @@ public class PluginCubico implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String clase, String mixin) {
+        if (mixin.endsWith("MixinBeardifier")) {
+            return LoadingModList.get().getModFileById("c2me") == null;
+        }
         if (mixin.endsWith("MixinVecinosEstado")) {
             return !Boolean.getBoolean("minecraftlodmod.sinTablaEstados")
                     && LoadingModList.get().getModFileById("ferritecore") == null;

@@ -6,6 +6,74 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.22 — Menos carga de GPU en los presets altos
+- Nueva opción **Píxeles mínimos por vóxel** (Calidad, 2 px por defecto): por
+  más detalle que pida el preset, el LOD ya no dibuja vóxeles más chicos que
+  eso en pantalla. Los vóxeles de 1 bloque son ~85% de los vértices del LOD,
+  y en Alto, Ultra y Horizonte se estiraban hasta 1-1,7 km con menos de un
+  píxel cada uno: no se distinguían y eran casi todo el trabajo de la GPU.
+- Medido con el umbral de Ultra: vértices dibujados 14,8 M → 9,2 M (−38%),
+  tiempo de GPU del cuadro −31%, sin diferencia visible en la imagen. A
+  1080p, el área con vóxeles de 1 bloque baja a la mitad en Alto, a un tercio
+  en Ultra y a un quinto en Horizonte. En Medio no cambia nada.
+- El log de estadísticas del LOD muestra el tiempo de GPU del cuadro.
+
+## 0.26.21 — Generación de terreno más liviana cerca de estructuras
+- Al generar chunks, vanilla ajusta el terreno alrededor de aldeas, ciudades
+  antiguas y otras estructuras evaluando cada punto de toda la altura de la
+  columna contra cada pieza cercana, aunque cada pieza solo afecta a menos de
+  12 bloques. Ahora cada chunk arma una caja con el alcance de sus piezas y
+  fuera de ella el ajuste es 0 sin recorrer nada. El terreno sale idéntico
+  (comprobado contra vanilla en más de 10 000 puntos al azar).
+- Medido en un vuelo por terreno nuevo: esa parte pasó del 6,4 % al 0,5 % del
+  CPU de la generación.
+- No se aplica si tenés C2ME.
+
+## 0.26.20 — Extracción del LOD al doble de velocidad
+- Leer una sección para el LOD cuesta la mitad: antes cada bloque buscaba su
+  estado en varios mapas (id del bloque, material, forma, el bloque de
+  arriba); ahora la información se calcula una vez por estado de la paleta
+  de la sección y cada bloque va directo por su índice. Medido: 228-235 µs →
+  105-116 µs por sección (sección mezclada de 10 estados).
+- En terreno nuevo, el LOD de lo que cargás compite menos con la generación
+  de los chunks: ese CPU queda para el mundo.
+
+## 0.26.19 — Generación en paralelo prendida por defecto
+- **Generación de chunks en paralelo** (opción del servidor
+  `generacionParalela`) pasa a estar **prendida por defecto**: superficie,
+  cuevas y estructuras de los chunks nuevos se reparten entre los núcleos en
+  vez de ir de a uno.
+- Medido en singleplayer (distancia 12, teletransporte a terreno nunca
+  generado, 4 núcleos): la vista se completa en 35-37 s con la opción y en
+  47-48 s sin ella (3 pruebas cada una) → unos 25 % más rápido.
+- Si un mod de generación de terreno falla o tira errores raros, apagala en
+  `config/minecraftlodmod-server.toml`. El log avisa una vez cuando está activa.
+- Ya tenés un `minecraftlodmod-server.toml` con `generacionParalela = false`
+  (el valor viejo): cambialo a mano a `true` para usarla.
+
+## 0.26.18 — Primero lo que tenés a la vista
+- **Arreglo importante de carga en terreno nuevo:** el anillo real y los
+  chunks en RAM (0.26.15-0.26.17) pedían chunks alrededor de la vista con la
+  misma prioridad que los que tenés delante, y en terreno sin explorar se
+  comían toda la generación. Ahora solo piden chunks nuevos cuando ya está
+  cargado todo lo que está dentro de tu distancia de render.
+- Medido (distancia 12, teletransporte a terreno nunca generado): antes la
+  vista seguía con 607 de 625 chunks faltantes después de 80 s; ahora se
+  completa en 37-39 s (3 pruebas).
+
+## 0.26.17 — Chunks en RAM según la RAM para LOD
+- **Chunks en RAM** ahora es un interruptor (prendido) y usa la misma RAM
+  que le das al LOD ("RAM para LOD" del preset o personalizado), con tope en
+  un cuarto de la memoria de Java. La mitad va al colchón de adelante, el
+  más ancho que entre (de 2 a 32 chunks más allá de tu distancia de render),
+  y el resto a retener lo que dejás atrás. Más RAM para el LOD = más chunks
+  listos alrededor. Ejemplo: Medio (500 MB) con distancia 12 → colchón de
+  16 chunks y hasta ~5300 chunks retenidos.
+- Ojo: el juego usa en total hasta el doble de "RAM para LOD" (la del LOD
+  más la de los chunks). Dale a Minecraft memoria de sobra (-Xmx) o bajá
+  ese valor.
+- Se quitan las opciones de ancho y de MB sueltas de la 0.26.16.
+
 ## 0.26.16 — Chunks en RAM para que carguen antes
 - **Chunks en RAM** (Generación, 8 chunks por defecto, 0 = apagado): los
   chunks hasta esa distancia más allá de tu distancia de render se mantienen

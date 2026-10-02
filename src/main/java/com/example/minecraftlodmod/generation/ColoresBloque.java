@@ -55,8 +55,12 @@ public final class ColoresBloque {
 
     /** Como {@link #rgb(BlockState, Biome, int, int)}, con los tintes ya resueltos (mezcla de biomas). */
     public static int rgb(BlockState estado, Tintes tintes) {
+        return rgb(Block.getId(estado), estado, tintes);
+    }
+
+    /** Con el id del estado ya conocido ({@code Block.getId} es una búsqueda en un mapa por bloque). */
+    public static int rgb(int id, BlockState estado, Tintes tintes) {
         Paleta p = paleta;
-        int id = Block.getId(estado);
         if (p == null || !p.contiene(id)) {
             return estado.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).col;
         }
@@ -76,8 +80,12 @@ public final class ColoresBloque {
      * @return RGB 0xRRGGBB
      */
     public static int rgb(BlockState estado, Biome bioma, int x, int z) {
+        return rgb(Block.getId(estado), estado, bioma, x, z);
+    }
+
+    /** Con el id del estado ya conocido. */
+    public static int rgb(int id, BlockState estado, Biome bioma, int x, int z) {
         Paleta p = paleta;
-        int id = Block.getId(estado);
         if (p == null || !p.contiene(id)) {
             return estado.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).col;
         }

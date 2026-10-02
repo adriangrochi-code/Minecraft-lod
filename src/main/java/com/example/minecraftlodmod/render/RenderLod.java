@@ -247,10 +247,11 @@ public final class RenderLod {
         long mallas = mallasArmadas.sumThenReset();
         long nanos = nanosArmado.sumThenReset();
         Runtime rt = Runtime.getRuntime();
-        LOG.info("LOD stats: fps={} | dibujo LOD {} ms/frame, {} llamadas/frame, {} vértices dibujados/frame, {} celdas fuera de vista | "
+        LOG.info("LOD stats: fps={} | gpu {} ms/cuadro | dibujo LOD {} ms/frame, {} llamadas/frame, {} vértices dibujados/frame, {} celdas fuera de vista | "
                         + "{} piezas, {} vértices ({} triángulos), VRAM LOD ~{} MB | mallas armadas {} ({} ms prom) "
                         + "| ocultas por relieve {} ({} ms) | planes {} (máx {} ms) | cache RAM {} MB | secciones cliente {} ({} columnas parciales; {}) | luz cielo #{} | heap {} / {} MB",
-                mc.getFps(), String.format("%.2f", nanosDibujo / 1e6 / Math.max(1, framesDesdeEstadistica)),
+                mc.getFps(), Double.isNaN(balance.ultimoGpuMs()) ? "-" : String.format("%.1f", balance.ultimoGpuMs()),
+                String.format("%.2f", nanosDibujo / 1e6 / Math.max(1, framesDesdeEstadistica)),
                 llamadasUltimoFrame, verticesUltimoFrame, celdasFueraDeVista, piezas, vertices, vertices / 2, bytesVram >> 20, mallas,
                 mallas == 0 ? 0 : String.format("%.1f", nanos / 1e6 / mallas),
                 piezasOcultas, String.format("%.1f", nanosOclusion / 1e6),
@@ -832,6 +833,7 @@ public final class RenderLod {
         // El tope visual es en píxeles de PANTALLA: con escalado se pasa a píxeles del mundo.
         double aPantalla = alturaDibujo / (double) Math.max(1, mc.getWindow().getHeight());
         PlanCeldas.configurar(ConfigLod.CLIENTE.pixelesMaximos.get() * aPantalla,
+                ConfigLod.CLIENTE.pixelesMinimos.get() * aPantalla,
                 TerrenoAproximado.CHUNKS_POR_REGION_DESDE * 16.0);
         List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, radioChunks,
                 distanciaVanilla, cubiertos::contains, vista, Math.toRadians(fovGrados), alturaDibujo,

@@ -79,6 +79,21 @@ class RenderPuroTest {
     }
 
     @Test
+    void elPisoDePixelesNoDejaVoxelesMasChicosQueLaPantalla() {
+        double fov = Math.toRadians(70), alto = 720, umbral = 2.5;
+        // A 500 bloques: umbral 2,5 × factorUmbral(500) ≈ 1,99 px; el nivel 1 ocupa 2 × 514 / 500 = 2,06 px → nivel 0.
+        assertEquals(0, PlanCeldas.nivelPara(500, fov, alto, umbral));
+        try {
+            PlanCeldas.configurar(0, 2.5, 0);
+            assertEquals(1, PlanCeldas.nivelPara(500, fov, alto, umbral), "Con piso de 2,5 px el nivel 1 alcanza");
+            PlanCeldas.configurar(2, 2.5, 0);
+            assertEquals(0, PlanCeldas.nivelPara(500, fov, alto, umbral), "El techo manda sobre el piso");
+        } finally {
+            PlanCeldas.configurar(0, 0, 0);
+        }
+    }
+
+    @Test
     void elPlanOmiteLoQueDibujaVanillaYLoQueQuedaFueraDelRadio() {
         List<PlanCeldas.Celda> plan = PlanCeldas.planificar(8, 8, 32, 8, Math.toRadians(70), 720, 4);
 

@@ -351,7 +351,7 @@ public final class GeneradorLocal {
             int radioAnillo = anillo > 0 ? servidor.getPlayerList().getViewDistance() + anillo : 0;
             int radio = pregenerar ? Math.max(ConfigLod.CLIENTE.radioPregeneracion.get(), radioAnillo) : radioAnillo;
             pregenerador.tick(servidor, pregenerar || anillo > 0, radio);
-            chunksEnRam.tick(servidor, ConfigLod.CLIENTE.chunksEnRam.get(), ConfigLod.CLIENTE.ramChunksMb.get());
+            chunksEnRam.tick(servidor, ConfigLod.CLIENTE.chunksEnRam.get(), ConfigLod.calidadCliente().cacheRamMb());
         } catch (RuntimeException e) {
             pregeneradorRoto = true;
             pregenerador.soltarTodo();

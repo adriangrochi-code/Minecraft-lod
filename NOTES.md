@@ -24,10 +24,9 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 - **Anillo real (0.26.15, `anilloReal`):** medir en la A275 si generar 16
   chunks más allá de vanilla al moverse baja los FPS o traba el servidor
   integrado; si sí, bajar el valor por defecto.
-- **Generación en paralelo (0.26.14, `generacionParalela`):** en Xvfb
-  (4 núcleos) 1024 chunks nuevos tardan lo mismo con y sin la opción
-  (7,5/7,7 s contra 7,6/5,6 s), sin errores de hilos. Medir en el i5-9400
-  (6 núcleos) o en un servidor con más núcleos; si no gana, sacarla.
+- **Generación en paralelo (prendida desde 0.26.19):** en singleplayer gana
+  ~25% (vista en 35-37 s contra 47-48 s). Vigilar errores de mods de
+  generación de terceros en los equipos reales (no se probó con mods).
 - **Velocidad de carga de chunks (0.26.14, `msCargaChunks`, MixinLoteChunks):**
   en Xvfb (llvmpipe, 4 núcleos) 7 ms y 14 ms cargan 1021 chunks en el mismo
   tiempo (~14 s): el límite ahí es el servidor, no el cliente. Queda en 7
@@ -366,7 +365,7 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 ## Tierra real (rama `claude/tierra-real`)
 
 - Diseño y resultados: `docs/tierra-real/` (hitos y medidas en `06-hitos.md`),
-  sección 36 de la arquitectura. Hechos H0–H3.
+  sección 37 de la arquitectura. Hechos H0–H10.
 - Datos: `.minecraft/minecraftlodmod/tierra/tierra.lodt` (formato v2, con
   agua), preparado como dice `docs/tierra-real/02-datos.md` (ETOPO 30″ +
   Köppen + Natural Earth; 672 MB, ~5 min, `-Xmx10g`). Sin el archivo, el mundo
@@ -830,3 +829,9 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   espera de CPU puede no ganar; la medición automática lo va a apagar si es así.
 - `-Dminecraftlodmod.pruebaVulkan=true` ahora también ofrece XESS fuera de Windows (con el
   escalador de prueba EscaladorBlit).
+
+- **Píxeles mínimos (0.26.22):** medir FPS en la 1060 con Horizonte/Ultra a
+  1080p antes y después (el piso debería bajar mucho la carga de GPU) y
+  confirmar que no se nota pérdida de detalle; probar 3 px en la A275 si la
+  GPU sigue siendo el límite.
+

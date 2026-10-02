@@ -120,8 +120,9 @@ public final class PregeneradorChunks {
         }
         registrarAvance();
         if (servidor.getAverageTickTimeNanos() > MSPT_MAXIMO_NANOS
-                || generador.cantidadPendientes() > PENDIENTES_MAXIMOS) {
-            return;
+                || generador.cantidadPendientes() > PENDIENTES_MAXIMOS
+                || !ChunksEnRam.vistaCompleta(servidor, jugador)) {
+            return; // primero lo que el jugador tiene a la vista (ver ChunksEnRam#faltanEnVista)
         }
         byte dimension = GeneradorLocal.idDimension(nivel.dimension());
         // Llenar la ventana con los próximos de la espiral que todavía no tienen LOD.

@@ -53,13 +53,17 @@ public final class GeneracionParalela {
                 && ConfigLod.SERVIDOR.generacionParalela.get();
     }
 
+    private static volatile boolean avisado;
+
     /** Corre el paso original en el pool de fondo. */
     public static <T> CompletableFuture<T> enPool(Supplier<CompletableFuture<T>> paso) {
+        avisar();
         return CompletableFuture.supplyAsync(() -> original(paso), Util.backgroundExecutor()).thenCompose(f -> f);
     }
 
     /** Como {@link #enPool}, con los candados de los 3×3 chunks alrededor de {@code centro}. */
     public static <T> CompletableFuture<T> enPoolConVecinos(ChunkPos centro, Supplier<CompletableFuture<T>> paso) {
+        avisar();
         return CompletableFuture.supplyAsync(() -> {
             int[] indices = indicesVecinos(centro.x, centro.z);
             for (int i : indices) {
@@ -73,6 +77,13 @@ public final class GeneracionParalela {
                 }
             }
         }, Util.backgroundExecutor()).thenCompose(f -> f);
+    }
+
+    private static void avisar() {
+        if (!avisado) {
+            avisado = true;
+            com.mojang.logging.LogUtils.getLogger().info("LOD: generación de chunks en paralelo activa (superficie, carvers y features en el pool)");
+        }
     }
 
     private static <T> CompletableFuture<T> original(Supplier<CompletableFuture<T>> paso) {

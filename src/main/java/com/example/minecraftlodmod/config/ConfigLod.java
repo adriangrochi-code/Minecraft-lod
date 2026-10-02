@@ -63,8 +63,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue generacionAproximada;
         public final ModConfigSpec.IntValue radioPregeneracion;
         public final ModConfigSpec.IntValue anilloReal;
-        public final ModConfigSpec.IntValue chunksEnRam;
-        public final ModConfigSpec.IntValue ramChunksMb;
+        public final ModConfigSpec.BooleanValue chunksEnRam;
         public final ModConfigSpec.BooleanValue texturasLod;
         public final ModConfigSpec.BooleanValue descartarCuevas;
         public final ModConfigSpec.BooleanValue oclusionAmbiental;
@@ -79,6 +78,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue radioCurvaturaKm;
         public final ModConfigSpec.BooleanValue horizonteReal;
         public final ModConfigSpec.DoubleValue pixelesMaximos;
+        public final ModConfigSpec.DoubleValue pixelesMinimos;
 
         Cliente(ModConfigSpec.Builder b) {
             ParametrosCalidad medio = ParametrosCalidad.de(QualityPreset.MEDIO);
@@ -129,12 +129,10 @@ public final class ConfigLod {
                             "queda con árboles y el terreno de verdad, como en Voxy. Usa CPU al moverse y los chunks",
                             "quedan guardados en el mundo. 0 = apagado. Solo singleplayer por ahora.")
                     .defineInRange("anilloReal", 16, 0, 64);
-            chunksEnRam = b.comment("Chunks en RAM: los chunks hasta esta cantidad más allá de la distancia de render se",
-                            "mantienen cargados (sin ticks ni envío), así al caminar ya están listos; lo que dejás",
-                            "atrás queda en memoria hasta el presupuesto de abajo. 0 = apagado. Solo singleplayer.")
-                    .defineInRange("chunksEnRam", 8, 0, 32);
-            ramChunksMb = b.comment("RAM (MB) para chunks retenidos detrás tuyo (aparte del colchón de adelante).")
-                    .defineInRange("ramChunksMb", 384, 64, 8192);
+            chunksEnRam = b.comment("Chunks en RAM: mantiene cargados los chunks alrededor de la distancia de render (sin",
+                            "ticks ni envío) y los que dejás atrás, con la misma RAM que le das al LOD (tope: un",
+                            "cuarto del heap). Al caminar, lo que entra a la vista ya está listo. Solo singleplayer.")
+                    .define("chunksEnRamActivo", true);
             ocultarTapado = b.comment("No armar ni dibujar el LOD escondido detrás de montañas (oclusión por relieve).")
                     .define("ocultarTapado", true);
             texturasLod = b.comment("Dibujar el LOD con las texturas del paquete de texturas activo (se simplifican solas",
@@ -182,6 +180,10 @@ public final class ConfigLod {
                             "por cuánto ocupa en pantalla: con este tope, ni el preset ni el auto-ajuste dejan que un vóxel",
                             "se vea más grande que esto, por lejos o grande que sea. Más bajo = más nítido y más caro.")
                     .defineInRange("pixelesMaximos", 4.0, 1.0, 16.0);
+            pixelesMinimos = b.comment("Tamaño mínimo en pantalla de un vóxel del LOD, en píxeles: aunque el preset pida más",
+                            "detalle, no se dibujan vóxeles más finos que esto (más chicos que un píxel no se distinguen y",
+                            "son la mayor parte del trabajo de la GPU). Más alto = menos carga de GPU.")
+                    .defineInRange("pixelesMinimos", 2.0, 0.5, 8.0);
 
             b.comment("Depuración y funciones experimentales.").push("experimental");
             escalado = b.comment("EXPERIMENTAL: dibujar el mundo a menor resolución y llevarlo a la pantalla con un",
@@ -285,12 +287,13 @@ public final class ConfigLod {
                             "cliente; en un servidor dedicado lo elige según el hardware.")
                     .defineEnum("preset", ParametrosCalidad.Seleccion.AUTOMATICO,
                             EnumSet.complementOf(EnumSet.of(ParametrosCalidad.Seleccion.PERSONALIZADO)));
-            generacionParalela = b.comment("EXPERIMENTAL: generar chunks vanilla en paralelo. Vanilla calcula ruido y biomas",
+            generacionParalela = b.comment("Generar chunks vanilla en paralelo. Vanilla calcula ruido y biomas",
                             "en varios hilos pero superficie, cuevas (carvers) y features de a un chunk por vez; con",
                             "esto van al pool de hilos (las features con candados sobre los 3x3 chunks que tocan).",
                             "Más chunks nuevos por segundo con varios núcleos. Algún mod de generación que no sea",
-                            "seguro entre hilos podría fallar: apagalo en ese caso.")
-                    .define("generacionParalela", false);
+                            "seguro entre hilos podría fallar: apagalo en ese caso. Medido: terreno nuevo a la vista",
+                            "un 25% antes (35-37 s contra 47-48 s, distancia 12, 4 núcleos).")
+                    .define("generacionParalela", true);
             b.pop();
 
             b.comment("Lo que el servidor le sirve a los clientes en multiplayer.").push("red");

@@ -299,42 +299,124 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         return true;
     }
 
+    /** Lo que se consulta de cada estado de bloque, calculado una vez por sección. */
+    private record InfoEstado(BlockState estado, int id, SuperVoxel.Material material, Forma forma) {
+    }
+
+    /**
+     * Por entrada de la paleta de la sección (si tiene hasta {@link #PALETA_MAXIMA}):
+     * cada bloque lee su índice del almacén de bits y va directo al arreglo, sin
+     * buscar el estado en ningún mapa.
+     */
+    private static final int PALETA_MAXIMA = 256;
+    private InfoEstado[] porPaleta;
+    private net.minecraft.world.level.chunk.Palette<BlockState> paleta;
+    private net.minecraft.util.BitStorage almacen;
+    private boolean paletaLeida;
+
+    /** Fila de abajo de la sección de arriba, por columna (x * 16 + z), llenada a medida que se pide. */
+    private InfoEstado[] filaArriba;
+
+    private InfoEstado infoArriba(int x, int z) {
+        if (filaArriba == null) {
+            filaArriba = new InfoEstado[256];
+        }
+        InfoEstado info = filaArriba[x * 16 + z];
+        if (info == null) {
+            info = info(estadosArriba.get(x, 0, z));
+            filaArriba[x * 16 + z] = info;
+        }
+        return info;
+    }
+
+    private InfoEstado infoEn(int x, int y, int z) {
+        if (!paletaLeida) {
+            paletaLeida = true;
+            var datos = estados.data;
+            if (datos.palette().getSize() <= PALETA_MAXIMA) {
+                paleta = datos.palette();
+                almacen = datos.storage();
+                porPaleta = new InfoEstado[paleta.getSize()];
+            }
+        }
+        if (porPaleta == null) {
+            return info(estados.get(x, y, z));
+        }
+        int i = almacen.get((y << 8) | (z << 4) | x);
+        InfoEstado info = porPaleta[i];
+        if (info == null) {
+            info = info(paleta.valueFor(i));
+            porPaleta[i] = info;
+        }
+        return info;
+    }
+
+    /**
+     * Memo de {@link InfoEstado} por sección (una sección tiene pocos estados
+     * distintos): antes cada bloque buscaba su estado en cuatro mapas (forma,
+     * material y dos veces {@code Block.getId}), la mitad del costo de extraer.
+     */
+    private final it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap<BlockState, InfoEstado> infos =
+            new it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap<>();
+    private BlockState ultimoEstado;
+    private InfoEstado ultimaInfo;
+
+    private InfoEstado info(BlockState estado) {
+        if (estado == ultimoEstado) {
+            return ultimaInfo;
+        }
+        InfoEstado info = infos.get(estado);
+        if (info == null) {
+            info = new InfoEstado(estado, Block.getId(estado), material(estado), forma(estado));
+            infos.put(estado, info);
+        }
+        ultimoEstado = estado;
+        ultimaInfo = info;
+        return info;
+    }
+
     @Override
     public SuperVoxel voxel(int x, int y, int z) {
-        BlockState estado = estados.get(x, y, z);
-        switch (forma(estado)) {
+        InfoEstado info = infoEn(x, y, z);
+        BlockState estado = info.estado();
+        switch (info.forma()) {
             case DECORACION, CUBIERTA -> estado = Blocks.AIR.defaultBlockState();
             case SUMERGIDA -> estado = AGUA;
             case NORMAL -> { }
         }
-        SuperVoxel.Material material = material(estado);
+        if (info.forma() != Forma.NORMAL) {
+            info = info(estado);
+        }
+        SuperVoxel.Material material = info.material();
         if (material == SuperVoxel.Material.AIRE) {
             return new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, material, (byte) 0);
         }
         // Alfombra encima: el bloque toma la cubierta. Nieve fina: el bloque queda como es
         // (hojas, pasto) y solo su cara de arriba se dibuja nevada (SuperVoxel.nevado).
-        BlockState encima = y < SectionExtractor.LADO - 1 ? estados.get(x, y + 1, z)
-                : estadosArriba != null ? estadosArriba.get(x, 0, z) : null;
+        InfoEstado infoEncima = y < SectionExtractor.LADO - 1 ? infoEn(x, y + 1, z)
+                : estadosArriba != null ? infoArriba(x, z) : null;
+        BlockState encima = infoEncima == null ? null : infoEncima.estado();
         boolean nevado = false;
-        if (encima != null && forma(encima) == Forma.CUBIERTA) {
+        if (encima != null && infoEncima.forma() == Forma.CUBIERTA) {
             if (encima.is(Blocks.SNOW)) {
                 nevado = true;
             } else {
                 estado = encima;
+                info = info(estado);
             }
         }
         int rgb;
         if (biomasAmplias != null) {
-            rgb = ColoresBloque.rgb(estado, tintes(x, y, z));
+            rgb = ColoresBloque.rgb(info.id(), estado, tintes(x, y, z));
         } else {
             Biome bioma = biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)];
-            rgb = ColoresBloque.rgb(estado, bioma, origenX + x, origenZ + z);
+            rgb = ColoresBloque.rgb(info.id(), estado, bioma, origenX + x, origenZ + z);
         }
         return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) SuperVoxel.LLENO, material,
                 (byte) 0)
                 .conLuzHorneada(luz(x, y, z))
                 .conLuzBloque(SuperVoxel.cuantizarLuzBloque(Math.max(luzBloque(x, y, z), emision(estado))))
-                .conEstado(Block.getId(estado)) // para dibujar su textura; ids > 65535 quedan sin estado
+                .conEstado(info.id()) // para dibujar su textura; ids > 65535 quedan sin estado
                 .conNevado(nevado);
     }
 

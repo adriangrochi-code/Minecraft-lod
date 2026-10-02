@@ -135,6 +135,7 @@ public final class PantallaLod extends Screen {
                         interruptor("horizonteReal", Impacto.VARIABLE, c.horizonteReal)
                                 .siempreQue(curvatura::pendiente)),
                 List.of(decimal("pixelesMaximos", Impacto.ALTO, 1, 16, 0.5, c.pixelesMaximos, " px"),
+                        decimal("pixelesMinimos", Impacto.ALTO, 0.5, 8, 0.5, c.pixelesMinimos, " px"),
                         interruptor("descartarCuevas", Impacto.BAJO, c.descartarCuevas),
                         interruptor("ocultarTapado", Impacto.BAJO, c.ocultarTapado)),
                 List.of(entero("radioLodChunks", Impacto.ALTO, ParametrosCalidad.RADIO_MIN, ParametrosCalidad.RADIO_MAX,
@@ -154,10 +155,7 @@ public final class PantallaLod extends Screen {
                 List.of(interruptor("generacionAproximada", Impacto.MEDIO, c.generacionAproximada)),
                 List.of(entero("anilloReal", Impacto.MEDIO, 0, 64, 4, c.anilloReal,
                                 v -> v == 0 ? texto("anilloReal.apagado") : Component.literal(v + " chunks"))),
-                List.of(entero("chunksEnRam", Impacto.BAJO, 0, 32, 2, c.chunksEnRam,
-                                v -> v == 0 ? texto("anilloReal.apagado") : Component.literal(v + " chunks")),
-                        entero("ramChunksMb", Impacto.NINGUNO, 64, 8192, 64, c.ramChunksMb,
-                                v -> Component.literal(v + " MB"))),
+                List.of(interruptor("chunksEnRam", Impacto.BAJO, c.chunksEnRam)),
                 List.of(interruptor("pregenerar", Impacto.ALTO, c.pregenerar),
                         entero("radioPregeneracion", Impacto.NINGUNO, 16, ParametrosCalidad.RADIO_MAX, 16,
                                 c.radioPregeneracion, v -> Component.literal(v + " chunks"))))));

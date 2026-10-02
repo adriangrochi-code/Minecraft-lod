@@ -1054,7 +1054,50 @@ ticket propio de nivel 33 (completo, sin ticks ni envío) para un colchón de
 vista, no con MSPT > 40 ms) y retención LRU de lo que queda atrás hasta
 `ramChunksMb` (~96 KB por chunk medido). Solo singleplayer.
 
-## 36. Tipo de mundo "Tierra real" — 2026-10-01
+**0.26.17:** el presupuesto sale de `cacheRamMb` ("RAM para LOD"), con tope
+en un cuarto del heap; la mitad para el colchón (el más ancho de 2 a 32
+chunks que entre, `ChunksEnRam.margenPara`), el resto para la retención.
+
+**0.26.18 — primero la vista:** colchón y anillo real solo piden chunks
+nuevos con la vista completa (`ChunksEnRam.faltanEnVista`, una vez por tick):
+sus tickets de nivel 33 tienen la misma prioridad que el borde de la vista y
+en terreno nuevo la ahogaban (607/625 faltantes a los 80 s → completa en 37-39 s).
+Perfil del vuelo por terreno nuevo: casi todo el CPU es ruido
+(`wgen_fill_noise`) y el hilo `worldgen`; el del servidor casi no aparece.
+
+**0.26.19 — generación en paralelo por defecto:** medido con la misma prueba
+(vista 12, terreno nuevo): 35-37 s con `generacionParalela` contra 47-48 s
+sin ella. Pasa a estar prendida por defecto; sigue sin aplicarse con C2ME.
+
+**0.26.20 — extracción por paleta:** perfilando el vuelo, la mitad del CPU
+propio era `Block.getId` (búsqueda en mapa por bloque) dentro de
+`ColoresBloque.rgb`, más los mapas de forma y material. `LectorSeccionMinecraft`
+arma `InfoEstado` (estado, id, material, forma) una vez por entrada de la
+paleta de la sección (hasta 256; si no, memo por estado) y la fila de la
+sección de arriba una vez por columna: 228-235 → 105-116 µs por sección.
+
+**0.26.21 — atajo exacto del `Beardifier`:** `cubico/LimitesBeardifier` +
+`MixinBeardifier`: caja de alcance de piezas (±12 en horizontal; en vertical
+de su caja y su suelo) y uniones (núcleo 24³); fuera, los `hasNext()` de los
+dos bucles de `compute` dan false (redirect, sin objeto por punto) y el aporte
+queda en 0. Test contra el `Beardifier` de vanilla. Vuelo: 6,4 % → 0,5 % del CPU.
+
+## 36. Carga de GPU del LOD — 2026-10-02
+
+Medido en Xvfb (llvmpipe: proporciones, no números absolutos): el LOD es ~85%
+del trabajo de GPU; las texturas, ~38% de eso; SSAO, nubes lejanas y fundido,
+casi nada. Por nivel, los vóxeles de 1 bloque (nivel 0) son ~85% de los
+vértices de las mallas.
+
+**0.26.22 — piso de píxeles (`pixelesMinimos`, 2 px por defecto):** en
+`PlanCeldas.nivelPara` el umbral queda entre el piso y el techo
+(`pixelesMaximos`; si chocan, manda el techo). Con umbrales bajos (Alto 1,5,
+Ultra 1,0, Horizonte 0,75, × 0,6 cerca) el nivel 0 llegaba a 1-1,7 km a
+1080p con vóxeles de menos de un píxel. Medido con umbral 1,0, radio 160:
+14,8 M → 9,2 M vértices dibujados, GPU −31%, imagen igual. En Medio no
+cambia nada (el umbral ya pasa los 2 px donde termina el nivel 0).
+
+## 37. Tipo de mundo "Tierra real" — 2026-10-01
 
 Pedido: un tipo de mundo aparte (nunca por defecto) con la Tierra real a
 escala 1:8 (1:6 opcional), en variante cilíndrica y "tierra plana" con
