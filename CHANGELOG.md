@@ -6,6 +6,16 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.18 — Primero lo que tenés a la vista
+- **Arreglo importante de carga en terreno nuevo:** el anillo real y los
+  chunks en RAM (0.26.15-0.26.17) pedían chunks alrededor de la vista con la
+  misma prioridad que los que tenés delante, y en terreno sin explorar se
+  comían toda la generación. Ahora solo piden chunks nuevos cuando ya está
+  cargado todo lo que está dentro de tu distancia de render.
+- Medido (distancia 12, teletransporte a terreno nunca generado): antes la
+  vista seguía con 607 de 625 chunks faltantes después de 80 s; ahora se
+  completa en 37-39 s (3 pruebas).
+
 ## 0.26.17 — Chunks en RAM según la RAM para LOD
 - **Chunks en RAM** ahora es un interruptor (prendido) y usa la misma RAM
   que le das al LOD ("RAM para LOD" del preset o personalizado), con tope en

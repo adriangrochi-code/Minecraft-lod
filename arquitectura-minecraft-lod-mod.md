@@ -1057,3 +1057,10 @@ vista, no con MSPT > 40 ms) y retención LRU de lo que queda atrás hasta
 **0.26.17:** el presupuesto sale de `cacheRamMb` ("RAM para LOD"), con tope
 en un cuarto del heap; la mitad para el colchón (el más ancho de 2 a 32
 chunks que entre, `ChunksEnRam.margenPara`), el resto para la retención.
+
+**0.26.18 — primero la vista:** colchón y anillo real solo piden chunks
+nuevos con la vista completa (`ChunksEnRam.faltanEnVista`, una vez por tick):
+sus tickets de nivel 33 tienen la misma prioridad que el borde de la vista y
+en terreno nuevo la ahogaban (607/625 faltantes a los 80 s → completa en 37-39 s).
+Perfil del vuelo por terreno nuevo: casi todo el CPU es ruido
+(`wgen_fill_noise`) y el hilo `worldgen`; el del servidor casi no aparece.

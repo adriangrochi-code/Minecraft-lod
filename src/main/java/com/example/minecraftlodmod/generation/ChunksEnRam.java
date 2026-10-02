@@ -126,7 +126,8 @@ public final class ChunksEnRam {
                 }
             }
         }
-        if (!faltan.isEmpty() && servidor.getAverageTickTimeNanos() <= MSPT_MAXIMO_NANOS) {
+        if (!faltan.isEmpty() && servidor.getAverageTickTimeNanos() <= MSPT_MAXIMO_NANOS
+                && vistaCompleta(servidor, jugador)) {
             var mirada = jugador.getLookAngle();
             double px = jugador.getX(), pz = jugador.getZ();
             faltan.sort(Comparator.comparingDouble(c -> PrioridadVista.costo(
@@ -144,6 +145,41 @@ public final class ChunksEnRam {
             nivel.getChunkSource().removeRegionTicket(TICKET, pos, 0, pos);
             it.remove();
         }
+    }
+
+    /**
+     * Chunks dentro de la distancia de vista del jugador que todavía no están
+     * cargados. Mientras falte alguno, ni el colchón ni el anillo real piden
+     * chunks nuevos: en terreno sin explorar competían por los mismos núcleos
+     * (y con la misma prioridad de ticket) con lo que el jugador tiene delante.
+     * Medido (vista 12, terreno nuevo): sin esto la vista quedaba trabada con
+     * 607 de 625 chunks faltantes más de 80 s; con esto se completa en 37-39 s.
+     */
+    static int faltanEnVista(ServerLevel nivel, int jx, int jz, int vista) {
+        int faltan = 0;
+        for (int dx = -vista; dx <= vista; dx++) {
+            for (int dz = -vista; dz <= vista; dz++) {
+                if (nivel.getChunkSource().getChunkNow(jx + dx, jz + dz) == null) {
+                    faltan++;
+                }
+            }
+        }
+        return faltan;
+    }
+
+    private static long tickVista = Long.MIN_VALUE;
+    private static boolean vistaCompleta;
+
+    /** {@link #faltanEnVista} == 0, calculado una vez por tick (lo consultan el colchón y el anillo real). */
+    static boolean vistaCompleta(MinecraftServer servidor, ServerPlayer jugador) {
+        long ahora = servidor.getTickCount();
+        if (ahora != tickVista) {
+            tickVista = ahora;
+            int faltan = faltanEnVista(jugador.serverLevel(), jugador.chunkPosition().x, jugador.chunkPosition().z,
+                    servidor.getPlayerList().getViewDistance());
+            vistaCompleta = faltan == 0;
+        }
+        return vistaCompleta;
     }
 
     static int maximoChunks(int presupuestoMb) {
