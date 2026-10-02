@@ -151,6 +151,9 @@ public final class GeometriaLod {
     private boolean separarAgua;
     private Texturas fuenteTexturas;
     private boolean descartarSinLuz;
+    private boolean costadosAlAire;
+    private boolean bordesAlAire;
+    private static final VertexLightSampler.LuzEsquinas LUZ_PLENA = new VertexLightSampler.LuzEsquinas(15, 15, 15, 15);
     private boolean oclusionAmbiental;
 
     /**
@@ -178,8 +181,35 @@ public final class GeometriaLod {
         Arrays.fill(planoMax, Float.NEGATIVE_INFINITY);
         fuenteTexturas = null;
         descartarSinLuz = false;
+        costadosAlAire = false;
+        bordesAlAire = false;
         oclusionAmbiental = false;
         separarAgua = false;
+    }
+
+    /**
+     * Terreno aproximado: no tiene cuevas, así que toda cara lateral que queda
+     * (las enterradas entre chunks las tapan sus vecinos) da al aire. Su luz
+     * horneada no sirve (el subsuelo de una columna se guarda con luz 0) y la
+     * pared de un acantilado se descartaba como "sin luz": huecos con el cielo
+     * detrás. Con esto, los costados llevan luz plena y no se descartan.
+     *
+     * @param bordes también las caras del borde de la grilla. Con vecinas a los
+     *               costados (chunks aproximados) las enterradas ya no se generan;
+     *               sin ellas (teselas grandes) el borde sigue la regla de la luz,
+     *               o cada tesela dibujaría paredes enterradas de cientos de bloques.
+     */
+    public void costadosAlAire(boolean alAire, boolean bordes) {
+        this.costadosAlAire = alAire;
+        this.bordesAlAire = alAire && bordes;
+    }
+
+    private boolean costadoAlAire(Quad q, int capa, int lado) {
+        if (!costadosAlAire || q.eje() == Quad.Eje.Y) {
+            return false;
+        }
+        boolean borde = q.positivo() ? capa == lado - 1 : capa == 0;
+        return bordesAlAire || !borde;
     }
 
     /** El agua va a {@link #GRUPO_AGUA} en vez de al grupo de su cara (pasada translúcida aparte). */
@@ -300,7 +330,8 @@ public final class GeometriaLod {
             default -> { capa = q.z(); u0 = q.x(); v0 = q.y(); largoU = q.ancho(); largoV = q.alto(); }
         }
         float plano = capa + (q.positivo() ? 1 : 0);
-        VertexLightSampler.LuzEsquinas luz = VertexLightSampler.calcular(grid, lado, q);
+        VertexLightSampler.LuzEsquinas luz = costadoAlAire(q, capa, lado) ? LUZ_PLENA
+                : VertexLightSampler.calcular(grid, lado, q);
         // Las caras bajo el agua (fondo marino) se ven a través del agua aunque estén a oscuras.
         if (descartarSinLuz && !q.bajoAgua()
                 && luz.minMin() == 0 && luz.maxMin() == 0 && luz.minMax() == 0 && luz.maxMax() == 0) {

@@ -457,6 +457,8 @@ public final class RenderLod {
         boolean esperando;
         /** Rangos verticales de sus columnas con que se armó (sincronización vertical); 0 = ninguno. */
         long firmaVertical;
+        /** Lados (bits como {@code vecinasMismoNivel}) cuya celda vecina tenía el mismo nivel al armarla. */
+        int firmaVecinas = -1;
     }
 
     /**
@@ -849,6 +851,13 @@ public final class RenderLod {
         boolean oclusion = oclusionEnUso;
         int minSeccion = mc.level.getMinSection();
         int maxSeccion = mc.level.getMaxSection();
+        it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap nivelesCeldas = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+        nivelesCeldas.defaultReturnValue(-1);
+        for (PlanCeldas.Celda cp : plan) {
+            if (!cp.esGrande()) {
+                nivelesCeldas.put(clave(cp), cp.nivel());
+            }
+        }
         for (int i = 0; i < plan.size(); i++) {
             PlanCeldas.Celda celda = plan.get(i);
             long clave = clave(celda);
@@ -863,9 +872,10 @@ public final class RenderLod {
             // Una malla de otro tipo (terminó de armarse con el modo anterior después de
             // cambiar shaders o texturas) no se dibuja en ninguna pasada: se rearma.
             long firma = celda.esGrande() ? 0 : firmaVertical(celda, verticales);
+            int vecinas = celda.esGrande() ? 0 : vecinasMismoNivel(celda, nivelesCeldas);
             boolean cambio = !celda.equals(estado.construidaCon)
                     || (estado.tieneMalla && estado.tipo != tipoEsperado)
-                    || firma != estado.firmaVertical;
+                    || firma != estado.firmaVertical || vecinas != estado.firmaVecinas;
             boolean incompleta = estado.construidaCon != null
                     && estado.chunksConDatos < chunksDibujables(celda)
                     && ahora - estado.construidaNanos > RECONSTRUIR_INCOMPLETA_NANOS;
@@ -876,10 +886,11 @@ public final class RenderLod {
             if (!estado.enConstruccion && (cambio || incompleta) && encoladas < ENCOLADAS_POR_PLAN) {
                 estado.enConstruccion = true;
                 estado.firmaVertical = firma;
+                estado.firmaVecinas = vecinas;
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(prioridad(celda, camara, miraX, miraZ), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                cubiertos, verticales, texturas, oclusion, unBuffer, bloque, voxy)));
+                                cubiertos, verticales, vecinas, texturas, oclusion, unBuffer, bloque, voxy)));
             }
         }
         boolean fundir = ConfigLod.CLIENTE.fundidoNiveles.get();
@@ -901,7 +912,7 @@ public final class RenderLod {
     /** Hilo de mallas: lee los nodos del nivel elegido y arma los vértices de la celda. */
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
                        int minSeccion, int maxSeccion, Set<Long> deVanilla, Map<Long, RangoSecciones> verticales,
-                       GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer, boolean bloque,
+                       int vecinas, GeometriaLod.Texturas texturas, boolean oclusion, boolean unBuffer, boolean bloque,
                        boolean voxy) {
         long inicioArmado = System.nanoTime();
         try {
@@ -913,7 +924,8 @@ public final class RenderLod {
             geometria.separarAgua(voxy);
             int conDatos = celda.esGrande()
                     ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion)
-                    : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion, deVanilla, verticales);
+                    : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion, deVanilla, verticales,
+                            vecinas);
             if (geometria.vertices() == 0) {
                 listas.add(new MallaLista(clave, celda, null, null, null, conDatos, TipoMalla.PLANA));
                 return;
@@ -1043,11 +1055,16 @@ public final class RenderLod {
      * nivel (arriba, abajo y los chunks de al lado) para no generar las
      * caras que tapan. Los nodos se decodifican una sola vez por armado.
      *
+     * @param vecinasMismoNivel bit por lado ({@link #vecinasMismoNivel}): la celda de ese
+     *                          lado se dibuja con el mismo nivel. Si no, los costados del
+     *                          borde se dibujan siempre: la vecina usa vóxeles de otro
+     *                          tamaño y otra altura, y ocultarlos dejaba ranuras con el
+     *                          cielo detrás en el anillo donde cambia el nivel.
      * @return chunks con datos
      */
     private static int armarCelda(GeometriaLod geometria, PlanCeldas.Celda celda, RegionFileStore store,
                                   byte dimension, int minSeccion, int maxSeccion,
-                                  Set<Long> deVanilla, Map<Long, RangoSecciones> verticales) {
+                                  Set<Long> deVanilla, Map<Long, RangoSecciones> verticales, int vecinasMismoNivel) {
         int nivel = celda.nivel();
         int lado = SectionExtractor.LADO >> nivel;
         int total = SectionExtractor.voxelesPorNodo(nivel);
@@ -1057,6 +1074,7 @@ public final class RenderLod {
                     SectionExtractor.claveNodo(nivel, k.x(), k.y(), k.z()));
             return bytes == null ? SIN_NODO : OctreeNodeCodec.deserializar(bytes, 0, total).voxeles();
         });
+        Map<NodoMemo, SuperVoxel[]> memoAproximado = new HashMap<>();
         int conDatos = 0;
         for (int dx = 0; dx < PlanCeldas.LADO_CELDA; dx++) {
             for (int dz = 0; dz < PlanCeldas.LADO_CELDA; dz++) {
@@ -1070,8 +1088,11 @@ public final class RenderLod {
                     continue;
                 }
                 conDatos++;
-                // Donde el vecino lo dibuja vanilla se omite todo el costado; donde es
-                // LOD, deciden sus vóxeles (null = sin datos: el corte se ve, es real).
+                // Donde el vecino lo dibuja vanilla, el costado se dibuja entero: vanilla solo
+                // dibuja las caras de SUS bloques, así que la pared de un acantilado del LOD que
+                // da a una playa de vanilla no la dibujaba nadie (huecos con el cielo detrás);
+                // donde vanilla tiene bloques, lo tapan. Donde es LOD, deciden sus vóxeles
+                // (null = sin datos: el corte se ve, es real).
                 int omitidas = 0;
                 boolean[] lod = new boolean[4];
                 // Vecinos que vanilla tiene solo en parte (sincronización vertical): por sección.
@@ -1081,18 +1102,19 @@ public final class RenderLod {
                 for (int l = 0; l < 4; l++) {
                     int vx = chunkX + lados[l][0], vz = chunkZ + lados[l][1];
                     long claveVecino = PlanCeldas.claveChunk(vx, vz);
-                    if (deVanilla.contains(claveVecino)) {
-                        omitidas |= lados[l][2];
-                    } else {
+                    if (!deVanilla.contains(claveVecino)) {
                         vecinoParcial[l] = verticales.get(claveVecino);
-                        lod[l] = tieneDatos(store, dimension, vx, vz);
+                        boolean afuera = Math.floorDiv(vx, PlanCeldas.LADO_CELDA) != celda.celdaX()
+                                || Math.floorDiv(vz, PlanCeldas.LADO_CELDA) != celda.celdaZ();
+                        lod[l] = (!afuera || (vecinasMismoNivel & (1 << l)) != 0)
+                                && tieneDatos(store, dimension, vx, vz);
                     }
                 }
                 // LOD vertical: de esta columna, vanilla dibuja este rango; el LOD, el resto.
                 RangoSecciones propio = verticales.get(PlanCeldas.claveChunk(chunkX, chunkZ));
                 if (!real) {
                     armarAproximado(geometria, store, dimension, nivel, chunkX, chunkZ, dx, dz,
-                            minSeccion, maxSeccion, omitidas);
+                            minSeccion, maxSeccion, omitidas, memoAproximado);
                     continue;
                 }
                 for (int sy = minSeccion; sy < maxSeccion; sy++) {
@@ -1127,30 +1149,64 @@ public final class RenderLod {
     /**
      * Chunk sin datos reales pero con horizonte aproximado: el nivel pedido
      * si existe ({@link #nivelAproximadoDisponible}: 1 y 2 solo cerca del
-     * jugador, 3 y 4 siempre); si no, el más fino que haya. Vecinas solo arriba y abajo: los costados de un chunk
-     * aproximado se dibujan (lejos, costo chico).
+     * jugador, 3 y 4 siempre); si no, el más fino que haya. Se malla con las
+     * vecinas de arriba y abajo y con los chunks de al lado al mismo nivel
+     * (reales o aproximados): las paredes enterradas entre chunks no se
+     * generan, y lo que queda de los costados da al aire (ver
+     * {@link GeometriaLod#costadosAlAire}).
      */
     private static void armarAproximado(GeometriaLod geometria, RegionFileStore store, byte dimension, int nivel,
                                         int chunkX, int chunkZ, int dx, int dz, int minSeccion, int maxSeccion,
-                                        int omitidas) {
+                                        int omitidas, Map<NodoMemo, SuperVoxel[]> memo) {
         RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimension, chunkX, chunkZ);
         int nivelA = nivelAproximadoDisponible(store, region, nivel, chunkX, chunkZ);
         int lado = SectionExtractor.LADO >> nivelA;
-        int total = SectionExtractor.voxelesPorNodo(nivelA);
         SuperVoxel[][] grillas = new SuperVoxel[maxSeccion - minSeccion][];
         for (int sy = minSeccion; sy < maxSeccion; sy++) {
-            byte[] bytes = store.leer(region, TerrenoAproximado.claveNodo(nivelA, chunkX, sy, chunkZ));
-            grillas[sy - minSeccion] = bytes == null ? null : OctreeNodeCodec.deserializar(bytes, 0, total).voxeles();
+            grillas[sy - minSeccion] = nodoMemo(memo, store, dimension, false, nivelA, chunkX, sy, chunkZ);
         }
-        for (int i = 0; i < grillas.length; i++) {
-            if (grillas[i] == null) {
-                continue;
+        int[][] lados = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+        boolean[] vecinoReal = new boolean[4];
+        for (int l = 0; l < 4; l++) {
+            vecinoReal[l] = tieneDatos(store, dimension, chunkX + lados[l][0], chunkZ + lados[l][1]);
+        }
+        geometria.costadosAlAire(true, true);
+        try {
+            for (int i = 0; i < grillas.length; i++) {
+                if (grillas[i] == null) {
+                    continue;
+                }
+                int sy = minSeccion + i;
+                SuperVoxel[][] costados = new SuperVoxel[4][];
+                for (int l = 0; l < 4; l++) {
+                    costados[l] = nodoMemo(memo, store, dimension, vecinoReal[l], nivelA,
+                            chunkX + lados[l][0], sy, chunkZ + lados[l][1]);
+                }
+                GreedyMesher.Vecinos vecinos = GreedyMesher.Vecinos.deGrillas(lado, costados[0], costados[1],
+                        i > 0 ? grillas[i - 1] : null, i + 1 < grillas.length ? grillas[i + 1] : null,
+                        costados[2], costados[3]);
+                geometria.agregarSeccion(grillas[i], lado, dx * 16f, sy * 16f, dz * 16f, 16f / lado,
+                        omitidas, vecinos);
             }
-            GreedyMesher.Vecinos vecinos = GreedyMesher.Vecinos.deGrillas(lado, null, null,
-                    i > 0 ? grillas[i - 1] : null, i + 1 < grillas.length ? grillas[i + 1] : null, null, null);
-            geometria.agregarSeccion(grillas[i], lado, dx * 16f, (minSeccion + i) * 16f, dz * 16f, 16f / lado,
-                    omitidas, vecinos);
+        } finally {
+            geometria.costadosAlAire(false, false);
         }
+    }
+
+    /** Nodo real o aproximado de un armado, leído una sola vez. */
+    private record NodoMemo(boolean real, int nivel, int x, int y, int z) {
+    }
+
+    /** El nodo (real o aproximado) de ese nivel, o null si no hay (sección de aire o sin datos a ese nivel). */
+    private static SuperVoxel[] nodoMemo(Map<NodoMemo, SuperVoxel[]> memo, RegionFileStore store, byte dimension,
+                                         boolean real, int nivel, int chunkX, int sy, int chunkZ) {
+        return existente(memo.computeIfAbsent(new NodoMemo(real, nivel, chunkX, sy, chunkZ), k -> {
+            byte[] bytes = store.leer(GeneradorLocal.claveRegion(dimension, chunkX, chunkZ), real
+                    ? SectionExtractor.claveNodo(nivel, chunkX, sy, chunkZ)
+                    : TerrenoAproximado.claveNodo(nivel, chunkX, sy, chunkZ));
+            return bytes == null ? SIN_NODO
+                    : OctreeNodeCodec.deserializar(bytes, 0, SectionExtractor.voxelesPorNodo(nivel)).voxeles();
+        }));
     }
 
     /**
@@ -1587,6 +1643,9 @@ public final class RenderLod {
                     minSeccion, maxSeccion);
         }
         int conDatos = 0;
+        // Los acantilados dentro de la tesela: con datos aproximados (y reducidos) su pared
+        // queda con luz 0 y se descartaba (ver GeometriaLod#costadosAlAire). Los bordes no.
+        geometria.costadosAlAire(true, false);
         for (int b = 0; b < grillas.length; b++) {
             if (grillas[b] == null) {
                 continue;
@@ -1599,6 +1658,7 @@ public final class RenderLod {
             geometria.agregarSeccion(grillas[b], NivelesGrandes.LADO, 0, (primera + b) * seccionesPorLado * 16f, 0,
                     1 << nivel, 0, vecinos);
         }
+        geometria.costadosAlAire(false, false);
         return conDatos;
     }
 
@@ -1834,6 +1894,24 @@ public final class RenderLod {
     }
 
     /** Huella de los rangos verticales de las columnas de la celda (0 si vanilla no tiene ninguna en parte). */
+    /**
+     * Bit l (0 = X-, 1 = X+, 2 = Z-, 3 = Z+, el orden de los lados de
+     * {@link #armarCelda}) = 1 si la celda de ese lado está en el plan con el
+     * mismo nivel.
+     */
+    static int vecinasMismoNivel(PlanCeldas.Celda celda, it.unimi.dsi.fastutil.longs.Long2IntMap niveles) {
+        int[][] lados = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+        int bits = 0;
+        for (int l = 0; l < 4; l++) {
+            PlanCeldas.Celda vecina = new PlanCeldas.Celda(celda.celdaX() + lados[l][0], celda.celdaZ() + lados[l][1],
+                    celda.nivel(), 0);
+            if (niveles.get(clave(vecina)) == celda.nivel()) {
+                bits |= 1 << l;
+            }
+        }
+        return bits;
+    }
+
     private static long firmaVertical(PlanCeldas.Celda celda, Map<Long, RangoSecciones> verticales) {
         if (verticales.isEmpty()) {
             return 0;
