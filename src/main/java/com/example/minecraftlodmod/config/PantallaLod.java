@@ -164,7 +164,9 @@ public final class PantallaLod extends Screen {
                 List.of(interruptor("chunksEnRam", Impacto.BAJO, c.chunksEnRam)),
                 List.of(interruptor("pregenerar", Impacto.ALTO, c.pregenerar),
                         entero("radioPregeneracion", Impacto.NINGUNO, 16, ParametrosCalidad.RADIO_MAX, 16,
-                                c.radioPregeneracion, v -> Component.literal(v + " chunks"))))));
+                                c.radioPregeneracion, v -> Component.literal(v + " chunks"))),
+                List.of(entero("pregeneracionInicial", Impacto.NINGUNO, 0, 180, 15, c.pregeneracionInicial,
+                        v -> v == 0 ? texto("pregeneracionInicial.apagado") : Component.literal(v + " s"))))));
 
         List<ModoEscalado> modos = Escalado.modosDisponibles();
         paginas.add(new Pagina(pestana("experimental"), List.of(

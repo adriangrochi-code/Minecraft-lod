@@ -24,6 +24,7 @@
     "MixinPaqueteChunk",
     "MixinPasosGeneracion",
     "MixinPlayerChunkSender",
+    "MixinPrepararNiveles",
     "MixinThreadingDetector",
     "MixinVecinosEstado"
   ],

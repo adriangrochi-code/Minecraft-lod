@@ -62,6 +62,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue pregenerar;
         public final ModConfigSpec.BooleanValue generacionAproximada;
         public final ModConfigSpec.IntValue radioPregeneracion;
+        public final ModConfigSpec.IntValue pregeneracionInicial;
         public final ModConfigSpec.IntValue anilloReal;
         public final ModConfigSpec.BooleanValue chunksEnRam;
         public final ModConfigSpec.BooleanValue texturasLod;
@@ -127,6 +128,10 @@ public final class ConfigLod {
             radioPregeneracion = b.comment("Radio de la pregeneración, en chunks. 256 ≈ 200 mil chunks (del orden de",
                             "1-2 GB y decenas de minutos); 2048 ≈ 13 millones (cientos de GB, días).")
                     .defineInRange("radioPregeneracion", 256, 16, ParametrosCalidad.RADIO_MAX);
+            pregeneracionInicial = b.comment("Al crear un mundo nuevo, segundos extra en la pantalla de carga generando chunks",
+                            "alrededor del spawn con toda la CPU: al entrar ya hay terreno real y LOD alrededor. 0 = no.",
+                            "Solo la primera vez que se abre el mundo y solo singleplayer.")
+                    .defineInRange("pregeneracionInicial", 60, 0, 180);
             anilloReal = b.comment("Anillo real: chunks vanilla generados (no aproximados) hasta esta cantidad de chunks",
                             "más allá de la distancia de render, siguiendo al jugador. Lo primero que se ve del LOD",
                             "queda con árboles y el terreno de verdad, como en Voxy. Usa CPU al moverse y los chunks",

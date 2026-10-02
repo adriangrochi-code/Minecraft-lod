@@ -159,6 +159,13 @@ public final class GeneradorLocal {
      * AboutToStart y no Started: los chunks del spawn se cargan entre ambos
      * eventos, y con el store creado recién en Started se perdían.
      */
+    /** El de este proceso, para {@link PregeneracionInicial} (la llama un mixin, sin acceso a la instancia). */
+    private static volatile GeneradorLocal activo;
+
+    static GeneradorLocal activo() {
+        return activo;
+    }
+
     @SubscribeEvent
     public void alArrancarServidor(ServerAboutToStartEvent evento) {
         MinecraftServer servidor = evento.getServer();
@@ -179,6 +186,7 @@ public final class GeneradorLocal {
                     Runtime.getRuntime().maxMemory() >> 20, bytesStore >> 20);
         }
         store = new RegionFileStore(directorio, hashFuente, PERIODO_ESCRITURA_MS, bytesStore);
+        activo = this;
         scheduler = new GenerationTaskScheduler(calidad.hilosGeneracion(), presupuesto.maxTareasEnCola());
         LOG.info("LOD: generación LOCAL activa ({}, cola {}) en {}",
                 calidad, presupuesto.maxTareasEnCola(), directorio);
@@ -312,11 +320,16 @@ public final class GeneradorLocal {
             ticksDesdeLote = 0;
             lanzarLoteGrande();
         }
+        reintentarPendientes(evento.getServer());
+    }
+
+    /** Los chunks que esperaban luz o lugar en la cola; hilo del servidor (también sin ticks, ver {@link PregeneracionInicial}). */
+    void reintentarPendientes(MinecraftServer servidor) {
         if (pendientes.isEmpty() || store == null) {
             return;
         }
-        for (Pendiente p : masCercanosAJugador(evento.getServer(), REINTENTOS_POR_TICK)) {
-            ServerLevel nivel = evento.getServer().getLevel(p.dimension());
+        for (Pendiente p : masCercanosAJugador(servidor, REINTENTOS_POR_TICK)) {
+            ServerLevel nivel = servidor.getLevel(p.dimension());
             LevelChunk chunk = nivel == null ? null
                     : nivel.getChunkSource().getChunkNow(ChunkPos.getX(p.chunk()), ChunkPos.getZ(p.chunk()));
             // Descargado: se regenera en la próxima carga. Ya generado: nada que hacer.
