@@ -1203,3 +1203,22 @@ bloques con entidad por cajas (lo cercano tiene que quedar igual).
 - Pasada propia después de lo opaco, sin culling, con `lod_textura_recorte`
   (discard por alfa < 0,5); el fundido entre niveles hace el mismo recorte.
   Lo opaco sigue sin discard. Medido: 4,2 → 4,3 M vértices (+2%).
+
+## 39. Pregeneración al crear un mundo — 2026-10-02
+
+Pedido: en un mundo nuevo, tomarse un minuto o minuto y medio al cargar para
+generar todos los chunks que se pueda.
+
+**0.26.30 (`generation/PregeneracionInicial` + `cubico/mixin/MixinPrepararNiveles`,
+opción `pregeneracionInicial`, 60 s por defecto, 0-180):** inyectado en
+`MinecraftServer#prepareLevels` antes de `ChunkProgressListener#stop` (la
+pantalla de carga sigue abierta). Solo singleplayer y solo si
+`WorldData#getLoadedPlayerTag()` es null (el jugador nunca entró). Espiral desde
+el spawn con los tickets y las marcas de LOD de `PregeneradorChunks`, hasta
+núcleos × 4 en vuelo, frenando si la extracción se atrasa; el bucle es el de
+vanilla para el spawn (`nextTickTimeNanos` + `waitUntilNextTick`, 10 ms de
+tareas por vuelta), y como no hay ticks, los pendientes de luz se reintentan
+ahí (`GeneradorLocal.reintentarPendientes`). El avance se dibuja sobre
+`LevelLoadingScreen` (`PantallaConfig`, `ScreenEvent.Render.Post`). Medido en
+Xvfb: 2527 chunks en 60 s (~42/s, anillo 25), contra ~17/s jugando.
+El mundo del benchmark, la primera vez que se crea, también pasa por esto.

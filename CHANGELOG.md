@@ -6,6 +6,16 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.30 — Pregeneración al crear un mundo
+- **Mundo nuevo con terreno alrededor desde el principio:** la primera vez que
+  se abre un mundo nuevo, la pantalla de carga se queda 60 s más generando
+  chunks del spawn hacia afuera con toda la CPU (nadie está jugando todavía).
+  Muestra el avance ("pregenerando el mundo nuevo — N chunks, quedan S s").
+  Medido en Xvfb: 2527 chunks en 60 s (un radio de ~25 chunks), unas 2,5 veces
+  más rápido que generando mientras se juega.
+- Opción "Pregenerar al crear un mundo" (Generación): 0 a 180 s, 0 = no. Solo
+  un jugador y solo la primera vez que se abre el mundo.
+
 ## 0.26.29 — Siluetas de plantas en el LOD cercano
 - **Caña, bambú, pasto alto, helechos grandes, girasoles, lilas, rosales y
   peonías** se ven en el LOD cercano como de cerca: dos planos cruzados con su
