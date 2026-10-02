@@ -47,6 +47,18 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   - en multiplayer el LOD vertical necesita los datos LOD en el cliente
     (hoy solo singleplayer, como el resto del LOD por red).
 
+- **Fusión de caras (medido después de 0.26.11, Xvfb, mundo de benchmark):**
+  por qué se corta una fusión (pares vecinos al empezar cada quad): estado de
+  bloque 190k, oclusión ambiental 116k, altura 33k, color 7,6k. Probado:
+  - fusionar por textura de la cara en vez de estado exacto: −1% de vértices
+    (queda en el código, no cambia la imagen);
+  - tolerancia de color en vóxeles grandes: 0% (los colores salen por estado,
+    sin variación por bloque) → descartado;
+  - oclusión solo hasta vóxeles de 4: 0% en lo dibujado (lo que se ve cerca
+    son vóxeles chicos) → descartado. Oclusión apagada del todo: −18%.
+  Lo que domina son las celdas finas cerca del borde de vanilla: la perilla
+  real es «Píxeles máximos» (y la oclusión ambiental).
+
 - **Catalejo con Vulkan (0.26.10, sin resolver):** en Xvfb con lavapipe, al
   hacer zoom con el LOD texturizado apareció una vez geometría magenta con
   rayas (textura faltante estirada) en el cielo; en la siguiente prueba

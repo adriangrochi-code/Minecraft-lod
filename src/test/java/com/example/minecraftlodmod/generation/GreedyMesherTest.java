@@ -265,4 +265,24 @@ class GreedyMesherTest {
         assertTrue(quads.stream().noneMatch(q -> q.eje() == Quad.Eje.X && !q.positivo() && q.x() == 1),
                 "B no muestra costado contra A, que es más alto");
     }
+
+    /** Cubo 4×4×4 con el estado alternando entre 10 y 11 (mismo color). */
+    private static SuperVoxel[] cuboDosEstados() {
+        SuperVoxel[] grid = new SuperVoxel[64];
+        for (int i = 0; i < grid.length; i++) {
+            grid[i] = new SuperVoxel((byte) 100, (byte) 100, (byte) 100, (byte) SuperVoxel.LLENO,
+                    SuperVoxel.Material.SOLIDO, (byte) 0, (short) (10 + i % 2));
+        }
+        return grid;
+    }
+
+    @Test
+    void estadosDistintosConLaMismaTexturaSeFusionan() {
+        // Los dos estados dibujan lo mismo (como hojas a distinta distancia del tronco): 6 caras.
+        assertEquals(6, GreedyMesher.mallar(cuboDosEstados(), 4, null, false, 1, (estado, eje, positivo) -> 7).size());
+        // Texturas distintas: no se fusionan.
+        assertTrue(GreedyMesher.mallar(cuboDosEstados(), 4, null, false, 1, (estado, eje, positivo) -> estado).size() > 6);
+        // Sin texturas (colores planos) el estado no se ve: decide el color.
+        assertEquals(6, GreedyMesher.mallar(cuboDosEstados(), 4, null, false, 1, null).size());
+    }
 }

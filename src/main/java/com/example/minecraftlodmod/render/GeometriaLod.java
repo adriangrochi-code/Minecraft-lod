@@ -240,7 +240,7 @@ public final class GeometriaLod {
         int agregados = 0;
         // Superficie a la altura real dentro de los vóxeles grandes (recortes en bloques enteros).
         int bloquesPorVoxel = escala >= 2 && escala == Math.round(escala) ? Math.round(escala) : 0;
-        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos, oclusionAmbiental, bloquesPorVoxel)) {
+        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos, oclusionAmbiental, bloquesPorVoxel, superficies())) {
             if (omitida(q, lado, carasOmitidas)) {
                 continue;
             }
@@ -249,6 +249,31 @@ public final class GeometriaLod {
             }
         }
         return agregados;
+    }
+
+    /**
+     * Para el mesher: lo que dibuja cada cara según la fuente de texturas, así se
+     * fusionan vóxeles de distinto estado con la misma textura. Sin texturas, null
+     * (decide solo el color).
+     */
+    private GreedyMesher.Superficies superficies() {
+        Texturas fuente = fuenteTexturas;
+        if (fuente == null) {
+            return null;
+        }
+        return (idEstado, eje, positivo) -> {
+            Cara cara = idEstado == SuperVoxel.SIN_ESTADO ? null : fuente.cara(idEstado, eje, positivo);
+            return claveCara(cara);
+        };
+    }
+
+    /** Misma clave = misma textura, misma franja y el mismo color base (0 = sin textura). */
+    static int claveCara(Cara cara) {
+        if (cara == null) {
+            return 0;
+        }
+        return (cara.sprite() & MAX_SPRITE) | (cara.spriteAbajo() & MAX_SPRITE) << 14
+                | (cara.usaColorDelVoxel() ? 1 << 28 : 0) | 1 << 29;
     }
 
     static boolean omitida(Quad q, int lado, int carasOmitidas) {
