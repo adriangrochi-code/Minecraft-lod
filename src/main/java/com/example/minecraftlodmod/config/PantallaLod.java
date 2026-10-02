@@ -109,7 +109,10 @@ public final class PantallaLod extends Screen {
                         })
                         .conDescripcion(() -> texto(SesionCalibracion.enCurso() ? "calibrar.cancelar.tooltip"
                                 : Minecraft.getInstance().level == null ? "calibrar.tooltip" : "calibrar.enMundo"))
-                        .siempreQue(() -> SesionCalibracion.enCurso() || Minecraft.getInstance().level == null)))));
+                        .siempreQue(() -> SesionCalibracion.enCurso() || Minecraft.getInstance().level == null),
+                        new Accion(texto("medir"), texto("medir.tooltip"), Impacto.NINGUNO,
+                                () -> texto("medir.accion"), SesionCalibracion::medir)
+                                .siempreQue(() -> !SesionCalibracion.enCurso() && Minecraft.getInstance().level == null)))));
 
         Interruptor texturas = interruptor("texturasLod", Impacto.BAJO, c.texturasLod);
         Interruptor curvatura = interruptor("curvatura", Impacto.NINGUNO, c.curvatura);

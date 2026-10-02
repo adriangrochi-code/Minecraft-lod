@@ -82,14 +82,19 @@ public final class BalanceCpuGpu {
         return actual;
     }
 
+    /** Auto-ajuste prendido; durante el benchmark queda congelado (mediría con perillas moviéndose). */
     private static boolean activo() {
+        if (com.example.minecraftlodmod.benchmark.SesionCalibracion.enCurso()) {
+            return false;
+        }
         return ConfigLod.CLIENTE.autoAjuste.get();
     }
 
     @SubscribeEvent
     public void alEmpezarCuadro(RenderFrameEvent.Pre evento) {
         // También sin auto-ajuste si el HUD muestra el uso de GPU.
-        if (!(activo() || ConfigLod.CLIENTE.hudRendimiento.get()) || gpuNoDisponible || midiendo) {
+        if (!(activo() || ConfigLod.CLIENTE.hudRendimiento.get()
+                || com.example.minecraftlodmod.benchmark.SesionCalibracion.enCurso()) || gpuNoDisponible || midiendo) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();

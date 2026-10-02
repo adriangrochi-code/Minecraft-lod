@@ -5,13 +5,15 @@ import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
 /**
- * Escalado "solo si gana" (lógica pura salvo el log): bajar la resolución
- * solo sirve si el límite es la GPU dibujando píxeles. Si el límite es el
+ * Escalado "solo si no pierde" (lógica pura salvo el log): bajar la resolución
+ * sirve si el límite es la GPU dibujando píxeles. Si el límite es el
  * procesador o la cantidad de vértices (lo más común en Minecraft), las
- * pasadas del escalador cuestan y el FPS baja. Cada {@link #REPETIR_NANOS}
- * se miden {@link #MEDIR_NANOS} con escalado y otro tanto sin él, y se deja
- * el que dio cuadros más cortos (con escalado, si gana al menos
- * {@link #GANANCIA_MINIMA}).
+ * pasadas del escalador pueden costar más de lo que ahorran. Cada
+ * {@link #REPETIR_NANOS} se miden {@link #MEDIR_NANOS} con escalado y otro
+ * tanto sin él, y el escalado se apaga solo si los cuadros salen más de
+ * {@link #PERDIDA_MAXIMA} más lentos. En el empate (límite del procesador, tope
+ * de FPS o vsync, que daban "sin ganancia" y lo apagaban aunque el jugador lo
+ * pidió: en la A275 "no se activaba") queda prendido: la GPU trabaja menos.
  *
  * Se llama una vez por cuadro, justo antes de dibujar el mundo: el tiempo
  * entre llamadas es el tiempo de cuadro. Los primeros cuadros después de
@@ -24,8 +26,8 @@ public final class PruebaEscalado {
     static final long MEDIR_NANOS = 3_000_000_000L;
     static final long REPETIR_NANOS = 120_000_000_000L;
     static final int CUADROS_DESCARTADOS = 20;
-    /** Con escalado tiene que ser al menos un 3% más rápido; si no, no vale la pérdida de nitidez. */
-    static final double GANANCIA_MINIMA = 0.97;
+    /** Con escalado se apaga si los cuadros salen más de un 3% más lentos que sin él. */
+    static final double PERDIDA_MAXIMA = 1.03;
 
     enum Fase { CON, SIN, DECIDIDO }
 
@@ -111,14 +113,14 @@ public final class PruebaEscalado {
     private void decidir(long ahora) {
         double con = sumaCon / cuadrosCon / 1e6, sin = sumaSin / cuadrosSin / 1e6;
         boolean antes = conviene;
-        conviene = con <= sin * GANANCIA_MINIMA;
+        conviene = con <= sin * PERDIDA_MAXIMA;
         ultimoCon = con;
         ultimoSin = sin;
         fase = Fase.DECIDIDO;
         proximaPrueba = ahora + REPETIR_NANOS;
         if (conviene != antes || LOG.isDebugEnabled()) {
             LOG.info("LOD: escalado {}: {} ms por cuadro con escalado, {} ms sin (se vuelve a medir en 2 min)",
-                    conviene ? "prendido" : "APAGADO porque no da ganancia en esta PC ahora",
+                    conviene ? "prendido" : "APAGADO porque es más lento en esta PC ahora",
                     String.format("%.2f", con), String.format("%.2f", sin));
         }
     }

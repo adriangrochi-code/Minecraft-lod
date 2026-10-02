@@ -42,4 +42,14 @@ class OctreeNodeCodecTest {
         assertEquals(0, leido.nivelLod());
         assertArrayEquals(voxeles, leido.voxeles());
     }
+
+    @org.junit.jupiter.api.Test
+    void lasMarcasDelStoreNoSonNodos() {
+        // Marca vieja de "chunk extraído" (vacía hasta 0.25.5, {1} después): comparte clave con un
+        // nodo aproximado fino; leída como nodo rompía el armado de la celda.
+        org.junit.jupiter.api.Assertions.assertFalse(OctreeNodeCodec.esNodo(null));
+        org.junit.jupiter.api.Assertions.assertFalse(OctreeNodeCodec.esNodo(new byte[0]));
+        org.junit.jupiter.api.Assertions.assertFalse(OctreeNodeCodec.esNodo(new byte[]{1}));
+        org.junit.jupiter.api.Assertions.assertTrue(OctreeNodeCodec.esNodo(new byte[4]));
+    }
 }

@@ -3,6 +3,8 @@ package com.example.minecraftlodmod.benchmark;
 import com.example.minecraftlodmod.config.ConfigLod;
 import com.example.minecraftlodmod.config.ParametrosCalidad;
 import com.example.minecraftlodmod.config.QualityPreset;
+import com.example.minecraftlodmod.render.MonitorRendimiento;
+import com.mojang.blaze3d.platform.GlUtil;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.toasts.SystemToast;
@@ -23,48 +25,68 @@ import net.minecraft.world.level.levelgen.WorldOptions;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
 
+import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
- * Calibración por benchmark, lado cliente (sección 9). Solo cliente.
+ * Benchmark del LOD, lado cliente (sección 9). Solo cliente. Dos modos:
+ *  - "Calibrar": busca el escalón más alto que alcanza el objetivo desde el
+ *    preset elegido y lo guarda como config PERSONALIZADO.
+ *  - "Medir rendimiento": mide la config actual tal cual, sin cambiarla.
  *
- * Flujo del botón "Calibrar" de la pantalla de config:
- *  1. El jugador eligió un preset como punto de partida.
- *  2. Se abre el mundo de benchmark ({@link PuntosBenchmark}), creándolo
- *     la primera vez: seed fija, espectador, pacífico, sin ciclo de día ni
- *     clima ni mobs — la escena tiene que ser la misma en cada corrida.
- *  3. {@link CalibradorBenchmark} recorre escalones × puntos; en cada frame
- *     se le pasa el frame time real (entre dos {@link RenderFrameEvent.Post}).
- *  4. El resultado se guarda como config PERSONALIZADO.
- *  5. Se cierra el mundo y se vuelve al menú principal.
+ * Flujo:
+ *  1. Se abre el mundo de benchmark ({@link PuntosBenchmark}), creándolo la
+ *     primera vez: seed fija, espectador, pacífico, sin ciclo de día ni clima
+ *     ni mobs: la escena tiene que ser la misma en cada corrida.
+ *  2. {@link CalibradorBenchmark} recorre escalones × puntos con el frame time
+ *     de cada cuadro y, una vez por segundo, las métricas del monitor de
+ *     rendimiento (GPU, CPU, RAM, servidor, vértices, llamadas, VRAM). En los
+ *     puntos quietos espera a que el LOD esté listo antes de medir; el vuelo
+ *     avanza en línea recta mientras mide.
+ *  3. Escribe el informe en {@code .minecraft/minecraftlodmod/benchmark/}.
+ *  4. Calibrando, guarda el resultado como config PERSONALIZADO.
+ *  5. Cierra el mundo y vuelve al menú principal.
+ *
+ * Mientras corre, el auto-ajuste queda congelado (mediría con perillas
+ * moviéndose) y la medición de GPU, forzada.
  *
  * Mover al jugador se hace directo sobre el servidor integrado (siempre es
  * singleplayer), no con comandos: no depende de que el mundo tenga trucos.
  *
  * La sesión vive SOLO dentro del mundo de benchmark: si el jugador sale
  * antes de que termine (o por algún motivo se abre otro mundo), se cancela
- * y se vuelve a la calidad de la config. Antes quedaba activa y, en el
- * siguiente mundo que se abriera, seguía teletransportando al jugador a
- * los puntos de benchmark y cambiando la calidad del LOD.
- *
- * Pendiente con render/: {@link #asignarAplicador} — hasta que exista el
- * render de LOD, cambiar de escalón no cambia lo que se dibuja y la
- * calibración mide solo el costo vanilla de cada escena.
+ * y se vuelve a la calidad de la config.
  */
 public final class SesionCalibracion {
 
     private static final Logger LOG = LogUtils.getLogger();
 
-    /** Espera en cada punto antes de medir: carga de chunks y generación de LOD. */
-    public static final double CALENTAMIENTO_MS = 10_000;
-    public static final double MEDICION_MS = 5_000;
+    /** Puntos quietos: espera mínima, máxima (si el LOD no termina de armarse) y medición. */
+    public static final double CALENTAMIENTO_MIN_MS = 8_000, CALENTAMIENTO_MAX_MS = 60_000, MEDICION_MS = 10_000;
+    /** Vuelo: una espera corta en el punto de partida y después en movimiento. */
+    public static final double CALENTAMIENTO_VUELO_MS = 3_000, MEDICION_VUELO_MS = 15_000;
+    /** Cada cuánto se mueve al jugador en el vuelo (cada paso son {@code VELOCIDAD × esto} bloques). */
+    static final long PASO_VUELO_NANOS = 250_000_000L;
     /** Frames más largos que esto (pausas, alt-tab, guardado) no se cuentan. */
     private static final double FRAME_MAXIMO_MS = 2_000;
+    /** Muestras seguidas del monitor sin nada pendiente para dar el LOD por listo. */
+    static final int MUESTRAS_LISTO = 2;
 
     private static volatile Consumer<ParametrosCalidad> aplicador = p -> { };
 
@@ -72,14 +94,30 @@ public final class SesionCalibracion {
     private static SesionCalibracion activa;
 
     private final CalibradorBenchmark calibrador;
+    private final boolean soloMedir;
+    private final String titulo;
     private long ultimoFrameNanos;
+    private long ultimoPasoVueloNanos;
     private boolean posicionado;
+    private int muestrasSinPendientes;
     /** Servidor integrado del mundo de benchmark; si el frame corre en otro, se cancela. */
     private MinecraftServer servidorBenchmark;
 
-    private SesionCalibracion(QualityPreset inicial) {
-        this.calibrador = new CalibradorBenchmark(EscalonesCalibracion.desde(inicial),
-                PuntosBenchmark.PUNTOS.size(), CALENTAMIENTO_MS, MEDICION_MS);
+    private SesionCalibracion(EscalonesCalibracion tabla, boolean soloMedir, String titulo) {
+        this.calibrador = new CalibradorBenchmark(tabla, ventanas());
+        this.soloMedir = soloMedir;
+        this.titulo = titulo;
+    }
+
+    static CalibradorBenchmark.Ventana[] ventanas() {
+        List<PuntosBenchmark.Punto> puntos = PuntosBenchmark.PUNTOS;
+        CalibradorBenchmark.Ventana[] v = new CalibradorBenchmark.Ventana[puntos.size()];
+        for (int i = 0; i < v.length; i++) {
+            v[i] = puntos.get(i).tipo() == PuntosBenchmark.Tipo.VUELO
+                    ? new CalibradorBenchmark.Ventana(CALENTAMIENTO_VUELO_MS, CALENTAMIENTO_VUELO_MS, MEDICION_VUELO_MS, false)
+                    : new CalibradorBenchmark.Ventana(CALENTAMIENTO_MIN_MS, CALENTAMIENTO_MAX_MS, MEDICION_MS, true);
+        }
+        return v;
     }
 
     /**
@@ -94,17 +132,28 @@ public final class SesionCalibracion {
         return activa != null;
     }
 
-    /** Solo desde el menú principal (sin mundo abierto). */
+    /** "Calibrar", solo desde el menú principal (sin mundo abierto). */
     public static void iniciar(QualityPreset inicial) {
+        EscalonesCalibracion tabla = EscalonesCalibracion.desde(inicial);
+        empezar(new SesionCalibracion(tabla, false, "calibración desde " + inicial));
+        LOG.info("LOD: calibración desde {} ({} escalones posibles)", inicial, tabla.escalones().size());
+    }
+
+    /** "Medir rendimiento" de la config actual, sin cambiarla. Solo desde el menú principal. */
+    public static void medir() {
+        empezar(new SesionCalibracion(EscalonesCalibracion.soloMedir(ConfigLod.calidadCliente()), true,
+                "medición de la config actual"));
+        LOG.info("LOD: medición de rendimiento con {}", ConfigLod.calidadCliente());
+    }
+
+    private static void empezar(SesionCalibracion sesion) {
         Minecraft mc = Minecraft.getInstance();
         if (activa != null || mc.level != null) {
             return;
         }
-        activa = new SesionCalibracion(inicial);
+        activa = sesion;
         NeoForge.EVENT_BUS.register(activa);
-        LOG.info("LOD: calibración desde {} ({} escalones posibles)", inicial,
-                EscalonesCalibracion.desde(inicial).escalones().size());
-
+        MonitorRendimiento.escuchar(activa::alMuestrear);
         if (mc.getLevelSource().levelExists(PuntosBenchmark.NOMBRE_MUNDO)) {
             mc.createWorldOpenFlows().openWorld(PuntosBenchmark.NOMBRE_MUNDO, SesionCalibracion::cancelar);
         } else {
@@ -126,30 +175,31 @@ public final class SesionCalibracion {
     private static void cancelar() {
         if (activa != null) {
             NeoForge.EVENT_BUS.unregister(activa);
+            MonitorRendimiento.escuchar(null);
             activa = null;
         }
     }
 
-    /** Botón "Cancelar calibración" de la pantalla de config. */
+    /** Botón "Cancelar" de la pantalla de config. */
     public static void cancelarManual() {
         abortar("cancelada por el jugador");
     }
 
-    /** Calibración interrumpida: fuera la sesión y el render vuelve a la calidad de la config. */
+    /** Sesión interrumpida: fuera la sesión y el render vuelve a la calidad de la config. */
     private static void abortar(String motivo) {
         if (activa == null) {
             return;
         }
-        LOG.info("LOD: calibración cancelada ({})", motivo);
+        LOG.info("LOD: benchmark cancelado ({})", motivo);
         cancelar();
         aplicador.accept(ConfigLod.calidadCliente());
     }
 
-    /** Salir del mundo (menú de pausa, desconexión) antes de terminar cancela la calibración. */
+    /** Salir del mundo (menú de pausa, desconexión) antes de terminar cancela la sesión. */
     @SubscribeEvent
     public void alSalir(ClientPlayerNetworkEvent.LoggingOut evento) {
         // Abrir un mundo desde el menú también dispara LoggingOut ANTES de entrar:
-        // solo cuenta una vez que la calibración arrancó dentro del benchmark.
+        // solo cuenta una vez que la sesión arrancó dentro del benchmark.
         if (!posicionado) {
             return;
         }
@@ -157,8 +207,23 @@ public final class SesionCalibracion {
     }
 
     private static boolean esMundoBenchmark(MinecraftServer servidor) {
-        java.nio.file.Path carpeta = servidor.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize().getFileName();
+        Path carpeta = servidor.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize().getFileName();
         return carpeta != null && carpeta.toString().equals(PuntosBenchmark.NOMBRE_MUNDO);
+    }
+
+    /** Muestra de cada segundo del monitor: métricas para el punto y si el LOD terminó de armarse. */
+    private void alMuestrear(MonitorRendimiento.Muestra m) {
+        if (!posicionado) {
+            return;
+        }
+        var lod = m.lod();
+        boolean sinPendientes = lod != null && lod.mallasEnCola() == 0 && m.pendientes() == 0
+                && m.extraidosPorSegundo() < 1 && m.aproximadosPorSegundo() < 1;
+        muestrasSinPendientes = sinPendientes ? muestrasSinPendientes + 1 : 0;
+        double gpuMs = m.gpuPorcentaje() < 0 ? -1 : m.gpuPorcentaje() / 100 * m.promedioMs();
+        calibrador.registrarSegundo(gpuMs, m.cpuJuego(), m.ramUsadaMb(), m.msServidor(),
+                lod == null ? -1 : lod.verticesDibujados(), lod == null ? -1 : lod.llamadas(),
+                m.vramUsadaMb() < 0 ? -1 : m.vramUsadaMb());
     }
 
     @SubscribeEvent
@@ -196,11 +261,11 @@ public final class SesionCalibracion {
             return;
         }
 
-        switch (calibrador.registrarFrame(frameMs)) {
-            case NADA -> { }
+        switch (calibrador.registrarFrame(frameMs, muestrasSinPendientes >= MUESTRAS_LISTO)) {
+            case NADA -> avanzarVuelo(servidor, ahora);
             case CAMBIAR_PUNTO -> mover(servidor, calibrador.puntoActual());
             case CAMBIAR_ESCALON -> {
-                LOG.info("LOD: calibración, escalón {} -> {}", calibrador.indiceEscalonActual(),
+                LOG.info("LOD: benchmark, escalón {} -> {}", calibrador.indiceEscalonActual(),
                         calibrador.escalonActual());
                 aplicador.accept(calibrador.escalonActual());
                 mover(servidor, 0);
@@ -209,8 +274,27 @@ public final class SesionCalibracion {
         }
     }
 
+    /** Durante la medición del vuelo, el jugador avanza en línea recta (un paso cada 250 ms). */
+    private void avanzarVuelo(MinecraftServer servidor, long ahora) {
+        PuntosBenchmark.Punto punto = PuntosBenchmark.PUNTOS.get(calibrador.puntoActual());
+        if (punto.tipo() != PuntosBenchmark.Tipo.VUELO || !calibrador.midiendo()
+                || ahora - ultimoPasoVueloNanos < PASO_VUELO_NANOS) {
+            return;
+        }
+        ultimoPasoVueloNanos = ahora;
+        double[] xz = PuntosBenchmark.posicionVuelo(punto, calibrador.msMedidos() / 1000);
+        servidor.execute(() -> {
+            if (servidor.getPlayerList().getPlayers().isEmpty()) {
+                return;
+            }
+            ServerPlayer jugador = servidor.getPlayerList().getPlayers().get(0);
+            jugador.teleportTo(servidor.overworld(), xz[0], punto.yReferencia(), xz[1], punto.yaw(), punto.pitch());
+        });
+    }
+
     /** Teletransporta al jugador al punto, en el hilo del servidor integrado. */
-    private static void mover(MinecraftServer servidor, int indice) {
+    private void mover(MinecraftServer servidor, int indice) {
+        muestrasSinPendientes = 0; // lo que estaba listo era del punto anterior
         PuntosBenchmark.Punto punto = PuntosBenchmark.PUNTOS.get(indice);
         servidor.execute(() -> {
             if (servidor.getPlayerList().getPlayers().isEmpty()) {
@@ -222,10 +306,13 @@ public final class SesionCalibracion {
             nivel.getChunk(punto.x() >> 4, punto.z() >> 4); // genera/carga para leer el heightmap
             double y = switch (punto.tipo()) {
                 case SUPERFICIE -> nivel.getHeight(Heightmap.Types.MOTION_BLOCKING, punto.x(), punto.z()) + 2;
+                case ALTURA -> nivel.getHeight(Heightmap.Types.MOTION_BLOCKING, punto.x(), punto.z())
+                        + punto.yReferencia();
                 case CUEVA -> buscarAireEnCueva(nivel, punto);
+                case VUELO -> punto.yReferencia();
             };
             jugador.teleportTo(nivel, punto.x() + 0.5, y, punto.z() + 0.5, punto.yaw(), punto.pitch());
-            LOG.info("LOD: calibración en '{}' ({}, {}, {})", punto.nombre(), punto.x(), (int) y, punto.z());
+            LOG.info("LOD: benchmark en '{}' ({}, {}, {})", punto.nombre(), punto.x(), (int) y, punto.z());
         });
     }
 
@@ -256,23 +343,88 @@ public final class SesionCalibracion {
         CalibradorBenchmark.Resultado r = calibrador.resultado();
         for (CalibradorBenchmark.Medicion m : r.mediciones()) {
             LOG.info("LOD: escalón {}: {} ms promedio (umbral {} ms) -> {}", m.escalon(),
-                    String.format("%.2f", m.msPromedio()), String.format("%.2f", calibrador.umbralMs()),
-                    m.paso() ? "pasa" : "no pasa");
+                    String.format(Locale.ROOT, "%.2f", m.msPromedio()),
+                    String.format(Locale.ROOT, "%.2f", calibrador.umbralMs()), m.paso() ? "pasa" : "no pasa");
         }
-        LOG.info("LOD: calibración terminada: {}{}", r.elegido(), r.enPiso() ? " (en el piso)" : "");
-        guardar(r.elegido());
+        RecomendacionesBenchmark.Recomendaciones recomendaciones = soloMedir ? null
+                : RecomendacionesBenchmark.de(r, cuentan(), calibrador.escalonActual().frameTimeObjetivoMs(),
+                calibrador.escalones().size() - 1);
+        Path informe = escribirInforme(mc, r, recomendaciones);
+        if (!soloMedir) {
+            LOG.info("LOD: calibración terminada: {}{}", r.elegido(), r.enPiso() ? " (en el piso)" : "");
+            guardar(r.elegido(), recomendaciones);
+        }
         cancelar();
+        if (soloMedir) {
+            aplicador.accept(ConfigLod.calidadCliente());
+        }
 
         mc.level.disconnect();
         mc.disconnect(new GenericMessageScreen(Component.translatable("menu.savingLevel")));
         mc.setScreen(new TitleScreen());
+        Component detalle = informe == null ? Component.translatable("minecraftlodmod.benchmark.sinInforme")
+                : Component.translatable("minecraftlodmod.benchmark.informe", informe.getFileName().toString());
         SystemToast.addOrUpdate(mc.getToasts(), SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
-                Component.translatable("minecraftlodmod.calibracion.terminada"),
-                Component.translatable(r.enPiso() ? "minecraftlodmod.calibracion.piso"
+                Component.translatable(soloMedir ? "minecraftlodmod.benchmark.terminado"
+                        : "minecraftlodmod.calibracion.terminada"),
+                soloMedir ? detalle : Component.translatable(r.enPiso() ? "minecraftlodmod.calibracion.piso"
                         : "minecraftlodmod.calibracion.resultado", r.elegido().radioLodChunks()));
     }
 
-    private static void guardar(ParametrosCalidad p) {
+    /** El informe en {@code .minecraft/minecraftlodmod/benchmark/}; null si no se pudo escribir. */
+    private static boolean[] cuentan() {
+        CalibradorBenchmark.Ventana[] v = ventanas();
+        boolean[] cuentan = new boolean[v.length];
+        for (int i = 0; i < cuentan.length; i++) {
+            cuentan[i] = v[i].cuentaParaCalibrar();
+        }
+        return cuentan;
+    }
+
+    private Path escribirInforme(Minecraft mc, CalibradorBenchmark.Resultado r,
+                                 RecomendacionesBenchmark.Recomendaciones recomendaciones) {
+        List<PuntosBenchmark.Punto> puntos = PuntosBenchmark.PUNTOS;
+        String texto = InformeBenchmark.armar(titulo, sistema(mc), MonitorRendimiento.resumenConfig(),
+                puntos.stream().map(PuntosBenchmark.Punto::nombre).toList(), cuentan(), r, calibrador.escalones(),
+                calibrador.umbralMs(), calibrador.umbralTironMs(), soloMedir);
+        if (recomendaciones != null) {
+            texto += recomendaciones.motivos().isEmpty() ? "Sin cambios extra (escalado y oclusión en costados quedan como estaban).\n"
+                    : "Además se prendió: " + String.join("; ", recomendaciones.motivos()) + ".\n";
+        }
+        try {
+            Path carpeta = FMLPaths.GAMEDIR.get().resolve("minecraftlodmod").resolve("benchmark");
+            Files.createDirectories(carpeta);
+            Path archivo = carpeta.resolve("informe-"
+                    + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".txt");
+            Files.writeString(archivo, texto, StandardCharsets.UTF_8);
+            LOG.info("LOD: informe del benchmark en {}", archivo.toAbsolutePath());
+            return archivo;
+        } catch (IOException | RuntimeException e) {
+            LOG.warn("LOD: no se pudo escribir el informe del benchmark; va al log:\n{}", texto, e);
+            return null;
+        }
+    }
+
+    /** Hardware y software, para comparar informes de máquinas distintas. */
+    private static Map<String, String> sistema(Minecraft mc) {
+        Map<String, String> s = new LinkedHashMap<>();
+        s.put("Fecha", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
+        s.put("Mod", MonitorRendimiento.version());
+        s.put("CPU", GlUtil.getCpuInfo() + " (" + Runtime.getRuntime().availableProcessors() + " hilos)");
+        s.put("GPU", GlUtil.getVendor() + " " + GlUtil.getRenderer());
+        s.put("OpenGL", GlUtil.getOpenGLVersion());
+        var so = ManagementFactory.getOperatingSystemMXBean();
+        long ramTotal = so instanceof com.sun.management.OperatingSystemMXBean x ? x.getTotalMemorySize() >> 20 : -1;
+        s.put("RAM", (ramTotal < 0 ? "?" : ramTotal + " MB") + ", heap de Java " + (Runtime.getRuntime().maxMemory() >> 20)
+                + " MB");
+        s.put("Sistema", System.getProperty("os.name") + " " + System.getProperty("os.version") + ", Java "
+                + System.getProperty("java.version"));
+        s.put("Ventana", mc.getWindow().getWidth() + "×" + mc.getWindow().getHeight()
+                + ", tope de FPS " + mc.options.framerateLimit().get() + ", vsync " + mc.options.enableVsync().get());
+        return s;
+    }
+
+    private static void guardar(ParametrosCalidad p, RecomendacionesBenchmark.Recomendaciones extra) {
         ConfigLod.Cliente c = ConfigLod.CLIENTE;
         c.seleccion.set(ParametrosCalidad.Seleccion.PERSONALIZADO);
         c.radioLodChunks.set(p.radioLodChunks());
@@ -281,6 +433,13 @@ public final class SesionCalibracion {
         c.cacheRamMb.set(p.cacheRamMb());
         c.colapsoDesdeNivel.set(p.colapsoDesdeNivel());
         c.fpsObjetivo.set(p.fpsObjetivo());
+        // Solo se prende lo que conviene a esta máquina; lo que el jugador ya eligió no se apaga.
+        if (extra != null && extra.escalado() && c.escalado.get() == com.example.minecraftlodmod.config.ModoEscalado.APAGADO) {
+            c.escalado.set(com.example.minecraftlodmod.config.ModoEscalado.FSR1);
+        }
+        if (extra != null && extra.oclusionCostados()) {
+            c.oclusionCostados.set(true);
+        }
         ConfigLod.SPEC_CLIENTE.save();
     }
 }

@@ -125,6 +125,19 @@ sujetos a elección manual o a la calibración real por benchmark (sección 9).
   mundo propio, la seed fija hace determinista toda la generación (terreno,
   estructuras, árboles) sin mixins, y se puede calibrar desde el menú
   principal sin tener un mundo del jugador.
+- **Actualización 0.26.27:** 6 puntos (llanura, bosque, montaña, cueva,
+  vista alta = 90 bloques sobre el terreno, vuelo a 20 b/s). Por punto quieto
+  espera 8-60 s hasta que el LOD está listo (2 muestras del monitor sin mallas
+  en cola ni generación) y mide 10 s; el vuelo, 3 s y 15 s en movimiento, y no
+  decide el escalón (la primera vez genera terreno). Métricas por punto
+  (`CalibradorBenchmark.MetricasPunto`): promedio, 1% peor, peor, carga del LOD
+  y, del `MonitorRendimiento`, GPU, CPU, RAM, servidor, vértices, llamadas,
+  VRAM. Pasa si promedio <= 90% del objetivo y 1% peor <= 2,5 × objetivo.
+  Informe en `.minecraft/minecraftlodmod/benchmark/` (`InformeBenchmark`).
+  "Medir rendimiento" = un solo escalón con la config actual. Al calibrar,
+  `RecomendacionesBenchmark`: en el piso con la GPU >= 85% del cuadro, FSR 1;
+  en el escalón más alto con <= 60% del objetivo y GPU con margen, oclusión en
+  costados. El auto-ajuste queda congelado durante la sesión.
 - Se genera una sola vez, cacheada igual que cualquier mundo; el cache de LOD
   se invalida solo si cambia el algoritmo (`GeneradorLocal.VERSION_ALGORITMO`).
 - Flujo del botón "Calibrar" (solo desde el menú principal):
@@ -1145,4 +1158,12 @@ SSAO la toman como superficie). Al separar, se descartan solo los costados de
 agua en el borde de la grilla y las caras de abajo; los de adentro (cascadas)
 se dibujan. Medido: misma geometría, GPU +3%, +372 llamadas en la vista de
 prueba. Bordes entre niveles: revisados con cada nivel teñido, continuos.
+
+**0.26.27 — marcas vs. nodos:** la marca vieja de "chunk extraído"
+(`GeneradorLocal.claveMarcaVieja`, nivel 15, Y=0) comparte clave con el nodo
+aproximado fino de nivel 2 en la sección 0 (`TerrenoAproximado.claveNodo`, nivel
+15). En mundos de antes de 0.26.14 el armado lo leía como nodo (0 o 1 byte) y la
+celda fallaba. `OctreeNodeCodec.esNodo` (al menos la cabecera) en todos los
+lectores. Escalado "solo si gana" pasó a "apagar solo si pierde" más de 3%
+(`PruebaEscalado.PERDIDA_MAXIMA`); con Iris, apagado solo con shaderpack activo.
 

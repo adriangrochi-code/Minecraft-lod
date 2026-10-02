@@ -143,4 +143,93 @@ class CalibradorBenchmarkTest {
         }
         assertEquals(CalibradorBenchmark.Evento.TERMINADO, c.registrarFrame(1));
     }
+
+    private static CalibradorBenchmark.Ventana ventana(double min, double max, double medicion, boolean cuenta) {
+        return new CalibradorBenchmark.Ventana(min, max, medicion, cuenta);
+    }
+
+    @Test
+    void esperaAQueElLodEsteListoYAnotaLaCarga() {
+        EscalonesCalibracion tabla = EscalonesCalibracion.soloMedir(ParametrosCalidad.de(QualityPreset.MEDIO));
+        CalibradorBenchmark c = new CalibradorBenchmark(tabla,
+                new CalibradorBenchmark.Ventana[]{ventana(1000, 10_000, 500, true)});
+        // 3 s sin estar listo (pasado el mínimo, sigue esperando), después listo.
+        for (int i = 0; i < 300; i++) {
+            assertEquals(CalibradorBenchmark.Evento.NADA, c.registrarFrame(10, false));
+            assertFalse(c.midiendo(), "No mide mientras el LOD se arma");
+        }
+        CalibradorBenchmark.Evento e;
+        do {
+            e = c.registrarFrame(10, true);
+        } while (e == CalibradorBenchmark.Evento.NADA);
+        assertEquals(CalibradorBenchmark.Evento.TERMINADO, e, "Un solo escalón: termina al medirlo");
+        CalibradorBenchmark.MetricasPunto m = c.resultado().mediciones().get(0).puntos()[0];
+        assertTrue(m.lodListo());
+        assertEquals(3000, m.cargaMs(), 1e-9, "La carga es lo que tardó en estar listo");
+    }
+
+    @Test
+    void siElLodNoTerminaSeMideIgualAlMaximo() {
+        EscalonesCalibracion tabla = EscalonesCalibracion.soloMedir(ParametrosCalidad.de(QualityPreset.MEDIO));
+        CalibradorBenchmark c = new CalibradorBenchmark(tabla,
+                new CalibradorBenchmark.Ventana[]{ventana(100, 2000, 500, true)});
+        while (c.registrarFrame(10, false) != CalibradorBenchmark.Evento.TERMINADO) {
+        }
+        CalibradorBenchmark.MetricasPunto m = c.resultado().mediciones().get(0).puntos()[0];
+        assertFalse(m.lodListo(), "Queda marcado: se midió con el LOD a medio armar");
+        assertEquals(2000, m.cargaMs(), 1e-9);
+    }
+
+    @Test
+    void conTironesNoPasaAunqueElPromedioAlcance() {
+        EscalonesCalibracion tabla = EscalonesCalibracion.soloMedir(ParametrosCalidad.de(QualityPreset.MEDIO)); // 25 ms
+        CalibradorBenchmark c = new CalibradorBenchmark(tabla,
+                new CalibradorBenchmark.Ventana[]{ventana(0, 0, 2000, true)});
+        int n = 0;
+        CalibradorBenchmark.Evento e;
+        do {
+            e = c.registrarFrame(n++ % 50 == 0 ? 100 : 10); // promedio ~11,8 ms, 2% de cuadros de 100 ms
+        } while (e == CalibradorBenchmark.Evento.NADA);
+        CalibradorBenchmark.Medicion m = c.resultado().mediciones().get(0);
+        assertTrue(m.msPromedio() < c.umbralMs(), "El promedio alcanza");
+        assertEquals(100, m.puntos()[0].percentil99Ms(), 1e-9);
+        assertFalse(m.paso(), "Pero el 1% peor pasa de 2,5 × el objetivo: tirones");
+        assertTrue(c.resultado().enPiso());
+    }
+
+    @Test
+    void elVueloSeMidePeroNoDecideElEscalon() {
+        EscalonesCalibracion tabla = EscalonesCalibracion.soloMedir(ParametrosCalidad.de(QualityPreset.MEDIO));
+        CalibradorBenchmark c = new CalibradorBenchmark(tabla, new CalibradorBenchmark.Ventana[]{
+                ventana(0, 0, 500, true), ventana(0, 0, 500, false)});
+        CalibradorBenchmark.Evento e;
+        do {
+            e = c.registrarFrame(c.puntoActual() == 0 ? 10 : 200); // el vuelo, malísimo
+        } while (e != CalibradorBenchmark.Evento.TERMINADO);
+        CalibradorBenchmark.Medicion m = c.resultado().mediciones().get(0);
+        assertTrue(m.paso(), "Solo cuenta el punto quieto");
+        assertEquals(10, m.msPromedio(), 1e-9);
+        assertEquals(200, m.puntos()[1].promedioMs(), 1e-9, "El vuelo queda en el informe");
+    }
+
+    @Test
+    void lasMetricasPorSegundoSoloCuentanDuranteLaMedicion() {
+        EscalonesCalibracion tabla = EscalonesCalibracion.soloMedir(ParametrosCalidad.de(QualityPreset.MEDIO));
+        CalibradorBenchmark c = new CalibradorBenchmark(tabla,
+                new CalibradorBenchmark.Ventana[]{ventana(1000, 1000, 1000, true)});
+        c.registrarFrame(10);
+        c.registrarSegundo(99, 99, 99, 99, 99, 99, 99); // en la espera: no cuenta
+        while (!c.midiendo()) {
+            c.registrarFrame(10);
+        }
+        c.registrarSegundo(8, 50, 1000, 20, 5e6, 400, Double.NaN);
+        c.registrarSegundo(12, 70, 1200, 30, 7e6, 600, -1);
+        while (c.registrarFrame(10) != CalibradorBenchmark.Evento.TERMINADO) {
+        }
+        CalibradorBenchmark.MetricasPunto m = c.resultado().mediciones().get(0).puntos()[0];
+        assertEquals(10, m.gpuMs(), 1e-9);
+        assertEquals(60, m.cpuJuego(), 1e-9);
+        assertEquals(6e6, m.verticesDibujados(), 1e-9);
+        assertEquals(-1, m.vramMb(), 1e-9, "Sin dato en ningún segundo: -1");
+    }
 }

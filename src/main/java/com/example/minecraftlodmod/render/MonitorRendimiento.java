@@ -85,6 +85,13 @@ public final class MonitorRendimiento {
     private long extraidosAntes, aproximadosAntes;
     private double promedioAnteriorMs;
     private volatile Muestra ultima;
+    /** Quien recibe cada muestra (el benchmark); null = nadie. Solo hilo de render. */
+    private static java.util.function.Consumer<Muestra> oyente;
+
+    /** El benchmark recibe la muestra de cada segundo; null para dejar de escuchar. */
+    public static void escuchar(java.util.function.Consumer<Muestra> nuevo) {
+        oyente = nuevo;
+    }
     private BufferedWriter log;
     private Vec3 posicionAnterior;
 
@@ -132,6 +139,10 @@ public final class MonitorRendimiento {
         }
         ultima = muestrear(r, segundos);
         escribirMuestra(ultima);
+        java.util.function.Consumer<Muestra> o = oyente;
+        if (o != null) {
+            o.accept(ultima);
+        }
     }
 
     private Muestra muestrear(EstadisticaFrames.Resumen r, double segundos) {
@@ -144,7 +155,8 @@ public final class MonitorRendimiento {
         extraidosAntes = extraidos;
         aproximadosAntes = aproximados;
         boolean conServidor = servidor != null && generador.store() != null;
-        boolean medir = ConfigLod.CLIENTE.hudRendimiento.get() || ConfigLod.CLIENTE.logDepuracion.get();
+        boolean medir = ConfigLod.CLIENTE.hudRendimiento.get() || ConfigLod.CLIENTE.logDepuracion.get()
+                || com.example.minecraftlodmod.benchmark.SesionCalibracion.enCurso();
         // Primero los contadores de Windows (los del Administrador de tareas: cualquier placa, también con
         // Vulkan); si no hay, la medición del juego.
         MedidorGpuWindows windows = MedidorGpuWindows.INSTANCIA;
@@ -409,18 +421,19 @@ public final class MonitorRendimiento {
     }
 
     /** Versión del mod (la de gradle.properties, la misma del nombre del jar). */
-    static String version() {
+    public static String version() {
         return net.neoforged.fml.ModList.get().getModContainerById(MinecraftLodMod.MOD_ID)
                 .map(c -> c.getModInfo().getVersion().toString()).orElse("?");
     }
 
-    private static String resumenConfig() {
+    public static String resumenConfig() {
         ConfigLod.Cliente c = ConfigLod.CLIENTE;
         ParametrosCalidad q = ConfigLod.calidadCliente();
         Minecraft mc = Minecraft.getInstance();
-        return String.format(Locale.ROOT, "preset=%s radio=%d umbral=%.2f hilos=%d cache=%dMB lod=%s texturas=%s cuevas=%s ao=%s aoCostados=%s relieve=%s aproximado=%s pregen=%s(%d) escalado=%s(%d%%) distanciaVanilla=%d graficos=%s",
+        return String.format(Locale.ROOT, "preset=%s radio=%d umbral=%.2f hilos=%d cache=%dMB lod=%s texturas=%s cuevas=%s ao=%s aoCostados=%s ssao=%s agua=%s px=%.1f-%.1f relieve=%s aproximado=%s pregen=%s(%d) escalado=%s(%d%%) distanciaVanilla=%d graficos=%s",
                 c.seleccion.get(), q.radioLodChunks(), q.umbralPx(), q.hilosGeneracion(), q.cacheRamMb(),
                 c.lodActivo.get(), c.texturasLod.get(), c.descartarCuevas.get(), c.oclusionAmbiental.get(), c.oclusionCostados.get(),
+                c.oclusionPantalla.get(), c.aguaTranslucida.get(), c.pixelesMinimos.get(), c.pixelesMaximos.get(),
                 c.ocultarTapado.get(), c.generacionAproximada.get(), c.pregenerar.get(), c.radioPregeneracion.get(),
                 c.escalado.get(), c.fsrEscalaPorcentaje.get(), mc.options.getEffectiveRenderDistance(),
                 mc.options.graphicsMode().get());

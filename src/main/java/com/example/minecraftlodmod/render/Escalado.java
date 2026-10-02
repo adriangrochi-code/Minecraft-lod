@@ -471,11 +471,14 @@ public final class Escalado {
             return ModoEscalado.FSR1;
         }
         boolean fabulous = mc.options.graphicsMode().get() == GraphicsStatus.FABULOUS;
-        boolean iris = ModList.get().isLoaded("iris") || ModList.get().isLoaded("oculus");
+        // Iris reemplaza este tramo solo con un shaderpack activo; instalado sin pack, el dibujo es
+        // el de vanilla y el escalado funciona (antes se apagaba con solo tenerlo). Oculus no se
+        // puede consultar por la API de Iris: con él sigue apagado.
+        boolean iris = ModList.get().isLoaded("oculus") || (ModList.get().isLoaded("iris") && ShadersIris.enUso());
         if (fabulous || iris) {
             if (!avisoIncompatible) {
                 avisoIncompatible = true;
-                LOG.warn("LOD: escalado desactivado ({})", fabulous ? "gráficos Fabulous" : "Iris/Oculus instalado");
+                LOG.warn("LOD: escalado desactivado ({})", fabulous ? "gráficos Fabulous" : "shaderpack de Iris u Oculus");
             }
             return ModoEscalado.APAGADO;
         }

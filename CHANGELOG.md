@@ -6,6 +6,30 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.27 — Benchmark que mide de verdad y configura según el equipo
+- **Benchmark nuevo.** Además de los 4 lugares de antes, mide la "vista alta"
+  (el horizonte entero, lo más pesado del LOD) y un vuelo en línea recta (carga
+  de chunks y tirones en movimiento). En cada lugar espera a que el LOD termine
+  de armarse (antes medía a los 10 s, a veces con el LOD a medias) y mide FPS
+  promedio, 1% bajo, peor cuadro, tiempo de GPU y CPU, servidor, vértices,
+  llamadas de dibujo y cuánto tardó en cargar el LOD.
+- **Botón "Medir rendimiento"** (menú principal): mide tu configuración tal
+  cual, sin cambiarla.
+- **Informe** en `.minecraft/minecraftlodmod/benchmark/` con el hardware, los
+  ajustes y una tabla por lugar: para comparar máquinas o versiones.
+- **"Calibrar" configura según el equipo:** un escalón ahora tiene que alcanzar
+  el FPS objetivo también sin tirones (1% bajo). Si ni el más liviano alcanza y
+  la placa de video es el límite (como en la A275), prende FSR 1; si el más
+  alto sobra y la GPU tiene margen (como la GTX 1060), prende la oclusión en
+  costados. El auto-ajuste queda quieto mientras mide.
+- **FSR que no se activaba en la A275:** la prueba "solo si gana" lo apagaba
+  cuando con y sin escalado daba casi lo mismo (límite del procesador, tope de
+  FPS o vsync). Ahora se apaga solo si hace el juego más de un 3% más lento.
+  También se apagaba con Iris instalado aunque no hubiera shaderpack.
+- **Arreglo:** en mundos creados con versiones anteriores a la 0.26.14, algunas
+  celdas cercanas del LOD no se armaban (huecos): una marca vieja compartía
+  clave con el terreno aproximado fino y se leía como si fuera terreno.
+
 ## 0.26.26 — Agua del LOD translúcida
 - El agua del LOD es translúcida como la de vanilla (opción "Agua
   translúcida", prendida): se ven la orilla, los bajíos y la roca detrás de

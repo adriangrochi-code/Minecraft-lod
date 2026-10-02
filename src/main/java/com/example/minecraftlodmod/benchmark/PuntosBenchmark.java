@@ -34,11 +34,22 @@ public final class PuntosBenchmark {
         /** Sobre el terreno, en la altura del heightmap. */
         SUPERFICIE,
         /** Dentro de una cueva: el primer hueco de aire cerca de {@link Punto#yReferencia()}. */
-        CUEVA
+        CUEVA,
+        /** {@link Punto#yReferencia()} bloques sobre el terreno: el horizonte entero, lo más pesado del LOD. */
+        ALTURA,
+        /**
+         * En línea recta hacia donde mira, a {@link #VELOCIDAD_VUELO} y a la altura
+         * {@link Punto#yReferencia()}: carga de chunks y tirones en movimiento.
+         */
+        VUELO
     }
 
+    /** Bloques por segundo del vuelo (volar con sprint en creativo da ~22). */
+    public static final double VELOCIDAD_VUELO = 20;
+
     /**
-     * @param yReferencia solo para CUEVA: altura desde donde buscar aire
+     * @param yReferencia CUEVA: altura desde donde buscar aire; ALTURA: bloques sobre el
+     *                    terreno; VUELO: altura absoluta
      * @param yaw         hacia dónde mira (grados, convención de Minecraft)
      * @param pitch       0 = horizonte, donde más pesa el LOD
      */
@@ -49,8 +60,22 @@ public final class PuntosBenchmark {
             new Punto("llanura", 344, 360, Tipo.SUPERFICIE, 0, 0f, 0f),
             new Punto("bosque", -56, -424, Tipo.SUPERFICIE, 0, 90f, 0f),
             new Punto("montaña", 440, -104, Tipo.SUPERFICIE, 0, 45f, 5f),
-            new Punto("cueva", 456, -296, Tipo.CUEVA, -45, 180f, 0f)
+            new Punto("cueva", 456, -296, Tipo.CUEVA, -45, 180f, 0f),
+            new Punto("vista alta", -56, -424, Tipo.ALTURA, 90, -90f, 15f),
+            new Punto("vuelo", 344, 360, Tipo.VUELO, 150, -90f, 10f)
     );
+
+    /**
+     * Dónde está el vuelo a los {@code segundos} de empezar a medir: hacia donde
+     * mira el punto (convención de Minecraft: yaw 0 = +Z, -90 = +X).
+     *
+     * @return {x, z}
+     */
+    public static double[] posicionVuelo(Punto p, double segundos) {
+        double rad = Math.toRadians(p.yaw());
+        double d = VELOCIDAD_VUELO * segundos;
+        return new double[]{p.x() + 0.5 - Math.sin(rad) * d, p.z() + 0.5 + Math.cos(rad) * d};
+    }
 
     private PuntosBenchmark() {
     }

@@ -1117,7 +1117,7 @@ public final class RenderLod {
         java.util.function.Function<PosSeccion, SuperVoxel[]> leerNodo = pos -> nodos.computeIfAbsent(pos, k -> {
             byte[] bytes = store.leer(GeneradorLocal.claveRegion(dimension, k.x(), k.z()),
                     SectionExtractor.claveNodo(nivel, k.x(), k.y(), k.z()));
-            return bytes == null ? SIN_NODO : OctreeNodeCodec.deserializar(bytes, 0, total).voxeles();
+            return !OctreeNodeCodec.esNodo(bytes) ? SIN_NODO : OctreeNodeCodec.deserializar(bytes, 0, total).voxeles();
         });
         Map<NodoMemo, SuperVoxel[]> memoAproximado = new HashMap<>();
         int conDatos = 0;
@@ -1249,7 +1249,7 @@ public final class RenderLod {
             byte[] bytes = store.leer(GeneradorLocal.claveRegion(dimension, chunkX, chunkZ), real
                     ? SectionExtractor.claveNodo(nivel, chunkX, sy, chunkZ)
                     : TerrenoAproximado.claveNodo(nivel, chunkX, sy, chunkZ));
-            return bytes == null ? SIN_NODO
+            return !OctreeNodeCodec.esNodo(bytes) ? SIN_NODO
                     : OctreeNodeCodec.deserializar(bytes, 0, SectionExtractor.voxelesPorNodo(nivel)).voxeles();
         }));
     }
@@ -1914,7 +1914,7 @@ public final class RenderLod {
         byte[] bytes = store.leer(new RegionFileStore.ClaveRegion(dimension,
                 NivelesGrandes.regionDe(nivel, x), NivelesGrandes.regionDe(nivel, z)),
                 NivelesGrandes.clave(nivel, x, banda, z));
-        return bytes == null ? null
+        return !OctreeNodeCodec.esNodo(bytes) ? null
                 : OctreeNodeCodec.deserializar(bytes, 0, GeneradorLocal.VOXELES_GRANDE).voxeles();
     }
 
@@ -1943,7 +1943,7 @@ public final class RenderLod {
                         bytes = store.leer(region, SectionExtractor.claveNodo(TerrenoAproximado.nivelGuardado(nivel),
                                 seccionX, seccionY, seccionZ));
                     }
-                    if (bytes == null) {
+                    if (!OctreeNodeCodec.esNodo(bytes)) {
                         continue;
                     }
                     SuperVoxel[] nodo = OctreeNodeCodec.deserializar(bytes, 0, total).voxeles();

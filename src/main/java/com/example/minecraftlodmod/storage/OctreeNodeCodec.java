@@ -58,6 +58,15 @@ public final class OctreeNodeCodec {
     public record NodoDeserializado(int nivelLod, boolean homogeneo, SuperVoxel[] voxeles) {
     }
 
+    /**
+     * true si los bytes pueden ser un nodo (al menos la cabecera). Las marcas del
+     * store (arreglos de 0 o 1 byte) no lo son: una marca vieja de "chunk extraído"
+     * comparte clave con un nodo aproximado fino y, leída como nodo, rompía el armado.
+     */
+    public static boolean esNodo(byte[] bytes) {
+        return bytes != null && bytes.length >= HEADER_BYTES;
+    }
+
     public static NodoDeserializado deserializar(byte[] buffer, int offset, int totalVoxelesEsperados) {
         int nivelLod = buffer[offset] & 0xFF;
         boolean homogeneo = buffer[offset + 1] != 0;

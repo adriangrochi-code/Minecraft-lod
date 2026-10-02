@@ -35,9 +35,18 @@ class PruebaEscaladoTest {
     }
 
     @Test
-    void unaGananciaMinimaNoAlcanza() {
+    void enElEmpateQuedaPrendido() {
+        // Límite del procesador, tope de FPS o vsync: con y sin escalado dan casi lo mismo.
+        // El jugador lo pidió y la GPU trabaja menos: queda (antes se apagaba y "no se activaba").
         PruebaEscalado p = new PruebaEscalado();
-        simular(p, 1, 15.8, 16, 8); // 1% más rápido: no vale la pérdida de nitidez
+        simular(p, 1, 16.3, 16, 8); // 2% más lento: dentro del margen
+        assertTrue(p.conviene());
+    }
+
+    @Test
+    void siPierdeMasDelMargenSeApaga() {
+        PruebaEscalado p = new PruebaEscalado();
+        simular(p, 1, 16.8, 16, 8); // 5% más lento
         assertFalse(p.conviene());
     }
 

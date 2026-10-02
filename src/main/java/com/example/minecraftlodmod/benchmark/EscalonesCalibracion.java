@@ -53,6 +53,11 @@ public final class EscalonesCalibracion {
         return new EscalonesCalibracion(lista, indiceInicial);
     }
 
+    /** Un solo escalón, la calidad actual: medir sin buscar otra ("Medir rendimiento"). */
+    public static EscalonesCalibracion soloMedir(ParametrosCalidad actual) {
+        return new EscalonesCalibracion(List.of(actual), 0);
+    }
+
     /**
      * Mezcla lineal entre dos presets vecinos. El colapso homogéneo se toma
      * del más liviano ({@code a}) hasta llegar al otro preset: es la

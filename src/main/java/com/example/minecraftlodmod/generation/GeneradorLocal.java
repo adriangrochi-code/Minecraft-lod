@@ -560,7 +560,7 @@ public final class GeneradorLocal {
                         continue;
                     }
                     byte[] bytes = store.leer(region, TerrenoAproximado.claveGrande(nivel, nx, ny, nz));
-                    grilla = bytes == null ? SIN_GRILLA
+                    grilla = !OctreeNodeCodec.esNodo(bytes) ? SIN_GRILLA
                             : OctreeNodeCodec.deserializar(bytes, 0, VOXELES_GRANDE).voxeles();
                     aproximadas.put(clave, grilla);
                 }
@@ -579,14 +579,14 @@ public final class GeneradorLocal {
                 bytes = store.leer(region, SectionExtractor.claveNodo(TerrenoAproximado.nivelGuardado(nivel),
                         seccionX, seccionY, seccionZ));
             }
-            return bytes == null ? null
+            return !OctreeNodeCodec.esNodo(bytes) ? null
                     : OctreeNodeCodec.deserializar(bytes, 0, SectionExtractor.voxelesPorNodo(nivel)).voxeles();
         }
 
         @Override
         public SuperVoxel[] grande(int nivel, int nodoX, int nodoY, int nodoZ) {
             byte[] bytes = store.leer(regionGrande(nivel, nodoX, nodoZ), NivelesGrandes.clave(nivel, nodoX, nodoY, nodoZ));
-            return bytes == null ? null : OctreeNodeCodec.deserializar(bytes, 0, VOXELES_GRANDE).voxeles();
+            return !OctreeNodeCodec.esNodo(bytes) ? null : OctreeNodeCodec.deserializar(bytes, 0, VOXELES_GRANDE).voxeles();
         }
 
         @Override

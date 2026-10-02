@@ -781,3 +781,10 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   (`RenderLod.ALFA_AGUA` = 0,72) contra el agua de vanilla en el borde, de día
   y de noche; ver que el océano hondo no se vea demasiado claro u oscuro.
 
+- **Benchmark (0.26.27):** probar "Medir rendimiento" en la A275 y la 1060 y
+  pasarme los informes de `.minecraft/minecraftlodmod/benchmark/`. Probar
+  "Calibrar" en las dos: ver que en la A275 prenda FSR si la GPU es el límite y
+  cuánto tarda en total (5 puntos con espera de hasta 60 s + vuelo por escalón).
+- **FSR en la A275 (0.26.27):** confirmar que ahora queda prendido; si se
+  apaga, el log dice "escalado APAGADO porque es más lento" con los ms medidos.
+
