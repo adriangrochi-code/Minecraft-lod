@@ -202,6 +202,10 @@ public final class RenderLod {
     /** Con shaderpack: el LOD se dibuja con el voxy_opaque del pack (DibujoVoxy) en vez de gbuffers_terrain. */
     private boolean voxyEnUso;
     private int oclusionEnUso;
+    /** Agua translúcida con el shader propio: la superficie va aparte y se dibuja con mezcla. */
+    private boolean aguaEnUso;
+    /** Opacidad del agua del LOD: la de la textura del agua de vanilla (~180/255). */
+    static final float ALFA_AGUA = 0.72f;
     private boolean shadersEnUso;
     /**
      * Con un shaderpack el LOD usa la proyección de vanilla (la que conoce el
@@ -625,6 +629,7 @@ public final class RenderLod {
         // 0 sin oclusión, 1 solo arriba, 2 también en costados y abajo.
         int usarOclusion = !ConfigLod.CLIENTE.oclusionAmbiental.get() ? 0
                 : ConfigLod.CLIENTE.oclusionCostados.get() ? 2 : 1;
+        boolean usarAgua = ConfigLod.CLIENTE.aguaTranslucida.get();
         boolean usarShaders = ShadersIris.enUso();
         boolean usarVoxy = false;
         if (usarShaders) {
@@ -632,10 +637,12 @@ public final class RenderLod {
             usarVoxy = DibujoVoxy.listo();
         }
         if (versionTexturas != versionTexturasVista || usarTexturas != texturasEnUso
-                || usarOclusion != oclusionEnUso || usarShaders != shadersEnUso || usarVoxy != voxyEnUso) {
+                || usarOclusion != oclusionEnUso || usarShaders != shadersEnUso || usarVoxy != voxyEnUso
+                || usarAgua != aguaEnUso) {
             versionTexturasVista = versionTexturas;
             texturasEnUso = usarTexturas;
             oclusionEnUso = usarOclusion;
+            aguaEnUso = usarAgua;
             if (usarShaders != shadersEnUso) {
                 LOG.info("LOD: shaderpack {}; el LOD se dibuja {}", usarShaders ? "activo" : "apagado",
                         usarShaders ? "con el terreno del pack" : "con sus propios shaders");
@@ -878,6 +885,7 @@ public final class RenderLod {
         TipoMalla tipoEsperado = bloque ? TipoMalla.BLOQUE : voxyEnUso ? TipoMalla.VOXY
                 : texturasEnUso ? TipoMalla.TEXTURA : TipoMalla.PLANA;
         boolean voxy = voxyEnUso;
+        boolean separarAgua = voxyEnUso || (aguaEnUso && tipoEsperado == TipoMalla.TEXTURA);
         // Con shaders las texturas no se dibujan, pero dan el color promedio de cada cara.
         GeometriaLod.Texturas texturas = texturasEnUso || bloque || voxyEnUso ? PaletaTexturas.tabla() : null;
         int oclusion = oclusionEnUso;
@@ -926,7 +934,7 @@ public final class RenderLod {
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(prioridad(celda, camara, miraX, miraZ), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                cubiertos, verticales, vecinas, texturas, oclusion, unBuffer, bloque, voxy)));
+                                cubiertos, verticales, vecinas, texturas, oclusion, unBuffer, bloque, voxy, separarAgua)));
             }
         }
         boolean fundir = ConfigLod.CLIENTE.fundidoNiveles.get();
@@ -949,7 +957,7 @@ public final class RenderLod {
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
                        int minSeccion, int maxSeccion, Set<Long> deVanilla, Map<Long, RangoSecciones> verticales,
                        int vecinas, GeometriaLod.Texturas texturas, int oclusion, boolean unBuffer, boolean bloque,
-                       boolean voxy) {
+                       boolean voxy, boolean separarAgua) {
         long inicioArmado = System.nanoTime();
         try {
             GeometriaLod geometria = geometriaMallas.get();
@@ -958,7 +966,7 @@ public final class RenderLod {
             geometria.descartarCarasSinLuz(ConfigLod.CLIENTE.descartarCuevas.get());
             geometria.usarOclusionAmbiental(oclusion > 0);
             geometria.usarOclusionCostados(oclusion > 1);
-            geometria.separarAgua(voxy);
+            geometria.separarAgua(separarAgua);
             int conDatos = celda.esGrande()
                     ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion)
                     : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion, deVanilla, verticales,
@@ -1344,12 +1352,17 @@ public final class RenderLod {
             RenderSystem.setShaderTexture(0, PaletaTexturas.ATLAS);
             RenderSystem.setShaderTexture(1, PaletaTexturas.TABLA_SPRITES);
             ShaderInstance fundido = shaderTexturaFundido;
-            if (fundido == null) {
-                dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.TODAS);
-            } else {
-                // Primero lo entero sin discard (casi todo), después lo que se funde.
-                dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.ENTERAS);
-                dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, fundido, Filtro.FUNDIENDO);
+            pasadasTextura(evento, camara, proyeccion, conTextura, fundido, false);
+            if (aguaEnUso) {
+                // Agua translúcida al final, sobre lo opaco ya dibujado (fondo marino incluido): deja
+                // ver la orilla y los bajíos, y lo hondo queda oscuro por su luz horneada. Escribe
+                // profundidad para que la niebla y la SSAO la traten como superficie.
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+                RenderSystem.setShaderColor(((luzCielo >> 16) & 0xFF) / 255f, ((luzCielo >> 8) & 0xFF) / 255f,
+                        (luzCielo & 0xFF) / 255f, ALFA_AGUA);
+                pasadasTextura(evento, camara, proyeccion, conTextura, fundido, true);
+                RenderSystem.disableBlend();
             }
         }
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
@@ -1491,8 +1504,25 @@ public final class RenderLod {
      * {@code position_color} de vanilla no tiene ChunkOffset: ahí se usa
      * drawWithShader con la matriz desplazada.
      */
+    /** Mallas con texturas: lo entero sin discard (casi todo) y después lo que se funde. */
+    private void pasadasTextura(RenderLevelStageEvent evento, Vec3 camara, Matrix4f proyeccion,
+                                ShaderInstance conTextura, ShaderInstance fundido, boolean soloAgua) {
+        if (fundido == null) {
+            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.TODAS, soloAgua);
+        } else {
+            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.ENTERAS, soloAgua);
+            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, fundido, Filtro.FUNDIENDO, soloAgua);
+        }
+    }
+
     private void dibujarPasada(RenderLevelStageEvent evento, Vec3 camara, Matrix4f proyeccion,
                                TipoMalla tipo, ShaderInstance shader, Filtro filtro) {
+        dibujarPasada(evento, camara, proyeccion, tipo, shader, filtro, false);
+    }
+
+    /** @param soloAgua solo el grupo del agua separada (pasada translúcida) */
+    private void dibujarPasada(RenderLevelStageEvent evento, Vec3 camara, Matrix4f proyeccion,
+                               TipoMalla tipo, ShaderInstance shader, Filtro filtro, boolean soloAgua) {
         if (shader == null) {
             return;
         }
@@ -1517,6 +1547,7 @@ public final class RenderLod {
         Uniform fundido = desplazamiento != null || tipo == TipoMalla.TEXTURA ? shader.getUniform("Fundido") : null;
         Malla m = new Malla(evento.getModelViewMatrix(), proyeccion, shader, desplazamiento, null, fundido, camara,
                 curvaPorCelda, inicioCurva, radioPlaneta);
+        m.soloAgua = soloAgua;
         recorrerMallas(tipo, m, fundido != null || filtro == Filtro.ENTERAS, filtro);
         if (fundido != null) {
             fundido.set(1f, 1f);

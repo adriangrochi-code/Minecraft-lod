@@ -68,6 +68,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue descartarCuevas;
         public final ModConfigSpec.BooleanValue oclusionAmbiental;
         public final ModConfigSpec.BooleanValue oclusionCostados;
+        public final ModConfigSpec.BooleanValue aguaTranslucida;
         public final ModConfigSpec.BooleanValue texturasComoTerreno;
         public final ModConfigSpec.BooleanValue nubesLejanas;
         public final ModConfigSpec.BooleanValue oclusionPantalla;
@@ -149,6 +150,9 @@ public final class ConfigLod {
                             "arriba): más relieve en acantilados, laderas y bosques. Corta fusiones de caras: medido",
                             "+29% de geometría y +18% de GPU. Para GPUs con margen.")
                     .define("oclusionCostados", false);
+            aguaTranslucida = b.comment("Agua del LOD translúcida, como la de vanilla: se ven la orilla, los bajíos y el fondo",
+                            "cerca de la costa; lo hondo queda oscuro. Solo con texturas del LOD (sin shaderpack ni VulkanMod).")
+                    .define("aguaTranslucida", true);
             texturasComoTerreno = b.comment("Vóxeles grandes (lejos): el costado de pasto, nieve, micelio, etc. lleva su franja",
                             "solo en la fila de arriba y abajo la textura de la tierra, como un corte del terreno. Apagado:",
                             "la textura del costado se repite en cada bloque del vóxel (una línea de pasto por bloque).")

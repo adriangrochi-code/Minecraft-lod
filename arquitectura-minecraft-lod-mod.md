@@ -1136,3 +1136,13 @@ dibujados 8,5 → 10,3 M, GPU +18%: corta fusiones de caras. La SSAO
 (`oclusionPantalla`, prendida) ya cubre valles y pies de montaña; la de
 costados suma el detalle de las grietas en laderas de roca.
 
+**Agua translúcida (0.26.26, opción `aguaTranslucida`, prendida):** con el
+shader propio (`TipoMalla.TEXTURA`) el agua se separa al armar
+(`GeometriaLod.separarAgua`, como el contrato Voxy) y se dibuja en
+`RenderLod.pasadasTextura(..., soloAgua)` al final, con mezcla alfa y
+`ColorModulator.a` = `ALFA_AGUA` (0,72), escribiendo profundidad (niebla y
+SSAO la toman como superficie). Al separar, se descartan solo los costados de
+agua en el borde de la grilla y las caras de abajo; los de adentro (cascadas)
+se dibujan. Medido: misma geometría, GPU +3%, +372 llamadas en la vista de
+prueba. Bordes entre niveles: revisados con cada nivel teñido, continuos.
+

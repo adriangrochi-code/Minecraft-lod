@@ -345,9 +345,12 @@ public final class GeometriaLod {
             return false;
         }
         SuperVoxel v = q.voxelRepresentativo();
-        if (separarAgua && v.material() == SuperVoxel.Material.AGUA && !(q.eje() == Quad.Eje.Y && q.positivo())) {
-            // Agua translúcida: solo la superficie. Las paredes de agua entre celdas y secciones
-            // (opacas quedaban tapadas por la superficie) se verían a través de ella como una grilla.
+        if (separarAgua && v.material() == SuperVoxel.Material.AGUA && !(q.eje() == Quad.Eje.Y && q.positivo())
+                && (q.eje() == Quad.Eje.Y || capa == (q.positivo() ? lado - 1 : 0))) {
+            // Agua translúcida: sin las paredes de agua en el borde de la grilla (entre celdas y
+            // secciones, donde el vecino no se conoce): opacas quedaban tapadas por la superficie,
+            // translúcidas se verían como una grilla. Los costados de adentro dan a aire de verdad
+            // (cascadas, ríos en pendiente) y se dibujan.
             return false;
         }
         float sombra = sombraDeCara(q.eje(), q.positivo());

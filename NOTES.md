@@ -777,3 +777,7 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
   extra vale el +18% de GPU en la 1060; si sí, evaluar prenderla por defecto
   en Ultra/Horizonte.
 
+- **Agua translúcida (0.26.26):** juzgar en monitor real la opacidad
+  (`RenderLod.ALFA_AGUA` = 0,72) contra el agua de vanilla en el borde, de día
+  y de noche; ver que el océano hondo no se vea demasiado claro u oscuro.
+
