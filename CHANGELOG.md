@@ -6,6 +6,16 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.11 — El LOD fuera de la vista ya no se manda a la GPU
+- **Rendimiento (GPU):** cada celda del LOD se prueba contra el campo de
+  visión antes de dibujarla; las de atrás y los costados no se mandan. Antes
+  la GPU procesaba todos sus vértices para después recortarlos. Medido en la
+  misma vista (render por software, 1280×720): 2,5 M → 0,86 M vértices y 279
+  → 57 llamadas por cuadro, dibujo del LOD 133 → 55 ms, FPS 6 → 11; volando a
+  y=300 mirando abajo, 3,3 M → 1,1 M vértices. Sin cambios visibles.
+- Funciona igual con OpenGL, Vulkan, shaderpacks y el contrato Voxy (no
+  depende de cómo cada uno arma la profundidad).
+
 ## 0.26.10 — Sin huecos cerca al volar alto
 - **Arreglo:** volando alto (o con la sincronización vertical), el suelo
   cercano desaparecía y quedaban huecos con el cielo, paredes de piedra y

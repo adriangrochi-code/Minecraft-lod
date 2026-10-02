@@ -75,6 +75,11 @@ magic: 4 bytes | version: 1 byte | region_x,z: 4 bytes c/u | dimension_id: 1 byt
 
 - Enganche vía `RenderLevelStageEvent` de NeoForge (etapa posterior a bloques sólidos vanilla), como pasada de render separada del terreno cercano (compatible con Embeddium, que maneja el terreno vanilla normal).
 - Buffers agrupados **por región**, no por nodo individual — minimiza draw calls, crítico en iGPU (Vega 8).
+- **Descarte por campo de visión (0.26.11, `render/CampoVision`):** cada celda
+  (caja con la altura del mundo, bajada de la curvatura incluida) se prueba
+  contra los 4 planos laterales de proyección × vista antes de dibujarla; sin
+  near ni far, para no depender de la convención de profundidad de cada
+  camino (OpenGL, Vulkan, shaderpacks). Medido: ~3× menos vértices por cuadro.
 - **Blend entre niveles de LOD:** dithering por alpha con patrón Bayer fijo (screen-door transparency) vía `discard` en el fragment shader — no geometría interpolada (transvoxel), por ser mucho más barato en GPU integrada.
   - Duración: ~6-10 frames por transición.
   - Límite de nodos en blend simultáneo (ej. 20-30) para no duplicar demasiados draw calls a la vez con movimiento rápido.
