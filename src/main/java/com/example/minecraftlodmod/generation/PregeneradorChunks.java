@@ -130,7 +130,7 @@ public final class PregeneradorChunks {
             }
             revisados++;
             int x = centroX + espiral.dx(), z = centroZ + espiral.dz();
-            if (!store.contiene(GeneradorLocal.claveRegion(dimension, x, z), GeneradorLocal.claveMarca(x, z))) {
+            if (!GeneradorLocal.tieneMarca(store, GeneradorLocal.claveRegion(dimension, x, z), x, z)) {
                 candidatos.add(ChunkPos.asLong(x, z));
             }
         }
@@ -153,7 +153,7 @@ public final class PregeneradorChunks {
             it.remove();
             int x = ChunkPos.getX(clave), z = ChunkPos.getZ(clave);
             if (enVuelo.containsKey(clave)
-                    || store.contiene(GeneradorLocal.claveRegion(dimension, x, z), GeneradorLocal.claveMarca(x, z))
+                    || GeneradorLocal.tieneMarca(store, GeneradorLocal.claveRegion(dimension, x, z), x, z)
                     || nivel.getChunkSource().getChunkNow(x, z) != null) {
                 continue; // ya tiene LOD, ya se pidió, o ya está cargado (lo extrae la carga normal)
             }
@@ -173,7 +173,7 @@ public final class PregeneradorChunks {
             Map.Entry<Long, Integer> e = it.next();
             int x = ChunkPos.getX(e.getKey()), z = ChunkPos.getZ(e.getKey());
             boolean listo = store != null
-                    && store.contiene(GeneradorLocal.claveRegion(dimension, x, z), GeneradorLocal.claveMarca(x, z));
+                    && GeneradorLocal.tieneMarca(store, GeneradorLocal.claveRegion(dimension, x, z), x, z);
             if (listo || tick - e.getValue() > TICKS_MAXIMOS_POR_CHUNK) {
                 ChunkPos pos = new ChunkPos(x, z);
                 nivel.getChunkSource().removeRegionTicket(TICKET, pos, 0, pos);

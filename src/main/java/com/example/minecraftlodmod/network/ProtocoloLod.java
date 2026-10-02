@@ -137,7 +137,7 @@ public final class ProtocoloLod {
         if (datos != null) {
             return new RespuestaNodoPayload(dimensionId, nodo, RespuestaNodoPayload.Estado.EXISTE, datos);
         }
-        boolean chunkGenerado = store.contiene(region, GeneradorLocal.claveMarca(nodo.seccionX(), nodo.seccionZ()));
+        boolean chunkGenerado = GeneradorLocal.tieneMarca(store, region, nodo.seccionX(), nodo.seccionZ());
         return new RespuestaNodoPayload(dimensionId, nodo,
                 chunkGenerado ? RespuestaNodoPayload.Estado.VACIO : RespuestaNodoPayload.Estado.NO_GENERADO, null);
     }

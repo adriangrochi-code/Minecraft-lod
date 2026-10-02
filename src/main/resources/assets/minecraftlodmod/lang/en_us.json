@@ -48,6 +48,8 @@
   "minecraftlodmod.configuration.oclusionAmbiental.tooltip": "Darkens corners, wall bases and under trees in the LOD, like vanilla smooth lighting. No GPU cost; slightly more geometry.",
   "minecraftlodmod.configuration.lodActivo": "LOD enabled",
   "minecraftlodmod.configuration.lodActivo.tooltip": "Draws the distant terrain. Turn it off to compare against vanilla; LOD generation keeps running.",
+  "minecraftlodmod.configuration.vanillaReducida": "Hybrid mode (short vanilla)",
+  "minecraftlodmod.configuration.vanillaReducida.tooltip": "With the LOD on, caps vanilla's render distance by preset (Minimum 5, Low 6, Medium 8, High 10, Ultra and Horizon 12 chunks) and the LOD draws the rest. Vanilla terrain is the most expensive thing to draw: noticeably more FPS and the server loads fewer chunks. Never raises the distance you chose in Video.",
   "minecraftlodmod.configuration.pregenerar": "Pregenerate chunks for LOD",
   "minecraftlodmod.configuration.pregenerar.tooltip": "Generates the world outward from you (like Chunky) so the LOD reaches far without exploring. Uses CPU and disk: chunks are saved to the world. Backs off by itself if the game slows down.",
   "minecraftlodmod.configuration.radioPregeneracion": "Pregeneration radius",

@@ -12,6 +12,8 @@
     "MixinMinecraft",
     "MixinRenderTarget",
     "MixinObjetivosIris",
+    "MixinOpcionesDistancia",
+    "MixinServidorIntegrado",
     "MixinPipelineIris",
     "MixinSamplersIris",
     "MixinShaderInstance",

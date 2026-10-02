@@ -1191,8 +1191,7 @@ public final class RenderLod {
     }
 
     private static boolean tieneDatos(RegionFileStore store, byte dimension, int chunkX, int chunkZ) {
-        return store.contiene(GeneradorLocal.claveRegion(dimension, chunkX, chunkZ),
-                GeneradorLocal.claveMarca(chunkX, chunkZ));
+        return GeneradorLocal.tieneMarca(store, GeneradorLocal.claveRegion(dimension, chunkX, chunkZ), chunkX, chunkZ);
     }
 
     private void dibujar(Minecraft mc, RenderLevelStageEvent evento, Vec3 camara) {
@@ -1783,7 +1782,7 @@ public final class RenderLod {
                     int seccionX = teselaX * porLado + sx, seccionZ = teselaZ * porLado + sz;
                     RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimension, seccionX, seccionZ);
                     byte[] bytes = store.leer(region, SectionExtractor.claveNodo(nivel, seccionX, seccionY, seccionZ));
-                    if (bytes == null && !store.contiene(region, GeneradorLocal.claveMarca(seccionX, seccionZ))) {
+                    if (bytes == null && !GeneradorLocal.tieneMarca(store, region, seccionX, seccionZ)) {
                         // Chunk nunca generado: horizonte aproximado (las teselas 3-4 usan esos mismos niveles).
                         bytes = store.leer(region, SectionExtractor.claveNodo(TerrenoAproximado.nivelGuardado(nivel),
                                 seccionX, seccionY, seccionZ));

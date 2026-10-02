@@ -225,16 +225,43 @@ public final class GeneradorLocal {
         if (!(evento.getLevel() instanceof ServerLevel nivel) || !(evento.getChunk() instanceof LevelChunk chunk)) {
             return;
         }
-        if (store == null || extraidoVigente(claveRegion(nivel, chunk), claveMarca(chunk))) {
+        if (store == null || extraidoVigente(claveRegion(nivel, chunk), chunk.getPos().x, chunk.getPos().z)) {
             return;
         }
         encolar(nivel, chunk);
     }
 
     /** Ya extraído con la marca vigente ({@link #VERSION_MARCA}). */
-    private boolean extraidoVigente(RegionFileStore.ClaveRegion region, long marca) {
-        byte[] bytes = store.leer(region, marca);
-        return bytes != null && bytes.length > 0 && bytes[0] >= VERSION_MARCA;
+    private boolean extraidoVigente(RegionFileStore.ClaveRegion region, int chunkX, int chunkZ) {
+        byte[] bytes = store.leer(region, claveMarca(chunkX, chunkZ));
+        if (bytes != null) {
+            return bytes.length > 0 && bytes[0] >= VERSION_MARCA;
+        }
+        return marcaViejaValida(store, region, chunkX, chunkZ);
+    }
+
+    /**
+     * ¿El chunk tiene datos reales extraídos? Mira la marca nueva y, en datos de
+     * antes de 0.26.14, la vieja (solo si es de verdad la marca de 1 byte: en esa
+     * clave también caía el nodo aproximado fino de la sección 0).
+     */
+    public static boolean tieneMarca(RegionFileStore store, RegionFileStore.ClaveRegion region, int chunkX, int chunkZ) {
+        return store.contiene(region, claveMarca(chunkX, chunkZ)) || marcaViejaValida(store, region, chunkX, chunkZ);
+    }
+
+    private static boolean marcaViejaValida(RegionFileStore store, RegionFileStore.ClaveRegion region,
+                                            int chunkX, int chunkZ) {
+        long vieja = claveMarcaVieja(chunkX, chunkZ);
+        if (!store.contiene(region, vieja)) {
+            return false;
+        }
+        byte[] bytes = store.leer(region, vieja);
+        return esMarca(bytes);
+    }
+
+    /** La marca es exactamente un byte con la versión; un nodo (aproximado) es siempre más largo. */
+    static boolean esMarca(byte[] bytes) {
+        return bytes != null && bytes.length == 1 && bytes[0] >= VERSION_MARCA;
     }
 
     /**
@@ -292,7 +319,7 @@ public final class GeneradorLocal {
             LevelChunk chunk = nivel == null ? null
                     : nivel.getChunkSource().getChunkNow(ChunkPos.getX(p.chunk()), ChunkPos.getZ(p.chunk()));
             // Descargado: se regenera en la próxima carga. Ya generado: nada que hacer.
-            if (chunk == null || extraidoVigente(claveRegion(nivel, chunk), claveMarca(chunk))) {
+            if (chunk == null || extraidoVigente(claveRegion(nivel, chunk), chunk.getPos().x, chunk.getPos().z)) {
                 pendientes.remove(p);
                 continue;
             }
@@ -539,7 +566,7 @@ public final class GeneradorLocal {
             byte[] bytes = store.leer(region, SectionExtractor.claveNodo(nivel, seccionX, seccionY, seccionZ));
             // Sin dato real y chunk nunca generado: el aproximado (si hay) arma el horizonte.
             if (bytes == null && nivel >= TerrenoAproximado.NIVEL_MIN && nivel <= TerrenoAproximado.NIVEL_MAX
-                    && !store.contiene(region, claveMarca(seccionX, seccionZ))) {
+                    && !tieneMarca(store, region, seccionX, seccionZ)) {
                 bytes = store.leer(region, SectionExtractor.claveNodo(TerrenoAproximado.nivelGuardado(nivel),
                         seccionX, seccionY, seccionZ));
             }
@@ -646,8 +673,21 @@ public final class GeneradorLocal {
         return claveMarca(chunk.getPos().x, chunk.getPos().z);
     }
 
-    /** Clave de la marca "este chunk ya se generó": distingue sección vacía de chunk nunca cargado. */
+    /**
+     * Clave de la marca "este chunk ya se generó": distingue sección vacía de chunk nunca cargado.
+     * Y = {@link #Y_MARCA}: hasta 0.26.13 era 0, la misma clave que el nodo aproximado fino de nivel 2
+     * de la sección 0 ({@code TerrenoAproximado.claveNodo}); el aproximado tapaba la marca y el chunk
+     * quedaba "extraído" sin datos: hueco que nunca se llenaba.
+     */
     public static long claveMarca(int chunkX, int chunkZ) {
+        return SectionExtractor.claveNodo(NIVEL_MARCA_CHUNK, chunkX, Y_MARCA, chunkZ);
+    }
+
+    /** Y de la marca: libre en el nivel 15 (los aproximados finos usan hasta 0x7FF y sus marcas 0x801-0x802). */
+    static final int Y_MARCA = 0xFFF;
+
+    /** La clave de la marca hasta 0.26.13 (para leer datos guardados antes). */
+    static long claveMarcaVieja(int chunkX, int chunkZ) {
         return SectionExtractor.claveNodo(NIVEL_MARCA_CHUNK, chunkX, 0, chunkZ);
     }
 

@@ -82,7 +82,8 @@ public final class PantallaLod extends Screen {
                 () -> preset.pendiente() == ParametrosCalidad.Seleccion.PERSONALIZADO;
 
         paginas.add(new Pagina(pestana("lod"), List.of(
-                List.of(interruptor("lodActivo", Impacto.VARIABLE, c.lodActivo)),
+                List.of(interruptor("lodActivo", Impacto.VARIABLE, c.lodActivo),
+                        interruptor("vanillaReducida", Impacto.ALTO, c.vanillaReducida)),
                 List.of(preset,
                         entero("fpsObjetivo", Impacto.NINGUNO, ParametrosCalidad.FPS_MIN, ParametrosCalidad.FPS_MAX, 1,
                                 c.fpsObjetivo, v -> Component.literal(v + " FPS")).siempreQue(personalizado),

@@ -38,6 +38,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue fpsObjetivo;
         public final ModConfigSpec.BooleanValue autoAjuste;
         public final ModConfigSpec.BooleanValue lodActivo;
+        public final ModConfigSpec.BooleanValue vanillaReducida;
         public final ModConfigSpec.BooleanValue hudRendimiento;
         public final ModConfigSpec.BooleanValue hudDetalleLod;
         public final ModConfigSpec.BooleanValue logDepuracion;
@@ -81,6 +82,10 @@ public final class ConfigLod {
                     .define("autoAjuste", true);
             lodActivo = b.comment("Dibujar el LOD. Apagarlo sirve para comparar contra vanilla; la generación sigue.")
                     .define("lodActivo", true);
+            vanillaReducida = b.comment("Modo híbrido: con el LOD activo, la distancia de render de vanilla se acota según el",
+                            "preset (Mínimo 5, Bajo 6, Medio 8, Alto 10, Ultra/Horizonte 12 chunks) y el LOD dibuja el resto.",
+                            "Más FPS y menos chunks cargados; nunca sube la distancia que elegiste en Video.")
+                    .define("vanillaReducida", false);
             generacionAproximada = b.comment("Horizonte aproximado: estimar el terreno lejano nunca generado directo del",
                             "generador del mundo (sin generar chunks) hasta el radio de LOD. Lo real lo reemplaza al",
                             "explorar o pregenerar. Solo singleplayer por ahora.")

@@ -454,7 +454,7 @@ public final class GeneradorAproximado {
      */
     static boolean tieneLod(RegionFileStore store, byte dimension, int x, int z, int nivel) {
         RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimension, x, z);
-        if (store.contiene(region, GeneradorLocal.claveMarca(x, z))) {
+        if (GeneradorLocal.tieneMarca(store, region, x, z)) {
             return true;
         }
         if (nivel <= 0 || nivel >= TerrenoAproximado.NIVEL_MIN) {
