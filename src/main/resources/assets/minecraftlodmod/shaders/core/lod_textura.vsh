@@ -21,16 +21,18 @@ uniform mat4 ProjMat;
 uniform vec3 ChunkOffset;
 // Curvatura del horizonte (core/HorizonteCurvo): x = 1 / 2R, y = distancia desde la que baja. x = 0: plano.
 uniform vec2 Curvatura;
+uniform vec4 ColorModulator;
 
 out vec3 posLocal;
 out vec4 vertexColor;
-out vec2 uvOrigen;
-out vec2 uvTamano;
-out vec3 promedio;
-out vec2 uvOrigenAbajo;
-out vec2 uvTamanoAbajo;
-out float tamanoVoxel;
-out float luzBloque;
+// Lo que es igual en los 4 vértices de la cara va flat: no se interpola por píxel.
+flat out vec2 uvOrigen;
+flat out vec2 uvTamano;
+flat out vec3 promedio;
+flat out vec2 uvOrigenAbajo;
+flat out vec2 uvTamanoAbajo;
+flat out float tamanoVoxel;
+flat out vec3 luz;
 flat out int cara;
 
 const int SPRITES_POR_FILA = 256;
@@ -51,7 +53,10 @@ void main() {
     cara = alfa & 7;
     tamanoVoxel = float(1 << (alfa >> 3));
     int sprite = PosSprite.w & 0x3FFF;
-    luzBloque = float((PosSprite.w >> 14) & 3);
+    float luzBloque = float((PosSprite.w >> 14) & 3);
+    // ColorModulator es la luz del cielo a esta hora (de noche oscurece todo); lo que tiene
+    // luz de bloque (antorchas, lava) queda con ella, cálida como en el lightmap de vanilla.
+    luz = max(ColorModulator.rgb, vec3(1.0, 0.86, 0.66) * pow(luzBloque / 3.0, 1.5));
     uvOrigen = vec2(0.0);
     uvTamano = vec2(0.0);
     uvOrigenAbajo = vec2(0.0);
