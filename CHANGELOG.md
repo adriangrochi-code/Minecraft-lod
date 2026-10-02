@@ -6,6 +6,22 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.12 — HUD nuevo: FPS | MIN | AVG, CPU, RAM, GPU y VRAM con colores
+- El HUD de rendimiento pasa arriba a la izquierda, con texto con sombra y
+  sin fondo: `FPS | MIN | AVG | CPU % | RAM usada/máx GB | GPU % | VRAM
+  usada/total GB`. MIN y AVG cuentan desde que entraste al mundo (sin los
+  primeros 5 segundos de carga).
+- Colores: los porcentajes y la memoria van de verde a amarillo y a rojo al
+  acercarse al 100%; los FPS en rojo por debajo de 30, amarillo hasta 60.
+- GPU %: parte del cuadro que la GPU está ocupada (con Vulkan no hay
+  medición: «-»). VRAM: con NVIDIA usada/total; con AMD en OpenGL el driver
+  solo da la libre («X GB libre»); con Vulkan, lo que reservó el juego sobre
+  el total de la GPU; Intel y otros, «-».
+- Nueva opción **«Línea del LOD en el HUD»** (pestaña Depuración): apagada,
+  queda solo el primer renglón.
+- El mesher junta caras de distinto estado de bloque con la misma textura
+  (hojas, pasto...): ~1% menos vértices, sin cambios en la imagen.
+
 ## 0.26.11 — El LOD fuera de la vista ya no se manda a la GPU
 - **Rendimiento (GPU):** cada celda del LOD se prueba contra el campo de
   visión antes de dibujarla; las de atrás y los costados no se mandan. Antes

@@ -148,6 +148,7 @@ public final class PantallaLod extends Screen {
         List<ModoEscalado> modos = Escalado.modosDisponibles();
         paginas.add(new Pagina(pestana("experimental"), List.of(
                 List.of(interruptor("hudRendimiento", Impacto.BAJO, c.hudRendimiento),
+                        interruptor("hudDetalleLod", Impacto.NINGUNO, c.hudDetalleLod),
                         interruptor("logDepuracion", Impacto.BAJO, c.logDepuracion)),
                 List.of(interruptor("contratoVoxy", Impacto.VARIABLE, c.contratoVoxy)),
                 List.of(interruptor("sincroVertical", Impacto.VARIABLE, c.sincroVertical),

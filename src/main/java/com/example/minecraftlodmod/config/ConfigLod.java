@@ -39,6 +39,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue autoAjuste;
         public final ModConfigSpec.BooleanValue lodActivo;
         public final ModConfigSpec.BooleanValue hudRendimiento;
+        public final ModConfigSpec.BooleanValue hudDetalleLod;
         public final ModConfigSpec.BooleanValue logDepuracion;
         public final ModConfigSpec.BooleanValue sincroVertical;
         public final ModConfigSpec.BooleanValue contratoVoxy;
@@ -157,8 +158,12 @@ public final class ConfigLod {
             invertirJitter = b.comment("XeSS/DLSS: pasar el desplazamiento sub-píxel con el signo contrario. Probar si la imagen",
                             "tiembla o queda borrosa quieta con XeSS o DLSS (depende de la convención de cada uno).")
                     .define("invertirJitter", false);
-            hudRendimiento = b.comment("Mostrar arriba de la pantalla FPS, tiempos de cuadro, CPU, RAM y el trabajo del LOD.")
+            hudRendimiento = b.comment("Mostrar arriba a la izquierda FPS (actual, mínimo y promedio), CPU, RAM, GPU y VRAM,",
+                            "con colores según el uso.")
                     .define("hudRendimiento", true);
+            hudDetalleLod = b.comment("Con el HUD de rendimiento: segunda línea con el trabajo del LOD (dibujo, vértices,",
+                            "extracción, límite CPU/GPU). Apagado: solo la primera línea.")
+                    .define("hudDetalleLod", true);
             logDepuracion = b.comment("Escribir logs/minecraftlodmod-depuracion.log: una línea por segundo con el",
                             "rendimiento, la posición y lo que hace el mod, más eventos (tirones, cambios de config).")
                     .define("logDepuracion", false);

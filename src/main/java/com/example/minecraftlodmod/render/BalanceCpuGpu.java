@@ -88,7 +88,8 @@ public final class BalanceCpuGpu {
 
     @SubscribeEvent
     public void alEmpezarCuadro(RenderFrameEvent.Pre evento) {
-        if (!activo() || gpuNoDisponible || midiendo) {
+        // También sin auto-ajuste si el HUD muestra el uso de GPU.
+        if (!(activo() || ConfigLod.CLIENTE.hudRendimiento.get()) || gpuNoDisponible || midiendo) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -291,7 +292,8 @@ public final class BalanceCpuGpu {
                 b.factorOclusion(), b.reduccionEscala());
     }
 
-    double ultimoGpuMs() {
+    /** Tiempo de GPU por cuadro del último segundo, en ms; NaN si no se mide (Vulkan, driver sin consultas). */
+    public double ultimoGpuMs() {
         return ultimoGpuMs;
     }
 }
