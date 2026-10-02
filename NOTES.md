@@ -366,7 +366,7 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 Es el mod aparte **Farlands** (repo `Farlands-lod`): pendientes en su
 `NOTES.md`, diseño en su `docs/tierra-real/`. Acá quedan los ganchos del LOD
-que usa (sección 37 de la arquitectura) y los pedidos de arriba.
+que usa (sección 38 de la arquitectura) y los pedidos de arriba.
 
 ## Mejoras notadas, no aplicadas todavía
 
@@ -817,4 +817,15 @@ Pasarlo al hilo de mallas o bajar `LECTURAS_POR_PLAN`.
 - **Shader sin discard (0.26.23):** medir el tiempo de GPU del cuadro en la
   1060 y la A275 contra la 0.26.22 (en llvmpipe no se nota; en GPU real
   debería, por el early-Z). Confirmar que el fundido entre niveles se ve igual.
+
+- **Detalle extra (0.26.25):** en Xvfb nunca sobra margen (1-2 fps), no se pudo
+  ver actuar. En la 1060: confirmar que con margen sube ("detalle +N%" en el
+  HUD), que se saca rápido al bajar el FPS y que no oscila (30 s de bloqueo).
+- **Oclusión en costados (0.26.25):** juzgar en monitor real si el relieve
+  extra vale el +18% de GPU en la 1060; si sí, evaluar prenderla por defecto
+  en Ultra/Horizonte.
+
+- **Agua translúcida (0.26.26):** juzgar en monitor real la opacidad
+  (`RenderLod.ALFA_AGUA` = 0,72) contra el agua de vanilla en el borde, de día
+  y de noche; ver que el océano hondo no se vea demasiado claro u oscuro.
 

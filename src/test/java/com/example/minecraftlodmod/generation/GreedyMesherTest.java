@@ -285,4 +285,20 @@ class GreedyMesherTest {
         // Sin texturas (colores planos) el estado no se ve: decide el color.
         assertEquals(6, GreedyMesher.mallar(cuboDosEstados(), 4, null, false, 1, null).size());
     }
+
+    @Test
+    void laOclusionEnCostadosSoloConLaOpcion() {
+        boolean[][] arriba = new boolean[3][3];
+        arriba[1][1] = true; // un bloque sobre el piso: sus costados tocan el piso
+        SuperVoxel[] g = pisoCon(arriba);
+        List<Quad> soloArriba = GreedyMesher.mallar(g, 3, null, true, false, 0, null);
+        assertTrue(soloArriba.stream().filter(q -> q.eje() != Quad.Eje.Y)
+                .allMatch(q -> (q.oclusion() & 0xFF) == Quad.SIN_OCLUSION), "Sin la opción, los costados quedan sin oclusión");
+        List<Quad> conCostados = GreedyMesher.mallar(g, 3, null, true, true, 0, null);
+        Quad costado = conCostados.stream()
+                .filter(q -> q.eje() == Quad.Eje.X && q.positivo() && q.x() == 1 && q.y() == 1).findFirst().orElseThrow();
+        assertTrue(costado.oclusionEn(false, false) < 3 && costado.oclusionEn(false, true) < 3,
+                "La base del costado (u = y abajo) se oscurece contra el piso");
+        assertEquals(3, costado.oclusionEn(true, false), "El borde de arriba no");
+    }
 }

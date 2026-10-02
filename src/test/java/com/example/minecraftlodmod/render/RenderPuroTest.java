@@ -571,7 +571,9 @@ class RenderPuroTest {
         grid[2] = agua;   // (0,1,0), índice (x*lado+y)*lado+z
         g.agregarSeccion(grid, 2, 0, 0, 0, 8);
         int deAgua = g.verticesDeCara(GeometriaLod.GRUPO_AGUA);
-        assertEquals(4, deAgua, "El agua separada es solo su superficie (sin paredes que se vean a través)");
+        // Superficie + los 2 costados que dan a aire dentro de la grilla (+X, +Z: como una cascada);
+        // los 2 del borde de la grilla (-X, -Z: vecino desconocido) no, se verían como una grilla.
+        assertEquals(12, deAgua, "El agua separada: superficie y costados de adentro, sin paredes del borde");
         assertEquals(g.vertices() - deAgua, g.verticesOpacos());
 
         java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(deAgua * GeometriaLod.BYTES_VOXY);

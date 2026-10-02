@@ -155,6 +155,7 @@ public final class GeometriaLod {
     private boolean bordesAlAire;
     private static final VertexLightSampler.LuzEsquinas LUZ_PLENA = new VertexLightSampler.LuzEsquinas(15, 15, 15, 15);
     private boolean oclusionAmbiental;
+    private boolean oclusionCostados;
 
     /**
      * Vacía la geometría conservando sus arreglos: el hilo de mallas usa siempre la
@@ -184,6 +185,7 @@ public final class GeometriaLod {
         costadosAlAire = false;
         bordesAlAire = false;
         oclusionAmbiental = false;
+        oclusionCostados = false;
         separarAgua = false;
     }
 
@@ -220,6 +222,11 @@ public final class GeometriaLod {
     /** Oscurecer rincones y bases de paredes (oclusión ambiental por vértice, sección 25 punto 5). */
     public void usarOclusionAmbiental(boolean usar) {
         this.oclusionAmbiental = usar;
+    }
+
+    /** Con la oclusión prendida, también en costados y caras de abajo (no solo arriba). */
+    public void usarOclusionCostados(boolean usar) {
+        this.oclusionCostados = usar;
     }
 
     /**
@@ -270,7 +277,7 @@ public final class GeometriaLod {
         int agregados = 0;
         // Superficie a la altura real dentro de los vóxeles grandes (recortes en bloques enteros).
         int bloquesPorVoxel = escala >= 2 && escala == Math.round(escala) ? Math.round(escala) : 0;
-        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos, oclusionAmbiental, bloquesPorVoxel, superficies())) {
+        for (Quad q : GreedyMesher.mallar(grid, lado, vecinos, oclusionAmbiental, oclusionCostados, bloquesPorVoxel, superficies())) {
             if (omitida(q, lado, carasOmitidas)) {
                 continue;
             }
@@ -338,9 +345,12 @@ public final class GeometriaLod {
             return false;
         }
         SuperVoxel v = q.voxelRepresentativo();
-        if (separarAgua && v.material() == SuperVoxel.Material.AGUA && !(q.eje() == Quad.Eje.Y && q.positivo())) {
-            // Agua translúcida: solo la superficie. Las paredes de agua entre celdas y secciones
-            // (opacas quedaban tapadas por la superficie) se verían a través de ella como una grilla.
+        if (separarAgua && v.material() == SuperVoxel.Material.AGUA && !(q.eje() == Quad.Eje.Y && q.positivo())
+                && (q.eje() == Quad.Eje.Y || capa == (q.positivo() ? lado - 1 : 0))) {
+            // Agua translúcida: sin las paredes de agua en el borde de la grilla (entre celdas y
+            // secciones, donde el vecino no se conoce): opacas quedaban tapadas por la superficie,
+            // translúcidas se verían como una grilla. Los costados de adentro dan a aire de verdad
+            // (cascadas, ríos en pendiente) y se dibujan.
             return false;
         }
         float sombra = sombraDeCara(q.eje(), q.positivo());
