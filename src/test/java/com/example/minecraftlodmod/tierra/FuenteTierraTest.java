@@ -16,7 +16,7 @@ class FuenteTierraTest {
 
     private LectorLodt grilla(String nombre, int ancho, int alto, double lon0, double lat0, double paso, IntBinaryOperator v) throws IOException {
         Path p = dir.resolve(nombre);
-        EscritorLodt.escribir(p, new FormatoLodt.Cabecera(ancho, alto, 16, lon0, lat0, paso), (c0, f0, a, h, e, b) -> {
+        EscritorLodt.escribir(p, new FormatoLodt.Cabecera(ancho, alto, 16, lon0, lat0, paso), (c0, f0, a, h, e, b, nv) -> {
             for (int f = 0; f < h; f++) {
                 for (int c = 0; c < a; c++) e[f * a + c] = (short) v.applyAsInt(c0 + c, f0 + f);
             }

@@ -20,7 +20,10 @@ import java.util.Locale;
  * clase de bioma con el mapa de Köppen-Geiger de Beck et al. (2023; 1..30,
  * 0 = sin dato, el mar), tomando para cada muestra el píxel que contiene su
  * centro: sirve con cualquier grilla de clima, igual o distinta a la de
- * elevación. Sin {@code --clima} la clase queda en 0.
+ * elevación. Sin {@code --clima} la clase queda en 0. Con clima se calculan
+ * además los niveles del agua ({@link AguaContinental}: océano, lagos y
+ * depresiones secas) con la grilla entera en memoria ({@code -Xmx8g} para la
+ * global de 30″).
  */
 public final class PreparadorDatos {
 
@@ -40,6 +43,12 @@ public final class PreparadorDatos {
     }
 
     public static FormatoLodt.Cabecera preparar(Path entrada, Path clima, Path salida, int reduccion, Recorte recorte, int lado) throws IOException {
+        return preparar(entrada, clima, java.util.List.of(), salida, reduccion, recorte, lado);
+    }
+
+    /** @param aguaVector shapefiles de polígonos de agua (Natural Earth: lagos y océano), o vacío */
+    public static FormatoLodt.Cabecera preparar(Path entrada, Path clima, java.util.List<Path> aguaVector, Path salida,
+                                                int reduccion, Recorte recorte, int lado) throws IOException {
         if (reduccion < 1) throw new IllegalArgumentException("La reducción debe ser >= 1");
         try (GeoTiff tif = GeoTiff.abrir(entrada); GeoTiff tifClima = clima == null ? null : GeoTiff.abrir(clima)) {
             if (Math.abs(tif.pasoLon - tif.pasoLat) > tif.pasoLon * 1e-6) {
@@ -66,7 +75,7 @@ public final class PreparadorDatos {
             final int c0 = col0, f0 = fila0;
             float[] ventana = new float[lado * reduccion * lado * reduccion];
             float[][] ventanaClima = new float[1][];
-            return EscritorLodt.escribir(salida, cab, (col, fila, anchoV, altoV, elevacion, bioma) -> {
+            EscritorLodt.Muestras origen = (col, fila, anchoV, altoV, elevacion, bioma, nivelIgnorado) -> {
                 int anchoO = anchoV * reduccion, altoO = altoV * reduccion;
                 tif.leerVentana(c0 + col * reduccion, f0 + fila * reduccion, anchoO, altoO, ventana);
                 for (int f = 0; f < altoV; f++) {
@@ -108,22 +117,84 @@ public final class PreparadorDatos {
                         }
                     }
                 }
-            });
+            };
+            if (tifClima == null) {
+                return EscritorLodt.escribir(salida, cab, origen); // sin clima no hay máscara de agua: nivel deducido
+            }
+            return conAgua(salida, cab, origen, aguaVector);
         }
+    }
+
+    /**
+     * Con clima: la grilla entera en memoria (elevación, clase y nivel: ~5 bytes
+     * por muestra, ~4,7 GB la global de 30″: correr con {@code -Xmx8g}), los
+     * niveles del agua de {@link AguaContinental} y recién ahí se escribe.
+     */
+    private static FormatoLodt.Cabecera conAgua(Path salida, FormatoLodt.Cabecera cab, EscritorLodt.Muestras origen,
+                                                java.util.List<Path> aguaVector) throws IOException {
+        long total = (long) cab.ancho() * cab.alto();
+        if (total > Integer.MAX_VALUE - 8) throw new IOException("Grilla demasiado grande para calcular el agua en memoria");
+        int ancho = cab.ancho(), alto = cab.alto(), lado = cab.lado();
+        short[] elev = new short[(int) total];
+        byte[] clase = new byte[(int) total];
+        short[] e = new short[lado * lado], n = new short[lado * lado];
+        byte[] b = new byte[lado * lado];
+        long t0 = System.nanoTime();
+        for (int fila = 0; fila < alto; fila += lado) {
+            for (int col = 0; col < ancho; col += lado) {
+                int a = Math.min(lado, ancho - col), h = Math.min(lado, alto - fila);
+                origen.leer(col, fila, a, h, e, b, n);
+                for (int f = 0; f < h; f++) {
+                    System.arraycopy(e, f * a, elev, (fila + f) * ancho + col, a);
+                    System.arraycopy(b, f * a, clase, (fila + f) * ancho + col, a);
+                }
+            }
+        }
+        long t1 = System.nanoTime();
+        if (!aguaVector.isEmpty()) {
+            // Köppen da clima también sobre los lagos: los polígonos de agua los vuelven "sin clima" (agua).
+            long[] mascara = new long[(int) ((total + 63) >>> 6)];
+            long marcadas = 0;
+            for (Path shp : aguaVector) marcadas += MascaraAgua.rasterizar(MascaraAgua.leerShapefile(shp), cab, mascara);
+            for (int w = 0; w < mascara.length; w++) {
+                long bits = mascara[w];
+                while (bits != 0) {
+                    int i = (w << 6) + Long.numberOfTrailingZeros(bits);
+                    bits &= bits - 1;
+                    if (i < total) clase[i] = 0;
+                }
+            }
+            System.out.printf(Locale.ROOT, "agua: %d muestras dentro de los polígonos de agua%n", marcadas);
+        }
+        short[] nivel = AguaContinental.calcular(elev, clase, ancho, alto, cab.global());
+        System.out.printf(Locale.ROOT, "agua: lectura %.1f s, masas de agua y niveles %.1f s%n", (t1 - t0) / 1e9,
+                (System.nanoTime() - t1) / 1e9);
+        return EscritorLodt.escribir(salida, cab, (col, fila, a, h, ve, vb, vn) -> {
+            for (int f = 0; f < h; f++) {
+                System.arraycopy(elev, (fila + f) * ancho + col, ve, f * a, a);
+                System.arraycopy(clase, (fila + f) * ancho + col, vb, f * a, a);
+                System.arraycopy(nivel, (fila + f) * ancho + col, vn, f * a, a);
+            }
+        });
     }
 
     public static void main(String[] args) throws IOException {
         if (args.length < 2) {
-            System.err.println("Uso: PreparadorDatos entrada.tif salida.lodt [--clima koppen.tif] [--reduccion N] [--recorte latSur latNorte lonOeste lonEste]");
+            System.err.println("Uso: PreparadorDatos entrada.tif salida.lodt [--clima koppen.tif] [--agua-vector lagos.shp,oceano.shp] "
+                    + "[--reduccion N] [--recorte latSur latNorte lonOeste lonEste]");
             System.exit(2);
         }
         int reduccion = 1;
         Recorte recorte = null;
         Path clima = null;
+        java.util.List<Path> aguaVector = new java.util.ArrayList<>();
         for (int i = 2; i < args.length; i++) {
             switch (args[i]) {
                 case "--reduccion" -> reduccion = Integer.parseInt(args[++i]);
                 case "--clima" -> clima = Path.of(args[++i]);
+                case "--agua-vector" -> {
+                    for (String a : args[++i].split(",")) aguaVector.add(Path.of(a));
+                }
                 case "--recorte" -> recorte = new Recorte(Double.parseDouble(args[++i]), Double.parseDouble(args[++i]),
                         Double.parseDouble(args[++i]), Double.parseDouble(args[++i]));
                 default -> throw new IllegalArgumentException("Opción desconocida: " + args[i]);
@@ -131,7 +202,7 @@ public final class PreparadorDatos {
         }
         Path salida = Path.of(args[1]);
         long inicio = System.nanoTime();
-        FormatoLodt.Cabecera cab = preparar(Path.of(args[0]), clima, salida, reduccion, recorte, FormatoLodt.LADO_POR_DEFECTO);
+        FormatoLodt.Cabecera cab = preparar(Path.of(args[0]), clima, aguaVector, salida, reduccion, recorte, FormatoLodt.LADO_POR_DEFECTO);
         System.out.printf(Locale.ROOT, "%s: %dx%d muestras, paso %.6f grados, %d teselas, elevacion %d..%d m, %.2f MB, %.1f s%n",
                 salida, cab.ancho(), cab.alto(), cab.paso(), cab.cantidadTeselas(), cab.elevMinima(), cab.elevMaxima(),
                 Files.size(salida) / 1048576.0, (System.nanoTime() - inicio) / 1e9);

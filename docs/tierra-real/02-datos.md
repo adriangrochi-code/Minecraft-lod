@@ -59,6 +59,29 @@ sin descargar a clientes sin `Accept: */*` y un User-Agent de navegador.
 - Descarga: no dentro del juego al principio. Instrucciones + la herramienta;
   después, si vale la pena, botón con progreso en la pantalla de crear mundo.
 
+## Agua: océano, lagos y depresiones secas (H8)
+
+- **Máscara:** agua = sin clima en Köppen (el mar) **o** dentro de los
+  polígonos de Natural Earth 1:10M `ne_10m_lakes` + `ne_10m_ocean` (este trae
+  el Caspio). Dominio público (naturalearthdata.com; descargas de
+  naciscdn.org, 2,3 + 3,2 MB). Hace falta porque Köppen da clima también
+  sobre los lagos (Caspio, Superior, Baikal, Victoria).
+- **Niveles** (`tierra/AguaContinental`, en el preparador, con la grilla entera
+  en memoria): la masa de agua más grande es el océano (nivel 0, e inunda lo
+  conectado bajo 0 m: pólders); cada lago toma la mediana de la tierra a 2
+  muestras de su borde e inunda lo conectado por debajo, con tope de su
+  propio tamaño (mínimo 500 muestras) fuera de sí, buscado por bisección. El
+  resto queda seco aunque esté bajo el mar.
+- Resultado (dato global de 30″): Caspio -27 m (real -28), Superior 181
+  (183), Baikal 465 (455), Victoria 1 149 (1 134), Titicaca 3 825 (3 812),
+  Mar Muerto -363 (-430: orillas muy empinadas, lo frena el tope); valle de
+  la Muerte y Qattara secos.
+- **Formato `.lodt` v2:** cada tesela trae además el nivel del agua (short
+  por muestra, diferencia por fila); la v1 se sigue leyendo (nivel deducido
+  como antes). Global de 30″ con agua: 672 MB.
+- **Preparar** (unos 5 min, ~10 GB de RAM):
+  `java -Xmx10g -cp <clases> com.example.minecraftlodmod.tierra.PreparadorDatos ETOPO_2022_v1_30s_N90W180_surface.tif tierra.lodt --clima koppen_geiger_0p00833333.tif --agua-vector ne_10m_lakes.shp,ne_10m_ocean.shp`
+
 ## Atribución
 
 Pantalla de crear mundo + `CREDITS` del jar: NOAA ETOPO, Beck et al.

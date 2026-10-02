@@ -21,10 +21,14 @@ public final class EscritorLodt {
         /**
          * Llena la ventana [col0, col0+lado) × [fila0, fila0+lado) de la grilla
          * de salida, recortada a la grilla: {@code ancho} × {@code alto}
-         * muestras, fila por fila.
+         * muestras, fila por fila. {@code nivel} (agua) viene en
+         * {@link #SIN_NIVEL}: lo que quede así se deduce como en la versión 1.
          */
-        void leer(int col0, int fila0, int ancho, int alto, short[] elevacion, byte[] bioma) throws IOException;
+        void leer(int col0, int fila0, int ancho, int alto, short[] elevacion, byte[] bioma, short[] nivel) throws IOException;
     }
+
+    /** Marca de "nivel del agua sin dar" en {@link Muestras#leer}. */
+    public static final short SIN_NIVEL = Short.MIN_VALUE + 1;
 
     private EscritorLodt() {}
 
@@ -37,8 +41,10 @@ public final class EscritorLodt {
         int tx = cab.teselasX();
         short[][] elev = new short[tx][lado * lado];
         byte[][] bioma = new byte[tx][lado * lado];
+        short[][] nivel = new short[tx][lado * lado];
         short[] ventanaElev = new short[lado * lado];
         byte[] ventanaBioma = new byte[lado * lado];
+        short[] ventanaNivel = new short[lado * lado];
         int minima = Short.MAX_VALUE, maxima = Short.MIN_VALUE;
         try (FileChannel canal = FileChannel.open(temporal, StandardOpenOption.CREATE,
                 StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
@@ -49,25 +55,31 @@ public final class EscritorLodt {
                     int col0 = t * lado, fila0 = tz * lado;
                     int anchoV = Math.min(lado, cab.ancho() - col0);
                     int altoV = Math.min(lado, cab.alto() - fila0);
-                    muestras.leer(col0, fila0, anchoV, altoV, ventanaElev, ventanaBioma);
+                    java.util.Arrays.fill(ventanaNivel, SIN_NIVEL);
+                    muestras.leer(col0, fila0, anchoV, altoV, ventanaElev, ventanaBioma, ventanaNivel);
                     for (int i = 0; i < anchoV * altoV; i++) {
                         minima = Math.min(minima, ventanaElev[i]);
                         maxima = Math.max(maxima, ventanaElev[i]);
+                        if (ventanaNivel[i] == SIN_NIVEL) {
+                            ventanaNivel[i] = FormatoLodt.nivelDeducido(ventanaElev[i], ventanaBioma[i]);
+                        }
                     }
                     short[] e = elev[t];
                     byte[] b = bioma[t];
+                    short[] nv = nivel[t];
                     for (int f = 0; f < lado; f++) {
                         int ff = Math.min(f, altoV - 1);
                         for (int c = 0; c < lado; c++) {
                             int cc = Math.min(c, anchoV - 1);
                             e[f * lado + c] = ventanaElev[ff * anchoV + cc];
                             b[f * lado + c] = ventanaBioma[ff * anchoV + cc];
+                            nv[f * lado + c] = ventanaNivel[ff * anchoV + cc];
                         }
                     }
                 }
                 byte[][] datos = new byte[tx][];
                 java.util.stream.IntStream.range(0, tx).parallel()
-                        .forEach(t -> datos[t] = FormatoLodt.codificarTesela(elev[t], bioma[t], lado));
+                        .forEach(t -> datos[t] = FormatoLodt.codificarTesela(elev[t], bioma[t], nivel[t], lado));
                 for (byte[] d : datos) {
                     escribirTodo(canal, ByteBuffer.wrap(d), pos);
                     indice.putLong(pos).putInt(d.length);

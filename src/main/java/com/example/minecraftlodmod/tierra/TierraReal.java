@@ -76,8 +76,23 @@ public final class TierraReal {
             AlturaTierra a = alturaDe(nivel);
             if (a == null) return null;
             BordeTierra borde = bordeDe(nivel);
-            if (borde == null) return a::altura;
+            if (borde == null) return new com.example.minecraftlodmod.generation.FuenteAltura() {
+                @Override
+                public int altura(int x, int z) {
+                    return a.altura(x, z);
+                }
+
+                @Override
+                public int nivelAgua(int x, int z) {
+                    return a.nivelAguaY(x + 0.5, z + 0.5);
+                }
+            };
             return new com.example.minecraftlodmod.generation.FuenteAltura() {
+                @Override
+                public int nivelAgua(int x, int z) {
+                    return borde.distanciaAlBorde(x + 0.5, z + 0.5) < 0 ? a.nivelAguaY(x + 0.5, z + 0.5) : Integer.MIN_VALUE;
+                }
+
                 @Override
                 public int altura(int x, int z) {
                     double d = borde.distanciaAlBorde(x + 0.5, z + 0.5);

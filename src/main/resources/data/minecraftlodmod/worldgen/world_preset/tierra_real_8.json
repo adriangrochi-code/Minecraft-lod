@@ -57,7 +57,9 @@
             "nieve": "minecraft:snowy_slopes",
             "cumbre": "minecraft:jagged_peaks",
             "roca_alta": "minecraft:stony_peaks",
-            "farlands": "minecraftlodmod:farlands_congeladas"
+            "farlands": "minecraftlodmod:farlands_congeladas",
+            "lago": "minecraft:river",
+            "lago_helado": "minecraft:frozen_river"
           }
         },
         "settings": "minecraftlodmod:tierra_real_8"

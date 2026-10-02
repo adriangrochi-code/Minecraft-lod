@@ -17,8 +17,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * Tierra real el fondo del océano está cientos de bloques más abajo y el mar
  * entero saldría de lava ({@code docs/tierra-real/01-decisiones.md}, riesgo
  * 1). Solo en los ajustes que usan {@link SuperficieTierra}: agua (el fluido
- * por defecto) hasta el nivel del mar en toda la altura, pero solo en las
- * columnas del mar; bajo tierra firme el fluido global es aire.
+ * por defecto) en toda la altura, hasta el nivel de la masa de agua de cada
+ * columna (el mar o su lago, {@code AlturaTierra.nivelAguaY}); en las columnas
+ * secas (tierra firme, depresiones como el Mar Muerto o Qattara) es aire.
  */
 @Mixin(NoiseBasedChunkGenerator.class)
 public abstract class MixinFluidoTierra {
@@ -37,20 +38,22 @@ public abstract class MixinFluidoTierra {
                 java.util.Arrays.fill(k, Long.MIN_VALUE);
                 return k;
             });
-            ThreadLocal<boolean[]> mares = ThreadLocal.withInitial(() -> new boolean[256]);
+            ThreadLocal<Aquifer.FluidStatus[]> estados = ThreadLocal.withInitial(() -> new Aquifer.FluidStatus[256]);
             cir.setReturnValue((x, y, z) -> {
-                // Agua solo bajo columnas cuyo suelo está bajo el nivel del mar (el mar); bajo la
-                // tierra firme, las cuevas quedan secas en vez de inundadas hasta y 62.
+                // Agua hasta el nivel de su masa (el mar en 63, cada lago en el suyo: AguaContinental);
+                // bajo la tierra firme y en las depresiones secas, aire.
                 long clave = (long) x << 32 | (z & 0xFFFFFFFFL);
                 int i = (x & 15) << 4 | (z & 15);
                 long[] k = claves.get();
-                boolean[] mar = mares.get();
+                Aquifer.FluidStatus[] estado = estados.get();
                 if (k[i] != clave) {
                     AlturaTierra a = superficie.altura();
-                    mar[i] = a == null || a.alturaExacta(x + 0.5, z + 0.5) < ajustes.seaLevel();
+                    int n = a == null ? ajustes.seaLevel() : a.nivelAguaY(x + 0.5, z + 0.5);
+                    estado[i] = n == Integer.MIN_VALUE ? seco
+                            : n == ajustes.seaLevel() ? agua : new Aquifer.FluidStatus(n, ajustes.defaultFluid());
                     k[i] = clave;
                 }
-                return mar[i] ? agua : seco;
+                return estado[i];
             });
         }
     }

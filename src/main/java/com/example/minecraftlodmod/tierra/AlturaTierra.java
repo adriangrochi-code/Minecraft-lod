@@ -6,9 +6,10 @@ package com.example.minecraftlodmod.tierra;
  * ({@code docs/tierra-real/03-generador.md}).
  *
  * y = 63 + elevación × exageración / metros por bloque, con el nivel del mar
- * en 63 como vanilla ({@code 01-decisiones.md}). En H2 todavía sin ruido de
- * detalle (H8): la superficie es la bicúbica de los datos, recortada al rango
- * de las muestras (Catmull-Rom puede pasarse un poco en los extremos; así
+ * en 63 como vanilla ({@code 01-decisiones.md}). La elevación es la bicúbica
+ * de los datos con el detalle a escala de bloque de {@link DetalleTierra} (H8,
+ * se puede apagar), recortada al rango de las muestras (Catmull-Rom puede
+ * pasarse un poco en los extremos; así
  * nada queda más hondo que la fosa ni más alto que el pico de los datos).
  *
  * <b>El fondo de la fosa más honda apoya en el lecho de roca</b> (pedido del
@@ -30,9 +31,17 @@ public final class AlturaTierra {
     private final Proyeccion proyeccion;
     private final double factor;
     private final double elevMinima, elevMaxima;
+    private final boolean detalle;
+    private final ThreadLocal<double[]> rango = ThreadLocal.withInitial(() -> new double[1]);
 
     public AlturaTierra(FuenteTierra fuente, Proyeccion proyeccion, double exageracionVertical) {
+        this(fuente, proyeccion, exageracionVertical, true);
+    }
+
+    /** @param detalle sumar el detalle a escala de bloque ({@link DetalleTierra}); sin él, la bicúbica de los datos */
+    public AlturaTierra(FuenteTierra fuente, Proyeccion proyeccion, double exageracionVertical, boolean detalle) {
         if (!(exageracionVertical > 0)) throw new IllegalArgumentException("Exageración inválida: " + exageracionVertical);
+        this.detalle = detalle;
         this.fuente = fuente;
         this.proyeccion = proyeccion;
         this.factor = exageracionVertical / proyeccion.metrosPorBloque();
@@ -46,7 +55,21 @@ public final class AlturaTierra {
 
     /** Elevación en metros bajo el punto (x, z) del mundo, dentro del rango de los datos. */
     public double elevacionMetros(double x, double z) {
-        double e = fuente.elevacion(proyeccion.latitud(x, z), Proyeccion.normalizarLongitud(proyeccion.longitud(x, z)));
+        double lat = proyeccion.latitud(x, z), lon = Proyeccion.normalizarLongitud(proyeccion.longitud(x, z));
+        double e;
+        if (detalle) {
+            double[] r = rango.get();
+            e = DetalleTierra.conDetalle(x, z, fuente.elevacion(lat, lon, r), r[0]);
+        } else {
+            e = fuente.elevacion(lat, lon);
+        }
+        // Lagos sin batimetría en los datos (Victoria, Titicaca: ETOPO da la superficie, no el fondo):
+        // el suelo del lago se baja a 2 bloques bajo su nivel (y la orilla de hasta 1 bloque sobre él).
+        int agua = fuente.nivelAgua(lat, lon);
+        if (agua != AguaContinental.SECO && agua != 0) {
+            double piso = agua - 2 * proyeccion.metrosPorBloque();
+            if (e > piso && e < agua + proyeccion.metrosPorBloque()) e = piso;
+        }
         return Math.clamp(e, elevMinima, elevMaxima);
     }
 
@@ -57,6 +80,18 @@ public final class AlturaTierra {
     /** Clase de clima (Köppen 1..30, 0 = sin dato/mar) de la muestra más cercana a (x, z). */
     public int claseClima(double x, double z) {
         return fuente.claseBioma(proyeccion.latitud(x, z), Proyeccion.normalizarLongitud(proyeccion.longitud(x, z)));
+    }
+
+    /**
+     * Hasta dónde llega el agua en la columna: el agua llena y &lt; este valor
+     * (como el {@code FluidStatus} de vanilla). 63 en el mar; el nivel de su
+     * lago en un lago; {@link Integer#MIN_VALUE} si la columna es seca
+     * ({@link AguaContinental}).
+     */
+    public int nivelAguaY(double x, double z) {
+        int n = fuente.nivelAgua(proyeccion.latitud(x, z), Proyeccion.normalizarLongitud(proyeccion.longitud(x, z)));
+        if (n == AguaContinental.SECO) return Integer.MIN_VALUE;
+        return (int) Math.ceil(NIVEL_MAR + n * factor);
     }
 
     /** Metros reales por bloque de este mundo. */

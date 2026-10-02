@@ -1015,6 +1015,10 @@ las decisiones que fijan el código.
   vanilla, salvo el lecho de roca (macizo hasta la fosa) y la pizarra
   profunda (a más de 64 bloques bajo la superficie, no por y). El fluido
   global es agua solo bajo el mar; bajo tierra firme, aire.
+- **Detalle y agua** (H8): ruido fractal con amplitud según la pendiente de
+  la bicúbica (`DetalleTierra`); agua por masas (`AguaContinental`: océano,
+  lagos con su nivel, depresiones secas) desde Köppen + Natural Earth,
+  guardada en el `.lodt` v2 y usada por el selector de fluido por columna.
 - **Proyecciones** (`tierra/Proyeccion`): equirectangular (norte -z, este
   +x) y azimutal equidistante centrada en el polo norte (el polo sur, el
   borde del disco, a ~2,5 M bloques a 1:8).

@@ -41,6 +41,8 @@ public final class ClasificadorBiomas {
     public static final String NIEVE = "nieve", CUMBRE = "cumbre", ROCA_ALTA = "roca_alta";
     /** Pasando el borde de la Tierra plana (grietas y farlands congeladas). */
     public static final String FARLANDS = "farlands";
+    /** Columna de un lago (agua con nivel propio, no el mar): helado pasando 55° de latitud. */
+    public static final String LAGO = "lago", LAGO_HELADO = "lago_helado";
     private static final List<String> OCEANOS = List.of("oceano_calido", "oceano_templado", "oceano_normal",
             "oceano_frio", "oceano_helado");
     public static final double PLATAFORMA_M = -200;
@@ -54,7 +56,7 @@ public final class ClasificadorBiomas {
             c.add(o);
             c.add(o + "_profundo");
         }
-        c.addAll(List.of(SIN_CLIMA, PLAYA, PLAYA_FRIA, NIEVE, CUMBRE, ROCA_ALTA, FARLANDS));
+        c.addAll(List.of(SIN_CLIMA, PLAYA, PLAYA_FRIA, NIEVE, CUMBRE, ROCA_ALTA, FARLANDS, LAGO, LAGO_HELADO));
         CLAVES = List.copyOf(c);
     }
 
@@ -86,6 +88,11 @@ public final class ClasificadorBiomas {
             if (elevacion >= nieve - 700) return ROCA_ALTA;
         }
         return conClima ? simbolo : SIN_CLIMA;
+    }
+
+    /** Clave de una columna de lago (ver {@link FuenteBiomasTierra}). */
+    public static String lago(double latitud) {
+        return Math.abs(latitud) > 55 ? LAGO_HELADO : LAGO;
     }
 
     /** Altura aproximada de la línea de nieve permanente, en metros, según la latitud. */

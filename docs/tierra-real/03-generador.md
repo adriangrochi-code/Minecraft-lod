@@ -60,6 +60,15 @@ registrada con su codec). Así se reutilizan, sin tocarlos:
 
 ## Detalle a escala de bloque
 
+**Implementado en H8** (`tierra/DetalleTierra`): ruido fractal (Perlin, 4
+octavas de 160 a 20 bloques, la grande con cresta suave 1 - p²) con amplitud
+= 0,12 × la rugosidad, con tope de 300 m; la rugosidad es 3 veces la
+pendiente de la bicúbica (continua: con el rango de las 16 muestras se veía
+la grilla de los datos). Se apaga cerca de la costa (bajo 60 m de |elevación|)
+y nunca cambia la elevación de lado del nivel del mar. Una superficie con
+detalle: 0,24 µs. Lagos sin batimetría en ETOPO (Victoria, Titicaca): el
+suelo se baja a 2 bloques bajo su nivel.
+
 El dato tiene una muestra cada ~116 bloques (30″ a 1:8):
 - bicúbica de la elevación (sin escalones);
 - **ruido de detalle** cuya amplitud depende de la rugosidad local (desvío de

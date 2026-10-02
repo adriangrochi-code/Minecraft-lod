@@ -149,3 +149,23 @@ la cifra famosa.)
     bloque en el borde pierde menos de 1/100 de bloque (test); un bloque de
     diferencia se distingue. Lo del cliente (titileo de vértices, nubes,
     partículas a 2,5 M) queda **pendiente de Pista B**: `/tp 0 1300 2503900`.
+- **H8 (2026-10-02):** detalle a escala de bloque (`DetalleTierra`, ver
+  `03-generador.md`; imagen de comparación en los Alpes) y agua continental
+  (`AguaContinental`, `MascaraAgua`, `.lodt` v2; ver `02-datos.md`). Servidor:
+
+  | Lugar | Bioma | Suelo | Agua hasta |
+  |---|---|---|---|
+  | Caspio | lago (river) | y 7 | y 59 (-27 m) |
+  | Lago Superior | lago | y 65 | y 85 (181 m) |
+  | Mar Muerto | lago | y 9 | y 17 |
+  | Baikal | lago | y 45 (cañón de vanilla) | y 121 (465 m) |
+  | Valle de la Muerte / Qattara | desierto | y 52 / 53 | seco |
+  | Atlántico | océano | y -411 | y 62 |
+
+  - Ruido por chunk con detalle y agua: 12,6 ms (H6: 14,0); heap 802 MB.
+  - Lo esperado por `AlturaTierra` y lo generado coinciden (±1 por la capa
+    de nieve).
+  - **No hecho:** costas finas (necesitan el dato de 15″, ~7,5 GB en 288
+    teselas) y ríos (opcionales en el plan); pendientes. El LOD aproximado
+    todavía dibuja el agua solo al nivel del mar (lagos altos: Pista B /
+    después).

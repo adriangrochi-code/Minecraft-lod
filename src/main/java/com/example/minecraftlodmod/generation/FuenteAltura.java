@@ -31,6 +31,11 @@ public interface FuenteAltura {
         return true;
     }
 
+    /** Hasta qué y llega el agua en la columna (llena y &lt; esto), o {@link Integer#MIN_VALUE} si no hay. */
+    default int nivelAgua(int x, int z) {
+        return Integer.MIN_VALUE;
+    }
+
     List<Function<ServerLevel, FuenteAltura>> RESOLVEDORES = new CopyOnWriteArrayList<>();
 
     /** Registra quién sabe dar la fuente de un nivel (devuelve {@code null} si no es suyo). */

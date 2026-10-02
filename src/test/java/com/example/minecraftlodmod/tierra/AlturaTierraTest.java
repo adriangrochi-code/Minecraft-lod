@@ -66,11 +66,11 @@ class AlturaTierraTest {
     @Test
     void alturaEnBloquesA1en8YA1en6() {
         ProyeccionCilindrica p8 = new ProyeccionCilindrica(8);
-        AlturaTierra a8 = new AlturaTierra(fuente, p8, 1.0);
+        AlturaTierra a8 = new AlturaTierra(fuente, p8, 1.0, false); // sin detalle: la grilla
         double x = p8.x(lat(241), lon(831)), z = p8.z(lat(241), lon(831));
         assertEquals(63 + 8354 / 8.0, a8.alturaExacta(x, z), 0.1);
         assertEquals(1107, a8.yCima()); // ceil(63 + 8354/8) - 1
-        AlturaTierra a6 = new AlturaTierra(fuente, new ProyeccionCilindrica(6), 1.0);
+        AlturaTierra a6 = new AlturaTierra(fuente, new ProyeccionCilindrica(6), 1.0, false);
         assertEquals(1455, a6.yCima()); // ceil(63 + 8354/6) - 1
         // Mar: bajo el nivel del mar en bloques
         assertTrue(a8.altura((int) p8.x(lat(1080), lon(1080)), (int) p8.z(lat(1080), lon(1080))) < 63);
@@ -79,7 +79,7 @@ class AlturaTierraTest {
     @Test
     void alturaInterpolaEntreEsquinasDeCeldaComoElGenerador() {
         ProyeccionCilindrica p = new ProyeccionCilindrica(8);
-        AlturaTierra a = new AlturaTierra(fuente, p, 1.0);
+        AlturaTierra a = new AlturaTierra(fuente, p, 1.0, false);
         int x0 = (int) p.x(27.9875, 86.9292) & ~3, z0 = (int) p.z(27.9875, 86.9292) & ~3;
         for (int dz = 0; dz <= 4; dz += 4) {
             for (int dx = 0; dx <= 4; dx += 4) {
@@ -89,6 +89,18 @@ class AlturaTierraTest {
         }
         // Medido en el servidor (H3): cumbre del Everest generada en y 1106
         assertEquals(1106, a.altura((int) Math.floor(p.x(27.9875, 86.9292)), (int) Math.floor(p.z(27.9875, 86.9292))));
+    }
+
+    @Test
+    void aguaDelMarYTierraSeca() {
+        ProyeccionCilindrica p = new ProyeccionCilindrica(8);
+        AlturaTierra a = new AlturaTierra(fuente, p, 1.0);
+        // Golfo de Bengala (21 N, 89 E): mar, agua hasta y 62 (llena y < 63)
+        assertEquals(63, a.nivelAguaY(p.x(21, 89), p.z(21, 89)));
+        // Himalaya y llanura del Ganges: secos
+        assertEquals(Integer.MIN_VALUE, a.nivelAguaY(p.x(27.9875, 86.9292), p.z(27.9875, 86.9292)));
+        assertEquals(Integer.MIN_VALUE, a.nivelAguaY(p.x(25, 82.5), p.z(25, 82.5)));
+        assertEquals(2, lector.cabecera.version(), "recorte de prueba en formato v2 (con agua)");
     }
 
     @Test
@@ -144,7 +156,15 @@ class AlturaTierraTest {
             }
         }
         double us = (System.nanoTime() - inicio) / 1e3 / n;
-        System.out.printf(Locale.ROOT, "[tierra] altura por columna (bicúbica, tesela en caché): %.3f µs (%d)%n", us, suma & 1);
+        // Una superficie (lo que pide el generador por esquina de celda): bicúbica + detalle
+        double h = 0;
+        long inicio2 = System.nanoTime();
+        for (int dz = 0; dz < 1024; dz++) {
+            for (int dx = 0; dx < 1024; dx++) h += a.alturaExacta(x0 + dx * 3 + 0.5, z0 + dz * 3 + 0.5);
+        }
+        double us2 = (System.nanoTime() - inicio2) / 1e3 / n;
+        System.out.printf(Locale.ROOT, "[tierra] altura por columna (4 esquinas, como el generador): %.3f µs; "
+                + "una superficie (bicúbica + detalle): %.3f µs (%d %.0f)%n", us, us2, suma & 1, h % 2);
         assertTrue(us < 50, "medición absurda: " + us + " µs");
     }
 }

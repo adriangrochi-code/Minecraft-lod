@@ -32,7 +32,7 @@ class LectorLodtTest {
     /** Grilla sintética de ancho × alto con teselas de {@code lado}. */
     static Path escribir(Path archivo, int ancho, int alto, int lado) throws IOException {
         FormatoLodt.Cabecera cab = new FormatoLodt.Cabecera(ancho, alto, lado, -179.5, 89.5, 1.0);
-        EscritorLodt.escribir(archivo, cab, (col0, fila0, a, h, e, b) -> {
+        EscritorLodt.escribir(archivo, cab, (col0, fila0, a, h, e, b, nv) -> {
             for (int f = 0; f < h; f++) {
                 for (int c = 0; c < a; c++) {
                     e[f * a + c] = elev(col0 + c, fila0 + f);

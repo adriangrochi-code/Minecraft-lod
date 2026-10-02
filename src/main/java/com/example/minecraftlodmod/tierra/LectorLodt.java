@@ -28,15 +28,18 @@ public final class LectorLodt implements AutoCloseable {
     public static final class Tesela {
         public final short[] elevacion;
         public final byte[] bioma;
+        /** Nivel del agua en metros, o {@link AguaContinental#SECO}. */
+        public final short[] nivel;
         volatile long ultimoUso;
 
         Tesela(int lado) {
             elevacion = new short[lado * lado];
             bioma = new byte[lado * lado];
+            nivel = new short[lado * lado];
         }
 
         long bytes() {
-            return elevacion.length * 2L + bioma.length + 64;
+            return elevacion.length * 2L + bioma.length + nivel.length * 2L + 64;
         }
     }
 
@@ -89,6 +92,13 @@ public final class LectorLodt implements AutoCloseable {
         return tesela(tx, tz).elevacion[(fila - tz * lado) * lado + (col - tx * lado)];
     }
 
+    /** Nivel del agua en metros de la muestra, o {@link AguaContinental#SECO}. */
+    public short nivelAgua(int col, int fila) {
+        int lado = cabecera.lado();
+        int tx = col / lado, tz = fila / lado;
+        return tesela(tx, tz).nivel[(fila - tz * lado) * lado + (col - tx * lado)];
+    }
+
     public byte bioma(int col, int fila) {
         int lado = cabecera.lado();
         int tx = col / lado, tz = fila / lado;
@@ -109,7 +119,8 @@ public final class LectorLodt implements AutoCloseable {
     private Tesela cargar(int indice) {
         Tesela t = new Tesela(cabecera.lado());
         try {
-            FormatoLodt.decodificarTesela(leer(canal, offsets[indice], tamanos[indice]), cabecera.lado(), t.elevacion, t.bioma);
+            FormatoLodt.decodificarTesela(leer(canal, offsets[indice], tamanos[indice]), cabecera.lado(),
+                    cabecera.version(), t.elevacion, t.bioma, t.nivel);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

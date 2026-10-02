@@ -307,6 +307,9 @@ public final class GeneracionVertical {
                 int h = fuente.altura(pos.getMinBlockX() + i, pos.getMinBlockZ() + j);
                 min = Math.min(min, h);
                 max = Math.max(max, h);
+                // El agua (mar o lago) tiene que quedar dentro de la franja
+                int agua = fuente.nivelAgua(pos.getMinBlockX() + i, pos.getMinBlockZ() + j);
+                if (agua != Integer.MIN_VALUE) max = Math.max(max, agua - 1);
             }
         }
         return new int[]{min, max};

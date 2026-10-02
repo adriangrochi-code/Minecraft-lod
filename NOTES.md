@@ -295,10 +295,10 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 - Diseño y resultados: `docs/tierra-real/` (hitos y medidas en `06-hitos.md`),
   sección 33 de la arquitectura. Hechos H0–H3.
-- Datos: `.minecraft/minecraftlodmod/tierra/tierra.lodt`, preparado con
-  `java -cp <clases> com.example.minecraftlodmod.tierra.PreparadorDatos
-  ETOPO_2022_v1_30s_N90W180_surface.tif tierra.lodt` (657 MB, ~5 min). Sin
-  el archivo, el mundo sale como fondo de mar plano y el log lo dice.
+- Datos: `.minecraft/minecraftlodmod/tierra/tierra.lodt` (formato v2, con
+  agua), preparado como dice `docs/tierra-real/02-datos.md` (ETOPO 30″ +
+  Köppen + Natural Earth; 672 MB, ~5 min, `-Xmx10g`). Sin el archivo, el mundo
+  sale como fondo de mar plano y el log lo dice.
 - Comandos de prueba: `/tierra ir <lat> <lon>`, `/tierra medir <lat> <lon>`.
 - Pendiente de Pista B: ver el mundo en el cliente (pantalla de crear mundo
   con los 4 tipos, horizonte del LOD sobre Tierra real). En Xvfb (render por

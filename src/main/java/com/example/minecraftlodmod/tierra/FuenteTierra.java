@@ -32,6 +32,17 @@ public final class FuenteTierra {
 
     /** Elevación interpolada en metros sobre el nivel del mar (EGM2008). */
     public double elevacion(double latitud, double longitud) {
+        return elevacion(latitud, longitud, null);
+    }
+
+    /**
+     * Como {@link #elevacion(double, double)}; si {@code rango} no es null, deja
+     * en {@code rango[0]} la rugosidad del lugar para el detalle de
+     * {@link DetalleTierra}: 3 veces la pendiente de la bicúbica, en metros por
+     * muestra (lo que sube en ~3 muestras). Es continua (Catmull-Rom tiene
+     * derivada continua): un rango por celda daba saltos y se veía la grilla.
+     */
+    public double elevacion(double latitud, double longitud, double[] rango) {
         double u = columnaReal(longitud);
         double v = (cab.latOrigen() - latitud) / cab.paso();
         int i = (int) Math.floor(u), j = (int) Math.floor(v);
@@ -45,22 +56,50 @@ public final class FuenteTierra {
                 && (i + 2) / lado == tx && (j + 2) / lado == tz) {
             short[] e = lector.tesela(tx, tz).elevacion;
             int base = (j - 1 - tz * lado) * lado + (i - 1 - tx * lado);
+            if (rango != null) {
+                double du0 = dA(tu), du1 = dB(tu), du2 = dC(tu), du3 = dD(tu);
+                double dv0 = dA(tv), dv1 = dB(tv), dv2 = dC(tv), dv3 = dD(tv);
+                double gu = v0 * fila(e, base, du0, du1, du2, du3) + v1 * fila(e, base + lado, du0, du1, du2, du3)
+                        + v2 * fila(e, base + 2 * lado, du0, du1, du2, du3) + v3 * fila(e, base + 3 * lado, du0, du1, du2, du3);
+                double gv = dv0 * fila(e, base, u0, u1, u2, u3) + dv1 * fila(e, base + lado, u0, u1, u2, u3)
+                        + dv2 * fila(e, base + 2 * lado, u0, u1, u2, u3) + dv3 * fila(e, base + 3 * lado, u0, u1, u2, u3);
+                rango[0] = 3 * Math.sqrt(gu * gu + gv * gv);
+            }
             return v0 * fila(e, base, u0, u1, u2, u3)
                     + v1 * fila(e, base + lado, u0, u1, u2, u3)
                     + v2 * fila(e, base + 2 * lado, u0, u1, u2, u3)
                     + v3 * fila(e, base + 3 * lado, u0, u1, u2, u3);
         }
-        double suma = 0;
+        double suma = 0, gu = 0, gv = 0;
         for (int dj = 0; dj < 4; dj++) {
             int fila = Math.clamp(j - 1 + dj, 0, cab.alto() - 1);
             double pv = dj == 0 ? v0 : dj == 1 ? v1 : dj == 2 ? v2 : v3;
-            double s = u0 * lector.elevacion(columna(i - 1), fila)
-                    + u1 * lector.elevacion(columna(i), fila)
-                    + u2 * lector.elevacion(columna(i + 1), fila)
-                    + u3 * lector.elevacion(columna(i + 2), fila);
-            suma += pv * s;
+            double dpv = dj == 0 ? dA(tv) : dj == 1 ? dB(tv) : dj == 2 ? dC(tv) : dD(tv);
+            int a = lector.elevacion(columna(i - 1), fila), b = lector.elevacion(columna(i), fila);
+            int c = lector.elevacion(columna(i + 1), fila), d = lector.elevacion(columna(i + 2), fila);
+            double s1 = u0 * a + u1 * b + u2 * c + u3 * d;
+            suma += pv * s1;
+            gu += pv * (dA(tu) * a + dB(tu) * b + dC(tu) * c + dD(tu) * d);
+            gv += dpv * s1;
         }
+        if (rango != null) rango[0] = 3 * Math.sqrt(gu * gu + gv * gv);
         return suma;
+    }
+
+    /**
+     * Nivel del agua en metros en (lat, lon): el más alto de las 4 muestras que
+     * rodean el punto (así el agua llega hasta el borde de su masa sin dejar
+     * columnas secas en medio), o {@link AguaContinental#SECO}.
+     */
+    public int nivelAgua(double latitud, double longitud) {
+        double u = columnaReal(longitud);
+        double v = (cab.latOrigen() - latitud) / cab.paso();
+        int i = (int) Math.floor(u), j = (int) Math.floor(v);
+        int f0 = Math.clamp(j, 0, cab.alto() - 1), f1 = Math.clamp(j + 1, 0, cab.alto() - 1);
+        int c0 = columna(i), c1 = columna(i + 1);
+        int n = Math.max(Math.max(lector.nivelAgua(c0, f0), lector.nivelAgua(c1, f0)),
+                Math.max(lector.nivelAgua(c0, f1), lector.nivelAgua(c1, f1)));
+        return n;
     }
 
     /** Clase de bioma de la muestra más cercana (0 = sin clasificar, hasta H4). */
@@ -86,6 +125,23 @@ public final class FuenteTierra {
 
     private static double fila(short[] e, int base, double u0, double u1, double u2, double u3) {
         return u0 * e[base] + u1 * e[base + 1] + u2 * e[base + 2] + u3 * e[base + 3];
+    }
+
+    // Derivadas de los pesos de Catmull-Rom (suman 0).
+    static double dA(double t) {
+        return (-3 * t * t + 4 * t - 1) * 0.5;
+    }
+
+    static double dB(double t) {
+        return (9 * t * t - 10 * t) * 0.5;
+    }
+
+    static double dC(double t) {
+        return (-9 * t * t + 8 * t + 1) * 0.5;
+    }
+
+    static double dD(double t) {
+        return (3 * t * t - 2 * t) * 0.5;
     }
 
     // Pesos de Catmull-Rom para t en [0, 1); suman 1.
