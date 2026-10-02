@@ -23,6 +23,10 @@ flat in float tamanoVoxel;
 flat in vec3 luz;
 flat in int cara;
 
+// Alfa de la textura en el último colorLod(): las siluetas de plantas en cruz lo usan para
+// recortar (lod_textura_recorte, y el fundido); el resto del atlas es opaco (1).
+float alfaTextura = 1.0;
+
 vec4 colorLod() {
     vec3 color = vertexColor.rgb;
     if (uvTamano.x > 0.0) {
@@ -48,8 +52,10 @@ vec4 colorLod() {
         }
         vec2 uv = origen + fract(repeticion) * tamano;
         vec4 tex = textureGrad(Sampler0, uv, dFdx(repeticion) * tamano, dFdy(repeticion) * tamano);
+        alfaTextura = tex.a;
         vec3 detalle = tex.rgb / max(promedio, vec3(1.0 / 255.0));
-        // El atlas del LOD es opaco (AtlasLod: huecos rellenos, oscuros en el follaje); el alfa queda por las dudas.
+        // El atlas del LOD es opaco (AtlasLod: huecos rellenos, oscuros en el follaje) salvo las
+        // siluetas de las cruces, que se recortan por alfa (alfaTextura).
         color *= mix(vec3(1.0), detalle, tex.a);
     }
     return vec4(color * luz, ColorModulator.a);

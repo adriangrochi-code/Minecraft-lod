@@ -430,10 +430,10 @@ public final class MonitorRendimiento {
         ConfigLod.Cliente c = ConfigLod.CLIENTE;
         ParametrosCalidad q = ConfigLod.calidadCliente();
         Minecraft mc = Minecraft.getInstance();
-        return String.format(Locale.ROOT, "preset=%s radio=%d umbral=%.2f hilos=%d cache=%dMB lod=%s texturas=%s cuevas=%s ao=%s aoCostados=%s ssao=%s agua=%s px=%.1f-%.1f relieve=%s aproximado=%s pregen=%s(%d) escalado=%s(%d%%) distanciaVanilla=%d graficos=%s",
+        return String.format(Locale.ROOT, "preset=%s radio=%d umbral=%.2f hilos=%d cache=%dMB lod=%s texturas=%s cuevas=%s ao=%s aoCostados=%s ssao=%s agua=%s plantas=%s px=%.1f-%.1f relieve=%s aproximado=%s pregen=%s(%d) escalado=%s(%d%%) distanciaVanilla=%d graficos=%s",
                 c.seleccion.get(), q.radioLodChunks(), q.umbralPx(), q.hilosGeneracion(), q.cacheRamMb(),
                 c.lodActivo.get(), c.texturasLod.get(), c.descartarCuevas.get(), c.oclusionAmbiental.get(), c.oclusionCostados.get(),
-                c.oclusionPantalla.get(), c.aguaTranslucida.get(), c.pixelesMinimos.get(), c.pixelesMaximos.get(),
+                c.oclusionPantalla.get(), c.aguaTranslucida.get(), c.siluetasPlantas.get(), c.pixelesMinimos.get(), c.pixelesMaximos.get(),
                 c.ocultarTapado.get(), c.generacionAproximada.get(), c.pregenerar.get(), c.radioPregeneracion.get(),
                 c.escalado.get(), c.fsrEscalaPorcentaje.get(), mc.options.getEffectiveRenderDistance(),
                 mc.options.graphicsMode().get());

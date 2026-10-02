@@ -48,8 +48,19 @@ public final class GeometriaLod {
      * una pasada translúcida propia (contrato Voxy de los shaderpacks).
      */
     public static final int GRUPO_AGUA = CARAS;
-    /** Grupos de vértices: las 6 caras y el agua. */
-    public static final int GRUPOS = CARAS + 1;
+    /**
+     * Grupo de las plantas en cruz ({@link #dibujarCruces}): planos con silueta recortada
+     * por alfa, dibujados aparte (shader con discard y sin culling: se ven de los dos lados).
+     */
+    public static final int GRUPO_CRUZ = CARAS + 1;
+    /** Grupos de vértices: las 6 caras, el agua y las cruces. */
+    public static final int GRUPOS = CARAS + 2;
+    /**
+     * Marca de cruz en {@link #niveles} (bit 7 del byte de alfa del vértice compacto; el
+     * log2 del vóxel no pasa de 10): el shader corre el plano medio bloque hacia adentro,
+     * al centro del bloque, que el formato de posiciones enteras no puede expresar.
+     */
+    static final int MARCA_CRUZ = 16;
     /**
      * Bytes por vértice del formato del contrato Voxy: el compacto más un int con el
      * estado de bloque (bits 0-15, para el {@code customId} del pack), la luz de cielo
@@ -97,6 +108,11 @@ public final class GeometriaLod {
     public interface Texturas {
         /** @return la textura de esa cara del estado de bloque, o null para dibujarla con color plano */
         Cara cara(int idEstado, Quad.Eje eje, boolean positivo);
+
+        /** Silueta recortable de una planta en cruz (con alfa); null = no se dibuja. */
+        default Cara cruz(int idEstado) {
+            return null;
+        }
     }
 
     /**
@@ -156,6 +172,7 @@ public final class GeometriaLod {
     private static final VertexLightSampler.LuzEsquinas LUZ_PLENA = new VertexLightSampler.LuzEsquinas(15, 15, 15, 15);
     private boolean oclusionAmbiental;
     private boolean oclusionCostados;
+    private boolean cruces;
 
     /**
      * Vacía la geometría conservando sus arreglos: el hilo de mallas usa siempre la
@@ -187,6 +204,7 @@ public final class GeometriaLod {
         oclusionAmbiental = false;
         oclusionCostados = false;
         separarAgua = false;
+        cruces = false;
     }
 
     /**
@@ -217,6 +235,15 @@ public final class GeometriaLod {
     /** El agua va a {@link #GRUPO_AGUA} en vez de al grupo de su cara (pasada translúcida aparte). */
     public void separarAgua(boolean separar) {
         this.separarAgua = separar;
+    }
+
+    /**
+     * Plantas en cruz ({@link SuperVoxel.Material#CRUZ}) del nivel 0 como dos planos con su
+     * silueta, en {@link #GRUPO_CRUZ}. Solo con texturas (el recorte es del shader propio);
+     * si no, no se dibujan (como el aire).
+     */
+    public void dibujarCruces(boolean dibujar) {
+        this.cruces = dibujar;
     }
 
     /** Oscurecer rincones y bases de paredes (oclusión ambiental por vértice, sección 25 punto 5). */
@@ -285,7 +312,86 @@ public final class GeometriaLod {
                 agregados++;
             }
         }
+        if (cruces && fuenteTexturas != null && escala == 1f) {
+            agregados += agregarCruces(grid, lado, ox, oy, oz);
+        }
         return agregados;
+    }
+
+    /**
+     * Dos planos por planta (uno perpendicular a X y otro a Z, por el centro del bloque),
+     * una cruz "+" vista de arriba; una columna de la misma planta (caña, bambú) va en un
+     * solo par de planos. Luz: la del lugar de la planta, sin oclusión.
+     *
+     * @return planos agregados
+     */
+    int agregarCruces(SuperVoxel[] grid, int lado, float ox, float oy, float oz) {
+        int agregados = 0;
+        for (int x = 0; x < lado; x++) {
+            for (int z = 0; z < lado; z++) {
+                int y = 0;
+                while (y < lado) {
+                    SuperVoxel v = grid[(x * lado + y) * lado + z];
+                    if (v.material() != SuperVoxel.Material.CRUZ) {
+                        y++;
+                        continue;
+                    }
+                    int alto = 1;
+                    while (y + alto < lado) {
+                        SuperVoxel w = grid[(x * lado + y + alto) * lado + z];
+                        if (w.material() != SuperVoxel.Material.CRUZ || w.estado() != v.estado()
+                                || w.r() != v.r() || w.g() != v.g() || w.b() != v.b()
+                                || w.luzHorneada() != v.luzHorneada()) {
+                            break;
+                        }
+                        alto++;
+                    }
+                    Cara cara = v.idEstado() == SuperVoxel.SIN_ESTADO ? null : fuenteTexturas.cruz(v.idEstado());
+                    // Sin tesela propia (sprites de más): sin recorte sería un rectángulo, no se dibuja.
+                    if (cara != null && cara.sprite() != 0) {
+                        int rgb = cara.usaColorDelVoxel()
+                                ? ((v.r() & 0xFF) << 16) | ((v.g() & 0xFF) << 8) | (v.b() & 0xFF) : cara.promedioRgb();
+                        float x0 = ox + x, y0 = oy + y, z0 = oz + z;
+                        // Plano X (cara +X, corrido a x + 0,5 por el shader): de z a z+1.
+                        verticeCruz(x0, y0, z0, 1, v, rgb, cara);
+                        verticeCruz(x0, y0, z0 + 1, 1, v, rgb, cara);
+                        verticeCruz(x0, y0 + alto, z0 + 1, 1, v, rgb, cara);
+                        verticeCruz(x0, y0 + alto, z0, 1, v, rgb, cara);
+                        // Plano Z (cara +Z, a z + 0,5): de x a x+1.
+                        verticeCruz(x0, y0, z0, 5, v, rgb, cara);
+                        verticeCruz(x0 + 1, y0, z0, 5, v, rgb, cara);
+                        verticeCruz(x0 + 1, y0 + alto, z0, 5, v, rgb, cara);
+                        verticeCruz(x0, y0 + alto, z0, 5, v, rgb, cara);
+                        agregados += 2;
+                    }
+                    y += alto;
+                }
+            }
+        }
+        return agregados;
+    }
+
+    /** Sombra de los planos de una cruz: entre la de los costados X y Z. */
+    static final float SOMBRA_CRUZ = 0.7f;
+
+    private void verticeCruz(float x, float y, float z, int cara, SuperVoxel v, int rgb, Cara textura) {
+        asegurarCapacidad();
+        int i = vertices * 3;
+        posiciones[i] = x;
+        posiciones[i + 1] = y;
+        posiciones[i + 2] = z;
+        int luz = v.luzHorneada();
+        colores[vertices] = color(rgb, SOMBRA_CRUZ, luz);
+        coloresBase[vertices] = color(rgb, 1f, 15);
+        luces[vertices] = (byte) luz;
+        lucesBloque[vertices] = (byte) v.luzBloque();
+        sprites[vertices] = textura.sprite();
+        caras[vertices] = (byte) cara;
+        niveles[vertices] = (byte) MARCA_CRUZ;
+        estados[vertices] = v.idEstado();
+        grupos[vertices] = (byte) GRUPO_CRUZ;
+        verticesPorCara[GRUPO_CRUZ]++;
+        vertices++;
     }
 
     /**
@@ -639,14 +745,14 @@ public final class GeometriaLod {
         return verticesPorCara[cara];
     }
 
-    /** Vértices fuera del grupo del agua (todos si no se separa). */
+    /** Vértices fuera de los grupos del agua y de las cruces (todos si no se separan). */
     public int verticesOpacos() {
-        return vertices - verticesPorCara[GRUPO_AGUA];
+        return vertices - verticesPorCara[GRUPO_AGUA] - verticesPorCara[GRUPO_CRUZ];
     }
 
-    /** -1: todos menos el agua separada; si no, ese grupo. */
+    /** -1: todos menos el agua separada y las cruces; si no, ese grupo. */
     private boolean enGrupo(int i, int grupo) {
-        return grupo < 0 ? grupos[i] != GRUPO_AGUA : grupos[i] == grupo;
+        return grupo < 0 ? grupos[i] < CARAS : grupos[i] == grupo;
     }
 
     /**

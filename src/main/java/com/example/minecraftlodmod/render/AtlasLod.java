@@ -144,6 +144,22 @@ public final class AtlasLod {
         return opaca;
     }
 
+    /**
+     * Tesela de silueta recortable (plantas en cruz): lo opaco queda opaco y los huecos
+     * con el promedio y alfa 1 (casi transparente, el shader los descarta). Alfa 1 y no 0:
+     * los mipmaps de vanilla ignoran el color de lo que tiene alfa 0 y los bordes se
+     * oscurecerían.
+     */
+    public static int[] recortable(int[] tesela, int promedioRgb) {
+        int hueco = abgr((promedioRgb >> 16) & 0xFF, (promedioRgb >> 8) & 0xFF, promedioRgb & 0xFF, 1);
+        int[] r = new int[tesela.length];
+        for (int i = 0; i < tesela.length; i++) {
+            int p = tesela[i];
+            r[i] = ((p >>> 24) & 0xFF) < 128 ? hueco : p | 0xFF000000;
+        }
+        return r;
+    }
+
     /** Promedio 0xRRGGBB de una tesela ya opaca (el que usa el shader para sacar el detalle). */
     public static int promedioTesela(int[] tesela) {
         long r = 0, g = 0, b = 0;

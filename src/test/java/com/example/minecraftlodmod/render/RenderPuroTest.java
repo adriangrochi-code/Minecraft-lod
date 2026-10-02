@@ -608,4 +608,76 @@ class RenderPuroTest {
         assertEquals(0, g.verticesDeCara(GeometriaLod.GRUPO_AGUA));
         assertEquals(g.vertices(), g.verticesOpacos());
     }
+
+    private static SuperVoxel cruz(int estado) {
+        return new SuperVoxel((byte) 40, (byte) 160, (byte) 40, (byte) SuperVoxel.LLENO, SuperVoxel.Material.CRUZ,
+                (byte) 0, (short) estado).conLuzHorneada(15);
+    }
+
+    private static final GeometriaLod.Texturas CON_SILUETA = new GeometriaLod.Texturas() {
+        @Override
+        public GeometriaLod.Cara cara(int idEstado, com.example.minecraftlodmod.generation.Quad.Eje eje, boolean positivo) {
+            return new GeometriaLod.Cara(3, 0x808080, true);
+        }
+
+        @Override
+        public GeometriaLod.Cara cruz(int idEstado) {
+            return new GeometriaLod.Cara(9, 0x30A030, true);
+        }
+    };
+
+    @Test
+    void unaColumnaDeCanaEsUnParDePlanosCruzadosEnSuGrupo() {
+        // Suelo en y=0 y tres bloques de caña encima, en una grilla de 4.
+        int lado = 4;
+        SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        SuperVoxel[] grid = new SuperVoxel[lado * lado * lado];
+        Arrays.fill(grid, aire);
+        grid[(1 * lado) * lado + 2] = solido(15);
+        for (int y = 1; y <= 3; y++) {
+            grid[(1 * lado + y) * lado + 2] = cruz(77);
+        }
+        GeometriaLod g = new GeometriaLod();
+        g.usarTexturas(CON_SILUETA);
+        g.dibujarCruces(true);
+        g.agregarSeccion(grid, lado, 0, 0, 0, 1);
+
+        assertEquals(8, g.verticesDeCara(GeometriaLod.GRUPO_CRUZ), "dos planos de 4 vértices para toda la columna");
+        assertEquals(24, g.verticesOpacos(), "el suelo queda como un cubo entero: la caña no le tapa la cara de arriba");
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(8 * GeometriaLod.BYTES_COMPACTO);
+        g.escribirCompacto(b, GeometriaLod.GRUPO_CRUZ);
+        b.flip();
+        b.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < 8; i++) {
+            short x = b.getShort(), y = b.getShort(), z = b.getShort(), sprite = b.getShort();
+            b.get(); b.get(); b.get();
+            int alfa = b.get() & 0xFF;
+            assertEquals(9, sprite & GeometriaLod.MAX_SPRITE);
+            assertTrue((alfa & 128) != 0, "marca de cruz para el corrimiento al centro del bloque");
+            assertTrue(y == 1 || y == 4, "de la base de la caña a su punta: " + y);
+            assertTrue(x == 1 || x == 2, "x: " + x);
+            assertTrue(z == 2 || z == 3, "z: " + z);
+        }
+    }
+
+    @Test
+    void sinLaOpcionOSinSiluetaLasCrucesNoSeDibujan() {
+        SuperVoxel[] grid = {cruz(5)};
+        GeometriaLod apagada = new GeometriaLod();
+        apagada.usarTexturas(CON_SILUETA);
+        apagada.agregarSeccion(grid, 1, 0, 0, 0, 1);
+        assertEquals(0, apagada.vertices());
+
+        GeometriaLod sinSilueta = new GeometriaLod();
+        sinSilueta.usarTexturas((estado, eje, positivo) -> new GeometriaLod.Cara(3, 0x808080, true));
+        sinSilueta.dibujarCruces(true);
+        sinSilueta.agregarSeccion(grid, 1, 0, 0, 0, 1);
+        assertEquals(0, sinSilueta.vertices(), "sin tesela recortable sería un rectángulo");
+
+        GeometriaLod lejos = new GeometriaLod();
+        lejos.usarTexturas(CON_SILUETA);
+        lejos.dibujarCruces(true);
+        lejos.agregarSeccion(grid, 1, 0, 0, 0, 16);
+        assertEquals(0, lejos.vertices(), "solo en el nivel 0");
+    }
 }

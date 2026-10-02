@@ -6,7 +6,8 @@
 //               0 = sin textura) y luz de bloque cuantizada 0-3 (bits 14-15)
 //   Color     = color plano de la cara (tinte, sombra de cara y luz horneada ya aplicados);
 //               el alfa trae la cara (bits 0-2: 0 -X, 1 +X, 2 -Y, 3 +Y, 4 -Z, 5 +Z) y el
-//               tamaño del vóxel (bits 3-7: log2 de los bloques por lado)
+//               tamaño del vóxel (bits 3-6: log2 de los bloques por lado) y la marca de
+//               planta en cruz (bit 7: el plano va al centro del bloque, GeometriaLod#agregarCruces)
 // El rectángulo del sprite en el atlas, su color promedio y el sprite "de
 // abajo" (tierra bajo la franja de pasto) salen de la tabla (Sampler1,
 // PaletaTexturas.TABLA_SPRITES): 4 texeles RGBA8 por sprite.
@@ -43,15 +44,23 @@ ivec4 texel(int columna, int fila) {
 
 void main() {
     vec3 pos = vec3(PosSprite.xyz);
+    int alfa = int(Color.a * 255.0 + 0.5);
+    cara = alfa & 7;
+    if ((alfa & 128) != 0) {
+        // Cruz: las posiciones son enteras; el plano X o Z se corre al centro del bloque.
+        if (cara / 2 == 0) {
+            pos.x += 0.5;
+        } else {
+            pos.z += 0.5;
+        }
+    }
     vec3 relativa = pos + ChunkOffset;
     float lejos = max(0.0, length(relativa.xz) - Curvatura.y);
     relativa.y -= Curvatura.x * lejos * lejos;
     gl_Position = ProjMat * ModelViewMat * vec4(relativa, 1.0);
     posLocal = pos;
     vertexColor = vec4(Color.rgb, 1.0);
-    int alfa = int(Color.a * 255.0 + 0.5);
-    cara = alfa & 7;
-    tamanoVoxel = float(1 << (alfa >> 3));
+    tamanoVoxel = float(1 << ((alfa >> 3) & 15));
     int sprite = PosSprite.w & 0x3FFF;
     float luzBloque = float((PosSprite.w >> 14) & 3);
     // ColorModulator es la luz del cielo a esta hora (de noche oscurece todo); lo que tiene

@@ -91,8 +91,13 @@ public final class PaletaTexturas {
      * bloque, con su rectángulo en el atlas de bloques ACTIVO: cambiar de
      * paquete de texturas recalcula la tabla y el LOD se redibuja con él.
      */
-    public record TablaTexturas(GeometriaLod.Cara[] arriba, GeometriaLod.Cara[] costado)
+    public record TablaTexturas(GeometriaLod.Cara[] arriba, GeometriaLod.Cara[] costado, GeometriaLod.Cara[] cruces)
             implements GeometriaLod.Texturas {
+        @Override
+        public GeometriaLod.Cara cruz(int idEstado) {
+            return idEstado < 0 || idEstado >= cruces.length ? null : cruces[idEstado];
+        }
+
         @Override
         public GeometriaLod.Cara cara(int idEstado, Quad.Eje eje, boolean positivo) {
             if (idEstado < 0 || idEstado >= arriba.length) {
@@ -145,6 +150,7 @@ public final class PaletaTexturas {
         Arrays.fill(base, -1);
         GeometriaLod.Cara[] carasArriba = new GeometriaLod.Cara[total];
         GeometriaLod.Cara[] carasCostado = new GeometriaLod.Cara[total];
+        GeometriaLod.Cara[] carasCruz = new GeometriaLod.Cara[total];
         Map<TextureAtlasSprite, Integer> promedios = new HashMap<>();
         Map<TextureAtlasSprite, Integer> coberturas = new HashMap<>();
         Map<TextureAtlasSprite, Integer> indices = new HashMap<>();
@@ -224,7 +230,7 @@ public final class PaletaTexturas {
         List<int[]> horneadas = new ArrayList<>();
         List<Integer> promediosHorneadas = new ArrayList<>();
         hornearModelos(aHornear, tesela, sprites.size(), horneadas, promediosHorneadas,
-                base, carasArriba, carasCostado);
+                base, carasArriba, carasCostado, carasCruz);
         coloresDeEntidad(base, carasArriba, carasCostado);
         subirAtlas(mc, tesela, sprites, promedios, abajoDe, indices, horneadas, promediosHorneadas);
         if (comoTerreno) {
@@ -244,7 +250,7 @@ public final class PaletaTexturas {
                 }
             }
         }
-        tabla = new TablaTexturas(carasArriba, carasCostado);
+        tabla = new TablaTexturas(carasArriba, carasCostado, carasCruz);
         return new ColoresBloque.Paleta(base, tinte, fijo, cobertura);
     }
 
@@ -348,7 +354,8 @@ public final class PaletaTexturas {
      */
     private static void hornearModelos(List<Horneo> aHornear, int tesela, int primerIndice,
                                        List<int[]> horneadas, List<Integer> promediosHorneadas, int[] base,
-                                       GeometriaLod.Cara[] carasArriba, GeometriaLod.Cara[] carasCostado) {
+                                       GeometriaLod.Cara[] carasArriba, GeometriaLod.Cara[] carasCostado,
+                                       GeometriaLod.Cara[] carasCruz) {
         RandomSource azar = RandomSource.create(42);
         Map<java.nio.IntBuffer, Integer> repetidas = new HashMap<>();
         Map<TextureAtlasSprite, int[]> pixelesPorSprite = new HashMap<>();
@@ -371,7 +378,11 @@ public final class PaletaTexturas {
                     caras = new GeometriaLod.Cara[] {
                             teselaHorneada(arriba, true, tesela, primerIndice, repetidas, horneadas, promediosHorneadas),
                             teselaHorneada(costado, tenido, tesela, primerIndice, repetidas, horneadas, promediosHorneadas),
-                            null};
+                            null,
+                            // Silueta de costado con su alfa, para dibujar la planta en cruz.
+                            com.example.minecraftlodmod.generation.LectorSeccionMinecraft.esCruz(h.estado())
+                                    ? teselaRecortable(costado, tesela, primerIndice, repetidas, horneadas,
+                                    promediosHorneadas) : null};
                     if (!AtlasLod.vacia(arriba)) {
                         caras[2] = new GeometriaLod.Cara(0, ColorTextura.promedio(arriba), true);
                     }
@@ -386,6 +397,9 @@ public final class PaletaTexturas {
                 }
                 if (caras[1] != null && base[h.id()] >= 0) {
                     carasCostado[h.id()] = caras[1];
+                }
+                if (caras[3] != null && base[h.id()] >= 0) {
+                    carasCruz[h.id()] = caras[3];
                 }
             } catch (RuntimeException e) {
                 // Modelo de un mod que no se deja leer fuera del mundo: queda con la textura de su cara.
@@ -415,6 +429,27 @@ public final class PaletaTexturas {
             repetidas.put(clave, indice);
         }
         return cara(indice, promedio, usaColorDelVoxel);
+    }
+
+    /** Como {@link #teselaHorneada} pero con los huecos transparentes ({@link AtlasLod#recortable}). */
+    private static GeometriaLod.Cara teselaRecortable(int[] cruda, int tesela, int primerIndice,
+                                                      Map<java.nio.IntBuffer, Integer> repetidas,
+                                                      List<int[]> horneadas, List<Integer> promediosHorneadas) {
+        if (AtlasLod.vacia(cruda)) {
+            return null;
+        }
+        int promedio = ColorTextura.promedio(cruda);
+        int[] recortable = AtlasLod.recortable(cruda, promedio);
+        java.nio.IntBuffer clave = java.nio.IntBuffer.wrap(recortable);
+        Integer indice = repetidas.get(clave);
+        if (indice == null) {
+            indice = primerIndice + horneadas.size();
+            horneadas.add(recortable);
+            promediosHorneadas.add(AtlasLod.promedioTesela(recortable));
+            repetidas.put(clave, indice);
+        }
+        // El color del vóxel (planta con el tinte del bioma) va a la silueta.
+        return cara(indice, promedio, true);
     }
 
     private static AtlasLod.QuadModelo quadModelo(BakedQuad q, Map<TextureAtlasSprite, int[]> pixelesPorSprite) {

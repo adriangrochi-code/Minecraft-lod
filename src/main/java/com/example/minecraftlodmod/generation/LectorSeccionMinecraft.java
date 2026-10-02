@@ -57,7 +57,25 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         /** Capa fina que cubre toda la base (nieve, alfombras): pinta la cara de arriba del bloque de abajo. */
         CUBIERTA,
         /** Decoración sumergida (algas, pasto marino): cuenta como agua, sin huecos bajo el agua. */
-        SUMERGIDA
+        SUMERGIDA,
+        /**
+         * Planta alta y fina ({@link #esCruz}): en el nivel 0 se dibuja como dos planos cruzados
+         * con su silueta ({@link SuperVoxel.Material#CRUZ}); también tiñe el suelo como la decoración.
+         */
+        CRUZ
+    }
+
+    /**
+     * Plantas que de lejos se reconocen por su silueta alta: caña, bambú y las de dos
+     * bloques (pasto alto, helechos grandes, girasoles, lilas, rosales, peonías). Las
+     * sumergidas (pasto marino alto) siguen siendo agua.
+     */
+    public static boolean esCruz(BlockState estado) {
+        Block b = estado.getBlock();
+        return (b instanceof net.minecraft.world.level.block.DoublePlantBlock
+                || b instanceof net.minecraft.world.level.block.SugarCaneBlock
+                || b instanceof net.minecraft.world.level.block.BambooStalkBlock)
+                && !estado.getFluidState().getType().isSame(Fluids.WATER);
     }
 
     private static final Map<BlockState, Forma> FORMAS = new ConcurrentHashMap<>();
@@ -70,6 +88,9 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
     private static Forma calcularForma(BlockState estado) {
         if (estado.isAir() || estado.getBlock() instanceof LiquidBlock) {
             return Forma.NORMAL; // el aire y el agua/lava se resuelven por material
+        }
+        if (esCruz(estado)) {
+            return Forma.CRUZ;
         }
         try {
             VoxelShape forma = estado.getShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
@@ -385,6 +406,9 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         switch (info.forma()) {
             case DECORACION, CUBIERTA -> estado = Blocks.AIR.defaultBlockState();
             case SUMERGIDA -> estado = AGUA;
+            case CRUZ -> {
+                return cruz(info, x, y, z);
+            }
             case NORMAL -> { }
         }
         if (info.forma() != Forma.NORMAL) {
@@ -417,7 +441,7 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
         }
         // Flores, pasto, cultivos y caña no se dibujan en el LOD: tiñen el bloque de abajo en
         // la proporción que cubren, así un campo de flores lejano conserva su color.
-        if (infoEncima != null && infoEncima.forma() == Forma.DECORACION) {
+        if (infoEncima != null && (infoEncima.forma() == Forma.DECORACION || infoEncima.forma() == Forma.CRUZ)) {
             int cobertura = ColoresBloque.cobertura(infoEncima.id());
             if (cobertura > 0) {
                 int rgbDecoracion = biomasAmplias != null ? ColoresBloque.rgb(infoEncima.id(), encima, this, x, y, z)
@@ -447,6 +471,19 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
 
     private static final SuperVoxel AIRE =
             new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+
+    /** Planta en cruz: su color (con el tinte del bioma), la luz del lugar donde está y su estado. */
+    private SuperVoxel cruz(InfoEstado info, int x, int y, int z) {
+        int rgb = biomasAmplias != null ? ColoresBloque.rgb(info.id(), info.estado(), this, x, y, z)
+                : ColoresBloque.rgb(info.id(), info.estado(), biomas[((x >> 2) * 4 + (y >> 2)) * 4 + (z >> 2)],
+                origenX + x, origenZ + z);
+        int luces = luces(x, y, z);
+        int flags = (luces >> 4) << 4 | SuperVoxel.cuantizarLuzBloque(Math.max(luces & 15, info.emision())) << 2;
+        int id = info.id();
+        short idEstado = id > 0 && id <= 0xFFFF ? (short) id : SuperVoxel.SIN_ESTADO;
+        return new SuperVoxel((byte) (rgb >> 16), (byte) (rgb >> 8), (byte) rgb, (byte) SuperVoxel.LLENO,
+                SuperVoxel.Material.CRUZ, (byte) flags, idEstado);
+    }
 
     private static int maxLuces(int a, int b) {
         return Math.max(a & 0xF0, b & 0xF0) | Math.max(a & 15, b & 15);

@@ -200,7 +200,7 @@ public final class GreedyMesher {
     }
 
     private static boolean esAire(SuperVoxel v) {
-        return v == null || v.material() == SuperVoxel.Material.AIRE;
+        return v == null || v.sinVolumen();
     }
 
     /**
@@ -379,7 +379,7 @@ public final class GreedyMesher {
         return resultado;
     }
 
-    /** Sólidos y vegetación ocluyen; aire y agua no (el agua no oscurece la orilla). */
+    /** Sólidos y vegetación ocluyen; aire, plantas en cruz y agua no (el agua no oscurece la orilla). */
     private static boolean ocluye(SuperVoxel[] grid, int lado, Quad.Eje eje, int capa, int u, int v,
                                   Vecinos vecinos) {
         int fuera = (capa < 0 || capa >= lado ? 1 : 0) + (u < 0 || u >= lado ? 1 : 0) + (v < 0 || v >= lado ? 1 : 0);
@@ -391,7 +391,7 @@ public final class GreedyMesher {
         } else {
             return false; // diagonal fuera de dos grillas a la vez: sin dato, no ocluye
         }
-        return s != null && s.material() != SuperVoxel.Material.AIRE && s.material() != SuperVoxel.Material.AGUA;
+        return s != null && !s.sinVolumen() && s.material() != SuperVoxel.Material.AGUA;
     }
 
     private static SuperVoxel afuera(Vecinos vecinos, Quad.Eje eje, int capa, int u, int v) {

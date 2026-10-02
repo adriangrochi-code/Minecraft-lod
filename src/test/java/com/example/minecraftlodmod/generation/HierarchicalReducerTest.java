@@ -205,4 +205,17 @@ class HierarchicalReducerTest {
         entrada[6] = entrada[6].conNevado(false);
         assertFalse(HierarchicalReducer.reducir(entrada, 2)[0].nevado(), "1 de 4 columnas nevadas");
     }
+
+    @Test
+    void lasPlantasEnCruzNoPasanAlNivelDeArriba() {
+        SuperVoxel planta = new SuperVoxel((byte) 40, (byte) 160, (byte) 40, (byte) SuperVoxel.LLENO,
+                SuperVoxel.Material.CRUZ, (byte) 0, (short) 12);
+        SuperVoxel aire = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0, SuperVoxel.Material.AIRE, (byte) 0);
+        SuperVoxel[] entrada = new SuperVoxel[8];
+        java.util.Arrays.fill(entrada, planta);
+        SuperVoxel[] reducido = HierarchicalReducer.reducir(entrada, 2);
+        assertEquals(SuperVoxel.Material.AIRE, reducido[0].material(), "un cantero de caña no es un bloque sólido");
+        java.util.Arrays.fill(entrada, aire);
+        assertEquals(SuperVoxel.Material.AIRE, HierarchicalReducer.reducir(entrada, 2)[0].material());
+    }
 }

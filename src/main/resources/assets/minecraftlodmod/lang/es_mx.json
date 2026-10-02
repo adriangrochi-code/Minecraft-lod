@@ -56,6 +56,8 @@
   "minecraftlodmod.configuration.oclusionCostados.tooltip": "La oclusión ambiental también en los costados y caras de abajo del LOD, como vanilla (si no, solo arriba): más relieve en acantilados, laderas y bosques. Separa caras que antes se fusionaban: medido +29% de geometría y +18% de GPU. Para GPUs con margen.",
   "minecraftlodmod.configuration.aguaTranslucida": "Agua translúcida",
   "minecraftlodmod.configuration.aguaTranslucida.tooltip": "El agua del LOD es translúcida como la de vanilla: se ven la orilla, los bajíos y el fondo cerca de la costa; lo hondo queda oscuro. Solo con texturas del LOD (sin shaderpack ni VulkanMod).",
+  "minecraftlodmod.configuration.siluetasPlantas": "Siluetas de plantas",
+  "minecraftlodmod.configuration.siluetasPlantas.tooltip": "Caña, bambú, pasto alto y flores de dos bloques en el LOD cercano se dibujan como dos planos cruzados con su silueta, como de cerca, en vez de desaparecer. Solo con texturas del LOD (sin shaderpack ni VulkanMod).",
   "minecraftlodmod.configuration.lodActivo": "LOD activado",
   "minecraftlodmod.configuration.lodActivo.tooltip": "Dibuja el terreno lejano. Apágalo para comparar contra vanilla; la generación de LOD sigue funcionando.",
   "minecraftlodmod.configuration.vanillaReducida": "Modo híbrido (vanilla corta)",

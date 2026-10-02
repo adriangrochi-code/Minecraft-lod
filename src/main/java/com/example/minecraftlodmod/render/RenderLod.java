@@ -195,6 +195,8 @@ public final class RenderLod {
      * VulkanMod (su variante no tiene fundido).
      */
     private static volatile ShaderInstance shaderTexturaFundido;
+    /** Siluetas de plantas en cruz: lod_textura con recorte por alfa (ver lod_textura_recorte.fsh). */
+    private static volatile ShaderInstance shaderTexturaRecorte;
     /** Sube cada vez que cambian las texturas (resource pack, F3+T): hay que rearmar todo. */
     private static volatile int versionTexturas;
     private int versionTexturasVista = -1;
@@ -204,6 +206,7 @@ public final class RenderLod {
     private int oclusionEnUso;
     /** Agua translúcida con el shader propio: la superficie va aparte y se dibuja con mezcla. */
     private boolean aguaEnUso;
+    private boolean plantasEnUso;
     /** Opacidad del agua del LOD: la de la textura del agua de vanilla (~180/255). */
     static final float ALFA_AGUA = 0.72f;
     private boolean shadersEnUso;
@@ -334,7 +337,16 @@ public final class RenderLod {
         }
         if (conVulkanMod()) {
             shaderTexturaFundido = null;
+            shaderTexturaRecorte = null;
             return;
+        }
+        try {
+            evento.registerShader(new ShaderInstance(evento.getResourceProvider(),
+                    ResourceLocation.fromNamespaceAndPath(MinecraftLodMod.MOD_ID, "lod_textura_recorte"),
+                    FORMATO_TEXTURA), cargado -> shaderTexturaRecorte = cargado);
+        } catch (IOException e) {
+            LOG.error("LOD: no se pudo cargar el shader de siluetas; las plantas en cruz no se dibujan", e);
+            shaderTexturaRecorte = null;
         }
         try {
             evento.registerShader(new ShaderInstance(evento.getResourceProvider(),
@@ -630,6 +642,7 @@ public final class RenderLod {
         int usarOclusion = !ConfigLod.CLIENTE.oclusionAmbiental.get() ? 0
                 : ConfigLod.CLIENTE.oclusionCostados.get() ? 2 : 1;
         boolean usarAgua = ConfigLod.CLIENTE.aguaTranslucida.get();
+        boolean usarPlantas = ConfigLod.CLIENTE.siluetasPlantas.get() && shaderTexturaRecorte != null;
         boolean usarShaders = ShadersIris.enUso();
         boolean usarVoxy = false;
         if (usarShaders) {
@@ -638,11 +651,12 @@ public final class RenderLod {
         }
         if (versionTexturas != versionTexturasVista || usarTexturas != texturasEnUso
                 || usarOclusion != oclusionEnUso || usarShaders != shadersEnUso || usarVoxy != voxyEnUso
-                || usarAgua != aguaEnUso) {
+                || usarAgua != aguaEnUso || usarPlantas != plantasEnUso) {
             versionTexturasVista = versionTexturas;
             texturasEnUso = usarTexturas;
             oclusionEnUso = usarOclusion;
             aguaEnUso = usarAgua;
+            plantasEnUso = usarPlantas;
             if (usarShaders != shadersEnUso) {
                 LOG.info("LOD: shaderpack {}; el LOD se dibuja {}", usarShaders ? "activo" : "apagado",
                         usarShaders ? "con el terreno del pack" : "con sus propios shaders");
@@ -886,6 +900,7 @@ public final class RenderLod {
                 : texturasEnUso ? TipoMalla.TEXTURA : TipoMalla.PLANA;
         boolean voxy = voxyEnUso;
         boolean separarAgua = voxyEnUso || (aguaEnUso && tipoEsperado == TipoMalla.TEXTURA);
+        boolean cruces = plantasEnUso && tipoEsperado == TipoMalla.TEXTURA;
         // Con shaders las texturas no se dibujan, pero dan el color promedio de cada cara.
         GeometriaLod.Texturas texturas = texturasEnUso || bloque || voxyEnUso ? PaletaTexturas.tabla() : null;
         int oclusion = oclusionEnUso;
@@ -934,7 +949,7 @@ public final class RenderLod {
                 encoladas++;
                 hiloMallas.execute(new TareaMalla(prioridad(celda, camara, miraX, miraZ), secuenciaTareas.incrementAndGet(),
                         () -> armar(clave, celda, store, dimension, minSeccion, maxSeccion,
-                                cubiertos, verticales, vecinas, texturas, oclusion, unBuffer, bloque, voxy, separarAgua)));
+                                cubiertos, verticales, vecinas, texturas, oclusion, unBuffer, bloque, voxy, separarAgua, cruces)));
             }
         }
         boolean fundir = ConfigLod.CLIENTE.fundidoNiveles.get();
@@ -957,7 +972,7 @@ public final class RenderLod {
     private void armar(long clave, PlanCeldas.Celda celda, RegionFileStore store, byte dimension,
                        int minSeccion, int maxSeccion, Set<Long> deVanilla, Map<Long, RangoSecciones> verticales,
                        int vecinas, GeometriaLod.Texturas texturas, int oclusion, boolean unBuffer, boolean bloque,
-                       boolean voxy, boolean separarAgua) {
+                       boolean voxy, boolean separarAgua, boolean cruces) {
         long inicioArmado = System.nanoTime();
         try {
             GeometriaLod geometria = geometriaMallas.get();
@@ -967,6 +982,7 @@ public final class RenderLod {
             geometria.usarOclusionAmbiental(oclusion > 0);
             geometria.usarOclusionCostados(oclusion > 1);
             geometria.separarAgua(separarAgua);
+            geometria.dibujarCruces(cruces);
             int conDatos = celda.esGrande()
                     ? armarTesela(geometria, celda, store, dimension, minSeccion, maxSeccion)
                     : armarCelda(geometria, celda, store, dimension, minSeccion, maxSeccion, deVanilla, verticales,
@@ -996,6 +1012,13 @@ public final class RenderLod {
             }
             planos[2 * GeometriaLod.GRUPO_AGUA] = Float.NEGATIVE_INFINITY;
             planos[2 * GeometriaLod.GRUPO_AGUA + 1] = Float.POSITIVE_INFINITY;
+            // Plantas en cruz: su propia pasada (recorte por alfa, sin culling), siempre visibles.
+            int cruz = geometria.verticesDeCara(GeometriaLod.GRUPO_CRUZ);
+            if (cruz > 0) {
+                mallas[GeometriaLod.GRUPO_CRUZ] = malla(geometria, GeometriaLod.GRUPO_CRUZ, cruz, formato, memoria, tipo);
+            }
+            planos[2 * GeometriaLod.GRUPO_CRUZ] = Float.NEGATIVE_INFINITY;
+            planos[2 * GeometriaLod.GRUPO_CRUZ + 1] = Float.POSITIVE_INFINITY;
             if (unBuffer) {
                 // Lejos (teselas y celdas pasada la distancia de agrupado, 768 bloques o la que fije el
                 // auto-ajuste): un solo buffer con todas las caras.
@@ -1352,7 +1375,14 @@ public final class RenderLod {
             RenderSystem.setShaderTexture(0, PaletaTexturas.ATLAS);
             RenderSystem.setShaderTexture(1, PaletaTexturas.TABLA_SPRITES);
             ShaderInstance fundido = shaderTexturaFundido;
-            pasadasTextura(evento, camara, proyeccion, conTextura, fundido, false);
+            pasadasTextura(evento, camara, proyeccion, conTextura, fundido, -1);
+            ShaderInstance recorte = shaderTexturaRecorte;
+            if (plantasEnUso && recorte != null) {
+                // Siluetas de plantas: planos que se ven de los dos lados, recortados por alfa.
+                RenderSystem.disableCull();
+                pasadasTextura(evento, camara, proyeccion, recorte, fundido, GeometriaLod.GRUPO_CRUZ);
+                RenderSystem.enableCull();
+            }
             if (aguaEnUso) {
                 // Agua translúcida al final, sobre lo opaco ya dibujado (fondo marino incluido): deja
                 // ver la orilla y los bajíos, y lo hondo queda oscuro por su luz horneada. Escribe
@@ -1361,7 +1391,7 @@ public final class RenderLod {
                 RenderSystem.defaultBlendFunc();
                 RenderSystem.setShaderColor(((luzCielo >> 16) & 0xFF) / 255f, ((luzCielo >> 8) & 0xFF) / 255f,
                         (luzCielo & 0xFF) / 255f, ALFA_AGUA);
-                pasadasTextura(evento, camara, proyeccion, conTextura, fundido, true);
+                pasadasTextura(evento, camara, proyeccion, conTextura, fundido, GeometriaLod.GRUPO_AGUA);
                 RenderSystem.disableBlend();
             }
         }
@@ -1440,7 +1470,7 @@ public final class RenderLod {
             DesplazamientoCelda translucida = DibujoVoxy.empezarTranslucida();
             Malla agua = new Malla(evento.getModelViewMatrix(), proyeccion, null, null,
                     translucida != null ? translucida : desplazamiento, null, camara, false, inicioCurva, radioPlaneta);
-            agua.soloAgua = true;
+            agua.grupoAparte = GeometriaLod.GRUPO_AGUA;
             recorrerMallas(TipoMalla.VOXY, agua, false);
         } finally {
             DibujoVoxy.terminar();
@@ -1504,25 +1534,29 @@ public final class RenderLod {
      * {@code position_color} de vanilla no tiene ChunkOffset: ahí se usa
      * drawWithShader con la matriz desplazada.
      */
-    /** Mallas con texturas: lo entero sin discard (casi todo) y después lo que se funde. */
+    /**
+     * Mallas con texturas: lo entero sin discard (casi todo) y después lo que se funde.
+     *
+     * @param grupo -1 las 6 caras, o {@link GeometriaLod#GRUPO_AGUA} / {@link GeometriaLod#GRUPO_CRUZ}
+     */
     private void pasadasTextura(RenderLevelStageEvent evento, Vec3 camara, Matrix4f proyeccion,
-                                ShaderInstance conTextura, ShaderInstance fundido, boolean soloAgua) {
+                                ShaderInstance conTextura, ShaderInstance fundido, int grupo) {
         if (fundido == null) {
-            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.TODAS, soloAgua);
+            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.TODAS, grupo);
         } else {
-            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.ENTERAS, soloAgua);
-            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, fundido, Filtro.FUNDIENDO, soloAgua);
+            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, conTextura, Filtro.ENTERAS, grupo);
+            dibujarPasada(evento, camara, proyeccion, TipoMalla.TEXTURA, fundido, Filtro.FUNDIENDO, grupo);
         }
     }
 
     private void dibujarPasada(RenderLevelStageEvent evento, Vec3 camara, Matrix4f proyeccion,
                                TipoMalla tipo, ShaderInstance shader, Filtro filtro) {
-        dibujarPasada(evento, camara, proyeccion, tipo, shader, filtro, false);
+        dibujarPasada(evento, camara, proyeccion, tipo, shader, filtro, -1);
     }
 
-    /** @param soloAgua solo el grupo del agua separada (pasada translúcida) */
+    /** @param grupo -1 las 6 caras; si no, solo ese grupo (agua translúcida, plantas en cruz) */
     private void dibujarPasada(RenderLevelStageEvent evento, Vec3 camara, Matrix4f proyeccion,
-                               TipoMalla tipo, ShaderInstance shader, Filtro filtro, boolean soloAgua) {
+                               TipoMalla tipo, ShaderInstance shader, Filtro filtro, int grupo) {
         if (shader == null) {
             return;
         }
@@ -1547,7 +1581,7 @@ public final class RenderLod {
         Uniform fundido = desplazamiento != null || tipo == TipoMalla.TEXTURA ? shader.getUniform("Fundido") : null;
         Malla m = new Malla(evento.getModelViewMatrix(), proyeccion, shader, desplazamiento, null, fundido, camara,
                 curvaPorCelda, inicioCurva, radioPlaneta);
-        m.soloAgua = soloAgua;
+        m.grupoAparte = grupo;
         recorrerMallas(tipo, m, fundido != null || filtro == Filtro.ENTERAS, filtro);
         if (fundido != null) {
             fundido.set(1f, 1f);
@@ -1618,8 +1652,8 @@ public final class RenderLod {
         final Vec3 camara;
         final boolean curvaPorCelda;
         final double inicioCurva, radioPlaneta;
-        /** Pasada translúcida del contrato Voxy: solo el grupo del agua; si no, solo las 6 caras. */
-        boolean soloAgua;
+        /** Solo ese grupo ({@link GeometriaLod#GRUPO_AGUA}, {@link GeometriaLod#GRUPO_CRUZ}); -1: las 6 caras. */
+        int grupoAparte = -1;
         /** Para no mandar a la GPU las celdas fuera del campo de visión. */
         final CampoVision campo;
         /** Alto del mundo relativo a la cámara: la caja vertical de cada celda. */
@@ -1690,15 +1724,15 @@ public final class RenderLod {
             } else {
                 vista = new Matrix4f(modelView).translate(ox, oy, oz);
             }
-            int desde = soloAgua ? GeometriaLod.GRUPO_AGUA : 0;
-            int hasta = soloAgua ? GeometriaLod.GRUPOS : GeometriaLod.CARAS;
+            int desde = grupoAparte >= 0 ? grupoAparte : 0;
+            int hasta = grupoAparte >= 0 ? grupoAparte + 1 : GeometriaLod.CARAS;
             for (int cara = desde; cara < hasta; cara++) {
                 VertexBuffer[] piezas = buffers[cara];
                 double camaraEnEje = switch (cara >> 1) {
                     case 0 -> camara.x - origenX;
                     case 1 -> camara.y;
                     case 2 -> camara.z - origenZ;
-                    default -> 0; // agua: planos infinitos, siempre visible
+                    default -> 0; // agua y cruces: planos infinitos, siempre visibles
                 };
                 if (piezas == null || !GeometriaLod.caraVisible(cara, camaraEnEje, planos[2 * cara], planos[2 * cara + 1])) {
                     continue;
@@ -1890,7 +1924,7 @@ public final class RenderLod {
                             continue;
                         }
                         for (int y = n - 1; y >= 0; y--) {
-                            if (grilla[(x * n + y) * n + z].material() != SuperVoxel.Material.AIRE) {
+                            if (!grilla[(x * n + y) * n + z].sinVolumen()) {
                                 float suelo = banda * seccionesPorBanda * 16f + y * OclusionRelieve.COLUMNA;
                                 suelos[x * n + z] = suelo;
                                 tope = Math.max(tope, suelo + OclusionRelieve.COLUMNA);

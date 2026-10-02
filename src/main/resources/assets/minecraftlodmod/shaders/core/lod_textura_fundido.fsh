@@ -23,4 +23,8 @@ void main() {
         }
     }
     fragColor = colorLod();
+    // Siluetas de plantas en cruz (el resto del atlas es opaco): mismo recorte que lod_textura_recorte.
+    if (alfaTextura < 0.5) {
+        discard;
+    }
 }

@@ -81,7 +81,14 @@ public record SuperVoxel(
         AIRE((byte) 0),
         SOLIDO((byte) 1),
         AGUA((byte) 2),
-        VEGETACION((byte) 3);
+        VEGETACION((byte) 3),
+        /**
+         * Planta alta y fina (caña, bambú, pasto alto, girasoles) en el nivel 0: no ocupa
+         * volumen (para el terreno, las caras y la luz cuenta como aire), y se dibuja como
+         * dos planos cruzados con su silueta ({@code GeometriaLod}). Al reducir a niveles
+         * superiores desaparece.
+         */
+        CRUZ((byte) 4);
 
         public final byte codigo;
 
@@ -98,6 +105,11 @@ public record SuperVoxel(
             }
             throw new IllegalArgumentException("Código de material desconocido: " + codigo);
         }
+    }
+
+    /** Aire o una planta en cruz: nada que tape caras, dé relieve o se reduzca. */
+    public boolean sinVolumen() {
+        return material == Material.AIRE || material == Material.CRUZ;
     }
 
     /** Bit 0 de flags: si el supervóxel proviene de un colapso por homogeneidad. */

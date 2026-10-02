@@ -85,7 +85,7 @@ public final class HierarchicalReducer {
                 double rellenoColumna = 0;
                 for (int dy = 0; dy < 2; dy++) {
                     SuperVoxel v = entrada[indice(ox + dx, oy + dy, oz + dz, lado)];
-                    if (v.material() == SuperVoxel.Material.AIRE) {
+                    if (v.sinVolumen()) {
                         continue;
                     }
                     votosMaterial[v.material().ordinal()]++;
