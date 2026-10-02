@@ -1146,3 +1146,22 @@ agua en el borde de la grilla y las caras de abajo; los de adentro (cascadas)
 se dibujan. Medido: misma geometría, GPU +3%, +372 llamadas en la vista de
 prueba. Bordes entre niveles: revisados con cada nivel teñido, continuos.
 
+## 38. Ganchos para tipos de mundo (mod Farlands, "Tierra real") — 2026-10-02
+
+Tierra real (la Tierra a escala 1:8 y 1:6, cilíndrica y plana) es un mod
+aparte, **Farlands** (repo `Farlands-lod`, mod id `farlands`, numeración
+propia; diseño y decisiones en su `docs/tierra-real/`). El LOD no lo conoce:
+expone ganchos genéricos que cualquier tipo de mundo puede usar.
+
+- `generation/FuenteAltura`: la altura de la superficie, si es simple y el
+  nivel del agua por columna. `GeneradorAproximado.altura()` la usa en vez de
+  buscar la superficie en la densidad (0 evaluaciones de densidad en Tierra
+  real); `cubico/GeneracionVertical.superficieExacta` la usa para la franja
+  (esquinas 5×5, `simple`, nivel del agua). `-Dminecraftlodmod.sinAtajoAltura`
+  la apaga para medir.
+- `config/ConfigLod.cubicoPorDefecto`: un tipo de mundo prende por defecto las
+  opciones de `cubico/` en sus niveles (`ConfigLod.cubico(nivel, opcion)`).
+- `generation/PlanetaMundo`: radio del planeta en bloques y relieve lejano
+  para la curvatura y el horizonte real (`RenderLod.radioPlanetaActivo`, solo
+  con la opción de curvatura prendida).
+- `core/HorizonteCurvo.radioChunks` con relieve como parámetro.

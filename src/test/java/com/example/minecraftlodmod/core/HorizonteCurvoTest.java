@@ -43,4 +43,14 @@ class HorizonteCurvoTest {
     void alturaNegativaCuentaComoElMinimo() {
         assertEquals(HorizonteCurvo.alcanceVisible(2, 1e6), HorizonteCurvo.alcanceVisible(-50, 1e6));
     }
+
+    @Test
+    void relieveMasAltoAlargaElRadioYElPorDefectoNoCambia() {
+        double r = 6_371_000.0 / 8; // Tierra real 1:8
+        assertEquals(HorizonteCurvo.radioChunks(2, r, 0, 8192), HorizonteCurvo.radioChunks(2, r, HorizonteCurvo.RELIEVE, 0, 8192));
+        // Desde el suelo: ~1 785 + ~7 140 bloques con 32 de relieve; ~1 785 + ~19 960 con 250 (2 km a 1:8)
+        assertEquals(558, HorizonteCurvo.radioChunks(2, r, 0, 8192));
+        assertEquals(1359, HorizonteCurvo.radioChunks(2, r, 250, 0, 8192));
+        assertEquals(64, HorizonteCurvo.radioChunks(2, r, 250, 0, 64), "tope");
+    }
 }

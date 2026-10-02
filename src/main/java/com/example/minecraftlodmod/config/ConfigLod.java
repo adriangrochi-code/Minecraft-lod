@@ -261,6 +261,19 @@ public final class ConfigLod {
         }
     }
 
+    /**
+     * Mundos que prenden las opciones de {@code cubico/} aunque estén apagadas en
+     * la config (Tierra real: columnas de miles de bloques, sin islas flotantes;
+     * {@code docs/tierra-real/04-integracion-lod.md} punto 7). Lo asigna el tipo
+     * de mundo; en los demás mundos manda solo la config.
+     */
+    public static volatile java.util.function.Predicate<net.minecraft.world.level.Level> cubicoPorDefecto = nivel -> false;
+
+    /** Opción de {@code cubico/} del servidor resuelta para un nivel: prendida en la config o por el tipo de mundo. */
+    public static boolean cubico(net.minecraft.world.level.Level nivel, ModConfigSpec.BooleanValue opcion) {
+        return SPEC_SERVIDOR.isLoaded() && (opcion.get() || (nivel != null && cubicoPorDefecto.test(nivel)));
+    }
+
     public static final class Servidor {
         public final ModConfigSpec.EnumValue<ParametrosCalidad.Seleccion> seleccion;
         public final ModConfigSpec.IntValue radioServidoMaximo;

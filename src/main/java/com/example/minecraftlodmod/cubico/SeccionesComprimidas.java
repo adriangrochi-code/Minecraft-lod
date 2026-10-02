@@ -83,12 +83,15 @@ public final class SeccionesComprimidas {
 
     /** Cada tick, desde {@link GeneracionVertical}: barrido con tope de tiempo. */
     static void tick(MinecraftServer servidor, Map<ResourceKey<Level>, int[]> jugadores, int distanciaVista) {
-        if (!ConfigLod.SPEC_SERVIDOR.isLoaded() || !ConfigLod.SERVIDOR.comprimirSeccionesLejanas.get()) {
+        if (!ConfigLod.SPEC_SERVIDOR.isLoaded()) {
             return;
         }
         int distancia = ConfigLod.SERVIDOR.distanciaCompresion.get();
         long fin = System.nanoTime() + TOPE_NANOS_POR_TICK;
         for (ServerLevel nivel : servidor.getAllLevels()) {
+            if (!ConfigLod.cubico(nivel, ConfigLod.SERVIDOR.comprimirSeccionesLejanas)) {
+                continue; // apagada en la config y el tipo de mundo no la pide (Tierra real sí)
+            }
             var mapa = CARGADOS.get(nivel.dimension());
             if (mapa == null || mapa.isEmpty()) {
                 continue;

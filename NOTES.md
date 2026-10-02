@@ -315,10 +315,58 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Errores recurrentes / bloqueos
 
+### Pedido a la sesión del LOD (desde la rama `claude/tierra-real`, 2026-10-01)
+
+- **Crash con `compartirSeccionesUniformes` (cualquier mundo):** el agua que
+  fluye sobre una sección compartida tira `IllegalArgumentException: The value
+  1 is not in the specified inclusive range of 0 to 0` en
+  `ZeroBitStorage.getAndSet` (desde `FlowingFluid.spreadTo` →
+  `LevelChunk.setBlockState` → `LevelChunkSection.setBlockState`). Causa:
+  `SeccionesCompartidas.copiarSiCompartida` copia con
+  `s.getStates().copy()`, y en vanilla `SingleValuePalette.copy()` devuelve
+  **la misma paleta**, cuyo manejador de cambio de tamaño es el contenedor
+  compartido original: al escribir un bloque distinto en la "copia", la
+  paleta agranda el **compartido** (corrompiéndolo para todas las secciones
+  que lo usan) y la copia queda con almacenamiento de 0 bits. Arreglo
+  propuesto (una línea): crear un contenedor nuevo con el único valor, p. ej.
+  `new PalettedContainer<>(Block.BLOCK_STATE_REGISTRY, s.getStates().get(0, 0, 0), PalettedContainer.Strategy.SECTION_STATES)`
+  (o `recreate()` + `set`), en vez de `copy()`. Reproducido en Tierra real
+  (forceload de 15×15 chunks en los Alpes); crash report
+  `run/crash-reports/crash-2026-10-01_20.54.36-server.txt` en esa máquina.
+  Mientras tanto Tierra real no la prende por defecto.
+
+- **`CompletadoVertical` traba el hilo del servidor (2026-10-02, medido en
+  H10):** con un jugador conectado en Tierra real (franja vertical prendida),
+  al llegar a una zona nueva el servidor quedó 30-40 s sin responder y el
+  cliente se desconectó por "Timed out". Pilas del hilo del servidor (muestreo
+  cada 3 s, todas iguales): `CompletadoVertical.tick:182` → `mezclar:294` →
+  `DecoracionVertical.decorar:140` (`feature.placeWithBiomeCheck(nivel, …)`)
+  → `ServerChunkCache.getChunk` → `managedBlock`: las features escriben en los
+  chunks vecinos a través del `ServerLevel` y cada vecino que no está cargado
+  se carga **o genera** de forma síncrona en el hilo del servidor (en Tierra,
+  columnas de 2 672 de alto). El tope de tiempo por tick de `mezclar` no lo
+  frena porque la espera está adentro de una sola feature. Propuesta: no
+  mezclar una columna hasta que sus 8 vecinos estén cargados
+  (`ServerChunkCache.hasChunk`), o decorar con un `WorldGenRegion` acotado a
+  los chunks cargados, y si falta un vecino dejar la banda en la cola. Para
+  probar H10 se usó `-Dminecraftlodmod.tierraSinCubico=true`.
+
+- ~~El repo no compila desde GitHub~~ (`.gitignore` con `build/` ignoraba
+  `vulkanmod/render/chunk/build/`). **Resuelto 2026-10-01:** la sesión del LOD
+  ancló las rutas y subió la carpeta; `claude/tierra-real` lo juntó y
+  `./gradlew build` pasa desde un clon limpio (357 tests).
+
+
 - ~~Sesión cloud: `./gradlew build` no podía bajar NeoForge (403 del proxy).~~
   **Resuelto (2026-09-29):** con la red ampliada, `./gradlew build` completo
   (incluye `test`) pasa contra NeoForge 21.1.252 (última 21.1.x publicada en
   maven.neoforged.net a esa fecha).
+
+## Tierra real
+
+Es el mod aparte **Farlands** (repo `Farlands-lod`): pendientes en su
+`NOTES.md`, diseño en su `docs/tierra-real/`. Acá quedan los ganchos del LOD
+que usa (sección 38 de la arquitectura) y los pedidos de arriba.
 
 ## Mejoras notadas, no aplicadas todavía
 
