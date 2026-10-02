@@ -16,6 +16,8 @@ public final class Costura {
 
     /** Pasando la costura por más de esto, el jugador salta al otro lado (histéresis: no rebota). */
     public static final double MARGEN_SALTO = 32;
+    /** Franja antes de +C/2 en la que los ruidos propios se mezclan con los de una vuelta antes. */
+    public static final double ANCHO_MEZCLA = 512;
 
     private Costura() {}
 

@@ -129,13 +129,32 @@ public final class AlturaTierra {
      * puede dar un bloque menos que {@link #alturaExacta} en ese punto.
      */
     public int altura(int x, int z) {
+        return altura(x, z, null);
+    }
+
+    /** Un cambio de la superficie continua en un punto (la barrera de hielo de los polos, {@link BordeTierra}). */
+    @FunctionalInterface
+    public interface Ajuste {
+        double aplicar(double x, double z, double superficie);
+    }
+
+    /**
+     * Como {@link #altura(int, int)}, con la superficie de cada esquina de celda
+     * pasada por {@code ajuste} antes de interpolar (así la arma el generador
+     * cuando la función de densidad cambia la superficie).
+     */
+    public int altura(int x, int z, Ajuste ajuste) {
         int x0 = Math.floorDiv(x, ANCHO_CELDA) * ANCHO_CELDA, z0 = Math.floorDiv(z, ANCHO_CELDA) * ANCHO_CELDA;
         double fx = (x - x0) / (double) ANCHO_CELDA, fz = (z - z0) / (double) ANCHO_CELDA;
-        double h00 = alturaExacta(x0 + 0.5, z0 + 0.5), h10 = alturaExacta(x0 + ANCHO_CELDA + 0.5, z0 + 0.5);
-        double h01 = alturaExacta(x0 + 0.5, z0 + ANCHO_CELDA + 0.5);
-        double h11 = alturaExacta(x0 + ANCHO_CELDA + 0.5, z0 + ANCHO_CELDA + 0.5);
+        double h00 = esquina(x0, z0, ajuste), h10 = esquina(x0 + ANCHO_CELDA, z0, ajuste);
+        double h01 = esquina(x0, z0 + ANCHO_CELDA, ajuste), h11 = esquina(x0 + ANCHO_CELDA, z0 + ANCHO_CELDA, ajuste);
         double h0 = h00 + (h10 - h00) * fx, h1 = h01 + (h11 - h01) * fx;
         return yBloqueSuperior(h0 + (h1 - h0) * fz);
+    }
+
+    private double esquina(int x, int z, Ajuste ajuste) {
+        double h = alturaExacta(x + 0.5, z + 0.5);
+        return ajuste == null ? h : ajuste.aplicar(x + 0.5, z + 0.5, h);
     }
 
     /** y del bloque más hondo de todo el mundo: el fondo de la fosa más honda de los datos. */

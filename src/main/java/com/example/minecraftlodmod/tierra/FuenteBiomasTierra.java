@@ -84,6 +84,10 @@ public final class FuenteBiomasTierra extends BiomeSource {
                 && Math.sqrt(cx * cx + cz * cz) >= azimutal.radioDisco()) {
             return ClasificadorBiomas.FARLANDS;
         }
+        // Cilíndrica: la barrera de hielo antes de cada polo y las farlands después
+        if (a.periodoX() > 0 && Math.abs(cz) - a.periodoX() / 4 >= BordeTierra.INICIO_BARRERA) {
+            return ClasificadorBiomas.FARLANDS;
+        }
         // Lago: agua con nivel propio (no el del mar) sobre el suelo de la columna
         int agua = a.nivelAguaY(cx, cz);
         if (agua != Integer.MIN_VALUE && agua != AlturaTierra.NIVEL_MAR && agua > a.alturaExacta(cx, cz)) {

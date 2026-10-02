@@ -37,7 +37,7 @@ public final class CuevasTierra {
     }
 
     /** Franja antes de la costura en la que se mezcla con las cuevas de una vuelta antes ({@link Costura}). */
-    static final double ANCHO_COSTURA = 512;
+    static final double ANCHO_COSTURA = Costura.ANCHO_MEZCLA;
 
     /** Como {@link #densidad(double, double, double, double)}, periódica en x con período {@code periodoX} (0 = no). */
     public static double densidad(double x, double y, double z, double base, double periodoX) {

@@ -92,4 +92,22 @@
   jugador sigue en la continuación, que es el mismo terreno.
 - **LOD:** `FuenteAltura` usa `AlturaTierra`, que ya es periódica: el
   horizonte aproximado se dibuja a través de la costura sin nada especial.
-- **Polos:** siguen sin borde en la cilíndrica (z > C/4); queda para después.
+- **Polos:** ver abajo.
+
+**Polos de la cilíndrica (2026-10-02, después de H10):**
+- El mismo borde que la Tierra plana (`BordeTierra` con `"proyeccion":
+  "cilindrica"` en los `noise_settings` de `tierra_real_*`): pasando |z| = C/4
+  (1 250 944 bloques a 1:8; norte en -z) vienen las grietas (1 000 bloques) y
+  las farlands congeladas, que siguen hasta el borde del mundo. Distancia al
+  borde = |z| - C/4; el patrón corre a lo largo de x envuelto (el del sur con
+  otro origen, para que no repita el del norte) y se mezcla con el de una
+  vuelta antes en los 512 bloques antes del antimeridiano.
+- **Barrera de hielo:** el polo norte es mar profundo (~-4 200 m): sin nada,
+  las grietas y las paredes salían del fondo del mar. En los últimos 128
+  bloques antes del polo la superficie queda en y 66 (3 sobre el mar), con un
+  frente de 16 bloques que sube del fondo: un acantilado de hielo. Bioma de
+  farlands (todo hielo, nieve arriba) desde el frente. En la Antártida (alta)
+  no cambia nada. La densidad de la barrera usa la superficie sin cuevas
+  (`AlturaTierra`), y el atajo del LOD la reproduce con las esquinas de celda
+  ajustadas (`AlturaTierra.altura(x, z, ajuste)`).
+- Sin borde del mundo de vanilla (es cuadrado: cortaría la vuelta al mundo).

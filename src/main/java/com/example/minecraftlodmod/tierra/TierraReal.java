@@ -97,9 +97,13 @@ public final class TierraReal {
                 @Override
                 public int altura(int x, int z) {
                     double d = borde.distanciaAlBorde(x + 0.5, z + 0.5);
-                    if (d < 0) return a.altura(x, z);
+                    if (d < borde.inicioBorde()) return a.altura(x, z);
+                    // Barrera de hielo antes de los polos (cilíndrica), igual que la arma el generador
+                    if (d < 0) return a.altura(x, z, (cx, cz, h) -> borde.ajustarSuperficie(borde.distanciaAlBorde(cx, cz), h));
+                    // (En la cilíndrica, a menos de 512 bloques del antimeridiano el generador mezcla el
+                    // patrón con el de una vuelta antes: acá es aproximado, solo para el LOD lejano.)
                     return FarlandsCongeladas.alturaColumna(d, borde.arco(x + 0.5, z + 0.5),
-                            a.alturaExacta(x + 0.5, z + 0.5), borde.minY(), borde.maxY());
+                            borde.ajustarSuperficie(d, a.alturaExacta(x + 0.5, z + 0.5)), borde.minY(), borde.maxY());
                 }
 
                 @Override
@@ -210,7 +214,7 @@ public final class TierraReal {
         // Después de que vanilla aplica el borde guardado en level.dat (al cargar el nivel todavía no).
         ServerLevel nivel = evento.getServer().overworld();
         BordeTierra borde = bordeDe(nivel);
-        if (borde == null) return;
+        if (borde == null || borde.cilindrica()) return; // en la cilíndrica, un borde cuadrado cortaría la vuelta al mundo
         var limite = nivel.getWorldBorder();
         if (Math.abs(limite.getSize() - BORDE_VANILLA) > 1) return;
         double lado = 2 * Math.ceil(borde.radioDisco() + FarlandsCongeladas.TRANSICION + FarlandsCongeladas.ANCHO_FARLANDS);
@@ -359,7 +363,7 @@ public final class TierraReal {
         var atajo = com.example.minecraftlodmod.generation.FuenteAltura.de(nivel);
         BordeTierra borde = bordeDe(nivel);
         String texto = String.format(Locale.ROOT, "columna %d %d: %s%s; atajo y %s (simple %s), bioma %s;%s",
-                x, z, borde == null ? "" : String.format(Locale.ROOT, "%.0f bloques del borde del disco, ", borde.distanciaAlBorde(x + 0.5, z + 0.5)),
+                x, z, borde == null ? "" : String.format(Locale.ROOT, "%.0f bloques del borde, ", borde.distanciaAlBorde(x + 0.5, z + 0.5)),
                 tramos.length() > 0 ? n + " tramos" : "-",
                 atajo == null ? "-" : String.valueOf(atajo.altura(x, z)), atajo == null ? "-" : String.valueOf(atajo.simple(x, z)),
                 nivel.getBiome(p.setY(nivel.getMaxBuildHeight() - 2)).unwrapKey().map(k -> k.location().toString()).orElse("?"),

@@ -216,3 +216,12 @@ la cifra famosa.)
     `-Dminecraftlodmod.tierraSinCubico=true`.
   - Sin probar (Pista B, en `NOTES.md`): bote y caballo (vehículos que maneja
     el cliente), élitros, horizonte del LOD a través de la costura.
+- **Polos de la cilíndrica (2026-10-02):** borde de farlands congeladas en
+  |z| = C/4 con barrera de hielo antes del polo norte (`05-borde.md`).
+  Servidor, `/tierra columna` en x 3000 cruzando el polo norte: mar Ártico
+  (fondo y -464) hasta 144 bloques antes del polo; frente de hielo (y -398,
+  -129) en 16 bloques; barrera en y 65 hasta el polo; grietas (a 1 100
+  bloques, y -7) y paredes hasta y ~1 265 (a 1 500 y 3 000). Polo sur
+  (Antártida, y 417): sin barrera, mismas grietas y paredes. Atajo del LOD
+  igual a lo generado en mar, frente y barrera; en las paredes, 0-2 bloques
+  (como H7). Costura en las paredes: y 1 244 a un lado y 1 243 al otro.

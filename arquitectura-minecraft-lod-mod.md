@@ -1148,6 +1148,9 @@ las decisiones que fijan el código.
   una vuelta atrás con teletransporte relativo pasando ±C/2 + 32, con
   precarga del otro lado y espera de la llegada cargada (NeoForge carga
   síncrono el chunk de destino al mover una entidad).
+- **Polos de la cilíndrica:** `tierra_borde` con `proyeccion` cilíndrica:
+  farlands congeladas pasando |z| = C/4 y barrera de hielo de 128 bloques
+  antes del polo norte (el mar Ártico). Sin borde del mundo de vanilla.
 - **Proyecciones** (`tierra/Proyeccion`): equirectangular (norte -z, este
   +x) y azimutal equidistante centrada en el polo norte (el polo sur, el
   borde del disco, a ~2,5 M bloques a 1:8).

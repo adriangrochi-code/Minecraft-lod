@@ -38,7 +38,7 @@ public final class DetalleTierra {
     }
 
     /** Franja antes de la costura en la que el ruido se mezcla con el de una vuelta antes ({@link Costura}). */
-    static final double ANCHO_COSTURA = 512;
+    static final double ANCHO_COSTURA = Costura.ANCHO_MEZCLA;
 
     /**
      * Como {@link #conDetalle(double, double, double, double)}, periódico en x
