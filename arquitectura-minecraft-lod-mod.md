@@ -1371,3 +1371,24 @@ nunca siguen `isUnsaved()`. Ahora:
   se reinicia al detener el servidor. El descarte de caras de arriba por
   dirección suma la bajada de la curvatura. Memoria nativa liberada si falla el
   armado de una celda.
+
+**Rendimiento (0.26.37), perfil JFR de un vuelo por terreno nuevo:** 60% del CPU
+es la generación de vanilla; del mod, los hilos de mallas (`GreedyMesher`, ~5 s
+por minuto; no se tocó: ya optimizado, y una variante con tabla por capa fue
+más lenta), la generación (densidad del horizonte aproximado) y la precarga.
+- `OclusionRelieve` (corre en cada plan, hilo de render): elevación como
+  pendiente (tangente, con el margen angular convertido exacto) en vez de
+  `atan2`; sectores con un "ángulo de rombo" monótono (`pseudoAngulo`) en vez del
+  ángulo real (lo que tapa y lo tapado se miden igual: el criterio conservador
+  no cambia); oclusores en arreglos primitivos ordenados como `long`
+  (distancia float + índice: un empate solo puede dejar afuera un oclusor) y
+  piezas por índice con fastutil; `sqrt` en vez de `hypot`. Banco sintético,
+  5013 piezas con el radio de Medio: 8,99 → 4,34 ms, 3261 → 3268 ocultas.
+- `RegionFileStore`: el cache de lectura en `SEGMENTOS` (16) `BoundedRegionCache`
+  por clave mezclada, cada uno con su candado y 1/16 del presupuesto (LRU por
+  segmento); `versionEscrituras` es un `AtomicLong` que sube bajo el candado del
+  segmento de la clave (la invalidación de región lo sube antes de limpiar
+  todos). La precarga filtra lo ya cacheado antes de leer. Con un candado
+  global, en un vuelo con los 4 núcleos ocupados los hilos de mallas esperaban
+  detrás de la precarga o la generación desalojadas por el sistema (perfil
+  JFR, esperas de más de 10 ms en 60 s): 60 (la peor, 0,47 s) → 9 (0,02 s).

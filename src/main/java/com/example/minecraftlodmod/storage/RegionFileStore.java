@@ -103,14 +103,22 @@ public final class RegionFileStore implements AutoCloseable {
     private final long limitePendientes;
     private final AtomicLong bytesPendientes = new AtomicLong();
     private final AtomicBoolean vaciadoUrgentePedido = new AtomicBoolean();
-    /** Nodos leídos de disco, todavía comprimidos; acceso sincronizado sobre el propio cache. */
-    private final BoundedRegionCache cacheLectura;
     /**
-     * Sube (bajo el candado del cache) con cada escritura o invalidación: una
-     * lectura de disco solo entra al cache si no hubo ninguna desde que
-     * empezó, si no podría cachear la versión vieja de un nodo recién guardado.
+     * Nodos leídos de disco, todavía comprimidos, en {@link #SEGMENTOS} partes por clave,
+     * cada una con su candado (el propio segmento) y su parte del presupuesto (LRU por
+     * segmento). Con un solo candado, los hilos de mallas esperaban hasta medio segundo
+     * (medido con JFR, vuelo con los 4 núcleos ocupados): la precarga o la generación lo
+     * tenían cuando el sistema las desalojaba, y todos quedaban detrás.
      */
-    private long versionEscrituras;
+    private final BoundedRegionCache[] cacheLectura;
+    static final int SEGMENTOS = 16;
+    private final long presupuestoCache;
+    /**
+     * Sube (bajo el candado del segmento de la clave) con cada escritura o invalidación:
+     * una lectura de disco solo entra al cache si no hubo ninguna desde que empezó, si
+     * no podría cachear la versión vieja de un nodo recién guardado.
+     */
+    private final AtomicLong versionEscrituras = new AtomicLong();
 
     /**
      * @param periodoEscrituraMs cada cuánto se bajan los pendientes a disco;
@@ -134,8 +142,12 @@ public final class RegionFileStore implements AutoCloseable {
             throw new IllegalArgumentException("Presupuesto de RAM inválido: " + presupuestoRamBytes);
         }
         this.limitePendientes = presupuestoRamBytes / 4;
-        this.cacheLectura = new BoundedRegionCache(presupuestoRamBytes - limitePendientes);
-        this.cacheLectura.protegerSi(this::cercaDelCentro);
+        this.presupuestoCache = presupuestoRamBytes - limitePendientes;
+        this.cacheLectura = new BoundedRegionCache[SEGMENTOS];
+        for (int i = 0; i < SEGMENTOS; i++) {
+            cacheLectura[i] = new BoundedRegionCache(Math.max(1, presupuestoCache / SEGMENTOS));
+            cacheLectura[i].protegerSi(this::cercaDelCentro);
+        }
         this.directorioBase = directorioBase;
         this.hashFuente = hashFuente;
         if (periodoEscrituraMs > 0) {
@@ -173,9 +185,10 @@ public final class RegionFileStore implements AutoCloseable {
         });
         long clave = claveCache(region, claveNodo);
         if (clave != SIN_CACHE) {
-            synchronized (cacheLectura) {
-                versionEscrituras++;
-                cacheLectura.quitar(clave);
+            BoundedRegionCache segmento = segmento(clave);
+            synchronized (segmento) {
+                versionEscrituras.incrementAndGet();
+                segmento.quitar(clave);
             }
         }
         long total = bytesPendientes.addAndGet(comprimido.length - reemplazado[0]);
@@ -305,9 +318,10 @@ public final class RegionFileStore implements AutoCloseable {
             return enMemoria;
         }
         long clave = claveCache(region, claveNodo);
-        if (clave != SIN_CACHE) {
-            synchronized (cacheLectura) {
-                byte[] cacheado = cacheLectura.obtener(clave);
+        BoundedRegionCache segmento = clave == SIN_CACHE ? null : segmento(clave);
+        if (segmento != null) {
+            synchronized (segmento) {
+                byte[] cacheado = segmento.obtener(clave);
                 if (cacheado != null) {
                     return cacheado;
                 }
@@ -337,10 +351,10 @@ public final class RegionFileStore implements AutoCloseable {
                 }
                 continue;
             }
-            if (clave != SIN_CACHE) {
-                synchronized (cacheLectura) {
-                    if (versionEscrituras == version) {
-                        cacheLectura.poner(clave, deDisco);
+            if (segmento != null) {
+                synchronized (segmento) {
+                    if (versionEscrituras.get() == version) {
+                        segmento.poner(clave, deDisco);
                     }
                 }
             }
@@ -349,9 +363,20 @@ public final class RegionFileStore implements AutoCloseable {
     }
 
     private long versionActual() {
-        synchronized (cacheLectura) {
-            return versionEscrituras;
+        return versionEscrituras.get();
+    }
+
+    private BoundedRegionCache segmento(long claveCache) {
+        return cacheLectura[(int) (BoundedRegionCache.mezclar(claveCache) & (SEGMENTOS - 1))];
+    }
+
+    /** Bytes del cache sumando los segmentos sin sus candados: aproximado (para topes de llenado). */
+    private long bytesCacheAproximados() {
+        long total = 0;
+        for (BoundedRegionCache segmento : cacheLectura) {
+            total += segmento.bytesUsados();
         }
+        return total;
     }
 
     /** El índice ya publicado, sin candado; si todavía no se cargó, se carga con el candado. */
@@ -416,9 +441,12 @@ public final class RegionFileStore implements AutoCloseable {
             }
             Indice indice = indiceDe(region);
             headers.remove(region);
-            synchronized (cacheLectura) {
-                versionEscrituras++;
-                cacheLectura.limpiar(); // raro (cambio de bloques): más simple que filtrar por región
+            // Antes de limpiar: una lectura que empezó antes ya no entra al cache.
+            versionEscrituras.incrementAndGet();
+            for (BoundedRegionCache segmento : cacheLectura) {
+                synchronized (segmento) {
+                    segmento.limpiar(); // raro (cambio de bloques): más simple que filtrar por región
+                }
             }
             try {
                 Files.deleteIfExists(archivoDe(region));
@@ -462,9 +490,13 @@ public final class RegionFileStore implements AutoCloseable {
 
     /** Bytes (comprimidos) en el cache de lectura. */
     public long bytesEnCache() {
-        synchronized (cacheLectura) {
-            return cacheLectura.bytesUsados();
+        long total = 0;
+        for (BoundedRegionCache segmento : cacheLectura) {
+            synchronized (segmento) {
+                total += segmento.bytesUsados();
+            }
         }
+        return total;
     }
 
     private static long bytesDe(Map<Long, byte[]> nodos) {
@@ -883,7 +915,7 @@ public final class RegionFileStore implements AutoCloseable {
     private void precargarAlrededor(long centro) throws InterruptedException {
         byte dimension = (byte) (centro >>> 56);
         int cx = (int) (centro << 8 >> 36), cz = (int) (centro << 36 >> 36);
-        long presupuesto = cacheLectura.presupuestoBytes();
+        long presupuesto = presupuestoCache;
         long leidos = 0;
         int radio = radioPrecarga;
         for (int r = 0; r <= radio; r++) {
@@ -895,11 +927,7 @@ public final class RegionFileStore implements AutoCloseable {
                     if (cerrado || centro != centroPrecarga) {
                         return; // el jugador se movió: empezar de nuevo desde él
                     }
-                    long lleno;
-                    synchronized (cacheLectura) {
-                        lleno = cacheLectura.bytesUsados();
-                    }
-                    if (lleno > presupuesto * LLENADO_PRECARGA) {
+                    if (bytesCacheAproximados() > presupuesto * LLENADO_PRECARGA) {
                         radioProtegido = Math.max(1, r - 1);
                         return;
                     }
@@ -935,16 +963,26 @@ public final class RegionFileStore implements AutoCloseable {
                 porOffset[n++] = new long[]{ubicacion[0], ubicacion[1], clave};
             }
         }
+        // Lo que ya está en el cache, afuera en una sola toma del candado (antes, una por clave:
+        // miles por región, compitiendo con los hilos de mallas aunque la región ya estuviera).
+        int quedan = 0;
+        for (int i = 0; i < n; i++) {
+            long claveCache = claveCache(region, porOffset[i][2]);
+            BoundedRegionCache segmento = segmento(claveCache);
+            boolean esta;
+            synchronized (segmento) {
+                esta = segmento.contiene(claveCache);
+            }
+            if (!esta) {
+                porOffset[quedan++] = porOffset[i];
+            }
+        }
+        n = quedan;
         java.util.Arrays.sort(porOffset, 0, n, java.util.Comparator.comparingLong(u -> u[0]));
         long leidos = 0;
         for (int i = 0; i < n; i++) {
             long clave = porOffset[i][2];
             long claveCache = claveCache(region, clave);
-            synchronized (cacheLectura) {
-                if (cacheLectura.contiene(claveCache)) {
-                    continue;
-                }
-            }
             if (buscarEnMemoria(region, clave) != null) {
                 continue;
             }
@@ -954,14 +992,15 @@ public final class RegionFileStore implements AutoCloseable {
             } catch (UncheckedIOException e) {
                 return leidos; // compactada o borrada mientras tanto: la próxima vuelta la toma
             }
-            synchronized (cacheLectura) {
-                if (cacheLectura.bytesUsados() + datos.length > cacheLectura.presupuestoBytes() * LLENADO_PRECARGA) {
-                    return leidos;
-                }
-                if (versionEscrituras != version) {
+            if (bytesCacheAproximados() + datos.length > presupuestoCache * LLENADO_PRECARGA) {
+                return leidos;
+            }
+            BoundedRegionCache segmento = segmento(claveCache);
+            synchronized (segmento) {
+                if (versionEscrituras.get() != version) {
                     return leidos; // hubo escrituras: la próxima vuelta precarga con el índice nuevo
                 }
-                cacheLectura.poner(claveCache, datos);
+                segmento.poner(claveCache, datos);
             }
             leidos += datos.length;
         }

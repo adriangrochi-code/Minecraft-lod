@@ -1,6 +1,5 @@
 package com.example.minecraftlodmod.render;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -35,12 +34,15 @@ public final class OclusionRelieve {
     /** Columnas por lado de una región de relieve (nodo de nivel 5: 512 bloques). */
     public static final int COLUMNAS_POR_REGION = 16;
     public static final int REGION = COLUMNA * COLUMNAS_POR_REGION;
-    /** Direcciones del horizonte (~0.18° c/u). */
+    /** Direcciones del horizonte (~0,18° c/u en promedio, ver {@link #pseudoAngulo}). */
     static final int SECTORES = 2048;
     /** El relieve más cerca que esto de la cámara no tapa nada. */
     public static final double RADIO_SIN_OCLUSORES = 64;
     /** Holgura angular: lo que asoma apenas por encima del horizonte se dibuja. */
     static final double MARGEN_RADIANES = 0.002;
+    private static final double TAN_MARGEN = Math.tan(MARGEN_RADIANES);
+    /** Una vuelta en unidades de {@link #pseudoAngulo}. */
+    static final double VUELTA = 4;
 
     private OclusionRelieve() {
     }
@@ -69,30 +71,82 @@ public final class OclusionRelieve {
         if (bajoTierra(camX, camY, camZ, relieve)) {
             return ocultas;
         }
-        List<double[]> oclusores = oclusores(camX, camY, camZ, relieve, radioOclusores);
-        oclusores.sort((a, b) -> Double.compare(a[0], b[0])); // por distancia lejana
+        // Arreglos primitivos e índices ordenados sin boxing: con decenas de miles de columnas,
+        // ordenar una lista de double[] (y un Integer[] de piezas) era la mitad del plan.
+        Oclusores oclusores = oclusores(camX, camY, camZ, relieve, radioOclusores);
+        int[] ordenOclusores = oclusores.porDistancia();
 
-        Integer[] orden = new Integer[piezas.size()];
-        double[] cercania = new double[piezas.size()];
-        for (int i = 0; i < orden.length; i++) {
-            orden[i] = i;
+        int n = piezas.size();
+        double[] cercania = new double[n];
+        for (int i = 0; i < n; i++) {
             Pieza p = piezas.get(i);
             cercania[i] = distanciaMinima(camX, camZ, p.minX(), p.minZ(), p.minX() + p.lado(), p.minZ() + p.lado());
         }
-        Arrays.sort(orden, (a, b) -> Double.compare(cercania[a], cercania[b]));
+        int[] orden = ordenPor(cercania, n);
 
         double[] horizonte = new double[SECTORES];
         Arrays.fill(horizonte, Double.NEGATIVE_INFINITY);
         int siguiente = 0;
         for (int i : orden) {
             // Solo el relieve estrictamente más cercano que la pieza forma su horizonte.
-            while (siguiente < oclusores.size() && oclusores.get(siguiente)[0] < cercania[i]) {
-                double[] o = oclusores.get(siguiente++);
-                subirHorizonte(horizonte, (int) o[2], (int) o[3], o[1]);
+            while (siguiente < oclusores.cantidad && oclusores.lejos[ordenOclusores[siguiente]] < cercania[i]) {
+                int k = ordenOclusores[siguiente++];
+                subirHorizonte(horizonte, oclusores.desde[k], oclusores.hasta[k], oclusores.elevacion[k]);
             }
             ocultas[i] = oculta(camX, camY, camZ, piezas.get(i), cercania[i], relieve, horizonte);
         }
         return ocultas;
+    }
+
+    /** Índices 0..n-1 ordenados por su clave, de menor a mayor (sin boxing). */
+    static int[] ordenPor(double[] claves, int n) {
+        int[] indices = new int[n];
+        for (int i = 0; i < n; i++) {
+            indices[i] = i;
+        }
+        it.unimi.dsi.fastutil.ints.IntArrays.quickSort(indices, (a, b) -> Double.compare(claves[a], claves[b]));
+        return indices;
+    }
+
+    /** Lo que tapa: distancia lejana, elevación (pendiente) y sectores cubiertos enteros, en arreglos paralelos. */
+    private static final class Oclusores {
+        double[] lejos = new double[1024], elevacion = new double[1024];
+        int[] desde = new int[1024], hasta = new int[1024];
+        int cantidad;
+
+        /**
+         * Índices por distancia lejana: la distancia como float (sus bits ordenan igual que el valor,
+         * es positiva) y el índice en un long, ordenados como primitivos. Con un empate por el
+         * redondeo, uno puede quedar después de otro apenas más lejano: la pieza que está entre los
+         * dos no lo cuenta (se oculta menos, nunca de más).
+         */
+        int[] porDistancia() {
+            long[] claves = new long[cantidad];
+            for (int i = 0; i < cantidad; i++) {
+                claves[i] = (long) Float.floatToRawIntBits((float) lejos[i]) << 32 | i;
+            }
+            Arrays.sort(claves);
+            int[] indices = new int[cantidad];
+            for (int i = 0; i < cantidad; i++) {
+                indices[i] = (int) claves[i];
+            }
+            return indices;
+        }
+
+        void agregar(double l, double e, int d, int h) {
+            if (cantidad == lejos.length) {
+                int nuevo = cantidad * 2;
+                lejos = Arrays.copyOf(lejos, nuevo);
+                elevacion = Arrays.copyOf(elevacion, nuevo);
+                desde = Arrays.copyOf(desde, nuevo);
+                hasta = Arrays.copyOf(hasta, nuevo);
+            }
+            lejos[cantidad] = l;
+            elevacion[cantidad] = e;
+            desde[cantidad] = d;
+            hasta[cantidad] = h;
+            cantidad++;
+        }
     }
 
     private static boolean bajoTierra(double camX, double camY, double camZ, Relieve relieve) {
@@ -108,13 +162,14 @@ public final class OclusionRelieve {
         return !Float.isNaN(suelo) && camY < suelo;
     }
 
-    /** Cada oclusor: {distancia lejana, elevación, sector desde, sector hasta} (solo sectores cubiertos enteros). */
-    private static List<double[]> oclusores(double camX, double camY, double camZ, Relieve relieve, double radio) {
-        List<double[]> resultado = new ArrayList<>();
+    /** Las columnas que tapan (solo con los sectores que cubren enteros). */
+    private static Oclusores oclusores(double camX, double camY, double camZ, Relieve relieve, double radio) {
+        Oclusores resultado = new Oclusores();
         int desdeRegionX = Math.floorDiv((int) Math.floor(camX - radio), REGION);
         int hastaRegionX = Math.floorDiv((int) Math.floor(camX + radio), REGION);
         int desdeRegionZ = Math.floorDiv((int) Math.floor(camZ - radio), REGION);
         int hastaRegionZ = Math.floorDiv((int) Math.floor(camZ + radio), REGION);
+        double minimo2 = RADIO_SIN_OCLUSORES * RADIO_SIN_OCLUSORES, radio2 = radio * radio;
         for (int rx = desdeRegionX; rx <= hastaRegionX; rx++) {
             for (int rz = desdeRegionZ; rz <= hastaRegionZ; rz++) {
                 float[] suelos = relieve.suelos(rx, rz);
@@ -128,17 +183,19 @@ public final class OclusionRelieve {
                             continue;
                         }
                         double x0 = (double) rx * REGION + cx * COLUMNA, z0 = (double) rz * REGION + cz * COLUMNA;
-                        double cerca = distanciaMinima(camX, camZ, x0, z0, x0 + COLUMNA, z0 + COLUMNA);
-                        if (cerca < RADIO_SIN_OCLUSORES || cerca > radio) {
+                        double dx = Math.max(0, Math.max(x0 - camX, camX - x0 - COLUMNA));
+                        double dz = Math.max(0, Math.max(z0 - camZ, camZ - z0 - COLUMNA));
+                        double cerca2 = dx * dx + dz * dz;
+                        if (cerca2 < minimo2 || cerca2 > radio2) {
+                            continue;
+                        }
+                        long sectores = sectores(camX, camZ, x0, z0, COLUMNA, true);
+                        if (sectores < 0) {
                             continue;
                         }
                         double lejos = distanciaMaxima(camX, camZ, x0, z0, x0 + COLUMNA, z0 + COLUMNA);
-                        int[] sectores = sectoresCubiertos(camX, camZ, x0, z0, COLUMNA, true);
-                        if (sectores == null) {
-                            continue;
-                        }
-                        double elevacion = Math.atan2(suelo - camY, lejos);
-                        resultado.add(new double[]{lejos, elevacion, sectores[0], sectores[1]});
+                        // Pendiente (tangente de la elevación): ordena igual que el ángulo, sin atan2.
+                        resultado.agregar(lejos, (suelo - camY) / lejos, (int) (sectores >>> 32), (int) sectores);
                     }
                 }
             }
@@ -147,7 +204,7 @@ public final class OclusionRelieve {
     }
 
     private static void subirHorizonte(double[] horizonte, int desde, int hasta, double elevacion) {
-        for (int s = desde; ; s = (s + 1) % SECTORES) {
+        for (int s = desde; ; s = s + 1 == SECTORES ? 0 : s + 1) {
             if (elevacion > horizonte[s]) {
                 horizonte[s] = elevacion;
             }
@@ -166,16 +223,23 @@ public final class OclusionRelieve {
         if (Float.isNaN(tope)) {
             return false;
         }
-        int[] sectores = sectoresCubiertos(camX, camZ, p.minX(), p.minZ(), p.lado(), false);
-        if (sectores == null) {
+        long sectores = sectores(camX, camZ, p.minX(), p.minZ(), p.lado(), false);
+        if (sectores < 0) {
             return false;
         }
-        double elevacion = Math.atan2(tope - camY, cercania) + MARGEN_RADIANES;
-        for (int s = sectores[0]; ; s = (s + 1) % SECTORES) {
+        int desde = (int) (sectores >>> 32), hasta = (int) sectores;
+        // Pendiente con el margen angular sumado: tan(atan(r) + m) = (r + tan m) / (1 - r tan m);
+        // pasado los 90° no hay horizonte que la tape.
+        double r = (tope - camY) / cercania;
+        if (r * TAN_MARGEN >= 1) {
+            return false;
+        }
+        double elevacion = (r + TAN_MARGEN) / (1 - r * TAN_MARGEN);
+        for (int s = desde; ; s = s + 1 == SECTORES ? 0 : s + 1) {
             if (!(horizonte[s] > elevacion)) {
                 return false;
             }
-            if (s == sectores[1]) {
+            if (s == hasta) {
                 return true;
             }
         }
@@ -221,21 +285,27 @@ public final class OclusionRelieve {
      * toca (para lo tapado). null si la cámara está dentro o no cubre ninguno.
      */
     static int[] sectoresCubiertos(double camX, double camZ, double x0, double z0, double lado, boolean soloEnteros) {
+        long s = sectores(camX, camZ, x0, z0, lado, soloEnteros);
+        return s < 0 ? null : new int[]{(int) (s >>> 32), (int) s};
+    }
+
+    /** Como {@link #sectoresCubiertos}, empaquetado (desde en los 32 bits altos) y -1 = ninguno: sin un arreglo por llamada. */
+    static long sectores(double camX, double camZ, double x0, double z0, double lado, boolean soloEnteros) {
         if (camX >= x0 && camX <= x0 + lado && camZ >= z0 && camZ <= z0 + lado) {
-            return null;
+            return -1;
         }
-        double[] angulos = {
-                Math.atan2(z0 - camZ, x0 - camX), Math.atan2(z0 - camZ, x0 + lado - camX),
-                Math.atan2(z0 + lado - camZ, x0 - camX), Math.atan2(z0 + lado - camZ, x0 + lado - camX)};
-        // El cuadrado no contiene la cámara: sus esquinas caben en menos de 180°.
+        double base = pseudoAngulo(x0 - camX, z0 - camZ);
+        // El cuadrado no contiene la cámara: sus esquinas caben en menos de media vuelta.
         // Se toma como referencia la primera y se miden las demás relativas a ella.
-        double base = angulos[0], min = 0, max = 0;
-        for (double a : angulos) {
-            double relativo = Math.IEEEremainder(a - base, 2 * Math.PI);
+        double min = 0, max = 0;
+        for (int esquina = 1; esquina < 4; esquina++) {
+            double a = pseudoAngulo(x0 + (esquina & 1) * lado - camX, z0 + (esquina >> 1) * lado - camZ);
+            double relativo = a - base;
+            relativo = relativo > VUELTA / 2 ? relativo - VUELTA : relativo < -VUELTA / 2 ? relativo + VUELTA : relativo;
             min = Math.min(min, relativo);
             max = Math.max(max, relativo);
         }
-        double porSector = 2 * Math.PI / SECTORES;
+        double porSector = VUELTA / SECTORES;
         double desde = (base + min) / porSector, hasta = (base + max) / porSector;
         long d, h;
         if (soloEnteros) {
@@ -246,23 +316,41 @@ public final class OclusionRelieve {
             h = (long) Math.floor(hasta);
         }
         if (h < d) {
-            return null;
+            return -1;
         }
         if (h - d >= SECTORES) {
-            return new int[]{0, SECTORES - 1};
+            return SECTORES - 1;
         }
-        return new int[]{(int) Math.floorMod(d, (long) SECTORES), (int) Math.floorMod(h, (long) SECTORES)};
+        return Math.floorMod(d, (long) SECTORES) << 32 | Math.floorMod(h, (long) SECTORES);
+    }
+
+    /**
+     * Ángulo "de rombo" de la dirección (dx, dz), en [0, {@link #VUELTA}): crece con el
+     * ángulo real (misma vuelta, mismo sentido que atan2(dz, dx)) sin calcular atan2, que
+     * con las decenas de miles de columnas del relieve era lo más caro del plan. Los
+     * sectores quedan de ancho angular algo distinto entre sí (hasta ~1,4×), pero lo que
+     * tapa y lo tapado se miden igual, así que el criterio conservador no cambia.
+     */
+    static double pseudoAngulo(double dx, double dz) {
+        double suma = Math.abs(dx) + Math.abs(dz);
+        if (suma == 0) {
+            return 0;
+        }
+        if (dz >= 0) {
+            return dx >= 0 ? dz / suma : 1 - dx / suma;
+        }
+        return dx < 0 ? 2 - dz / suma : 3 + dx / suma;
     }
 
     static double distanciaMinima(double px, double pz, double x0, double z0, double x1, double z1) {
         double dx = Math.max(0, Math.max(x0 - px, px - x1));
         double dz = Math.max(0, Math.max(z0 - pz, pz - z1));
-        return Math.hypot(dx, dz);
+        return Math.sqrt(dx * dx + dz * dz); // hypot es exacto pero varias veces más lento
     }
 
     static double distanciaMaxima(double px, double pz, double x0, double z0, double x1, double z1) {
         double dx = Math.max(Math.abs(x0 - px), Math.abs(x1 - px));
         double dz = Math.max(Math.abs(z0 - pz), Math.abs(z1 - pz));
-        return Math.hypot(dx, dz);
+        return Math.sqrt(dx * dx + dz * dz);
     }
 }

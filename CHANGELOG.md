@@ -6,6 +6,18 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.37 — Menos tirones al moverse
+- **Cada vez que se cruza de chunk** el LOD vuelve a planificar qué dibujar, en
+  el hilo de render; más de la mitad de ese tiempo era la oclusión por relieve
+  (qué terreno queda detrás de las montañas). Ahora es el doble de rápida
+  (medido: 9,0 → 4,3 ms con el radio de Medio en el equipo de pruebas), con
+  el mismo resultado: menos tirón al caminar o volar.
+- Los hilos que arman las mallas ya no se traban esperando el cache del LOD:
+  era uno solo con un candado, y cuando la precarga o la generación lo tenían y
+  el procesador estaba lleno (explorando), todos esperaban, a veces medio
+  segundo. Ahora está partido en 16. Medido en un vuelo de 60 s: esperas de más
+  de 10 ms 60 → 9, la peor 0,47 s → 0,02 s.
+
 ## 0.26.36 — Corrección de errores (revisión de todo el código)
 - **Lo que se construye o se rompe ahora llega al LOD.** Antes casi nunca: el
   LOD se rehacía al descargarse un chunk solo si seguía "sin guardar", pero
