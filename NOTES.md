@@ -10,6 +10,13 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Cambios del mundo en el LOD (0.26.36):** construir o excavar algo grande,
+  alejarse más allá de la distancia de vanilla y mirar que el LOD lo muestre.
+  En un servidor con jugadores, que no haya re-extracciones de más (el log "LOD
+  gen" cuenta re-extraídos y cambiados): hornos y tolvas marcan el chunk como
+  cambiado aunque no cambie ningún bloque (`blockEntityChanged`); se re-extrae
+  una vez por visita, no por guardado.
+
 - **Sombras del LOD con shaderpacks (0.26.35, `sombrasLod`):** verificado solo
   con un pack de diagnóstico propio (el mapa de sombras en pantalla, curvas de
   nivel continuas en el borde LOD/vanilla). Probar con Complementary/BSL en GPU

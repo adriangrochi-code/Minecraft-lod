@@ -196,6 +196,15 @@ public final class ChunksEnRam {
         retenidos.clear();
     }
 
+    /** Servidor detenido: el nivel ya no existe (sus tickets se fueron con él); empezar de cero. */
+    void reiniciar() {
+        retenidos.clear();
+        nivel = null;
+        ultimoMargen = -1;
+        ultimoPresupuesto = -1;
+        tickVista = Long.MIN_VALUE;
+    }
+
     /** Para el HUD/log: chunks retenidos ahora. */
     int cantidad() {
         return retenidos.size();

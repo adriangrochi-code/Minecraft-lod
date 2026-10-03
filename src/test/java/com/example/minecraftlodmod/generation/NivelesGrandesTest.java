@@ -15,7 +15,7 @@ class NivelesGrandesTest {
     /** Mundo falso: secciones de nivel 4 sólidas bajo una altura, y los nodos grandes guardados. */
     private static class MundoFalso implements NivelesGrandes.Acceso {
         final Map<List<Integer>, SuperVoxel[]> grandes = new HashMap<>();
-        final int seccionesSolidas; // secciones Y [0, seccionesSolidas) son piedra
+        int seccionesSolidas; // secciones Y [0, seccionesSolidas) son piedra
         int lecturasSeccion;
 
         MundoFalso(int seccionesSolidas) {
@@ -40,6 +40,24 @@ class NivelesGrandesTest {
         @Override
         public void guardarGrande(int nivel, int x, int y, int z, SuperVoxel[] grilla) {
             grandes.put(List.of(nivel, x, y, z), grilla);
+        }
+
+        @Override
+        public void borrarGrande(int nivel, int x, int y, int z) {
+            grandes.remove(List.of(nivel, x, y, z));
+        }
+    }
+
+    @Test
+    void siLaZonaQuedaDeAireLosNodosViejosSeBorran() {
+        MundoFalso mundo = new MundoFalso(4);
+        NivelesGrandes.actualizar(Set.of(NivelesGrandes.empaquetar(5, 7)), -4, 20, mundo);
+        assertNotNull(mundo.grande(NivelesGrandes.NIVEL_MIN, 0, 0, 0));
+        // El mismo chunk vuelto a extraer sin nada sólido (antes quedaba el nodo viejo flotando).
+        mundo.seccionesSolidas = 0;
+        NivelesGrandes.actualizar(Set.of(NivelesGrandes.empaquetar(5, 7)), -4, 20, mundo);
+        for (int nivel = NivelesGrandes.NIVEL_MIN; nivel <= NivelesGrandes.NIVEL_MAX; nivel++) {
+            assertNull(mundo.grande(nivel, 0, 0, 0), "Quedó el nodo viejo de nivel " + nivel);
         }
     }
 

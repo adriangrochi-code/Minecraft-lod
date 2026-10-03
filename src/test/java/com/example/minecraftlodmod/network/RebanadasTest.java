@@ -76,6 +76,22 @@ class RebanadasTest {
     }
 
     @Test
+    void partirNoPasaElTopeDeEntradasQueAceptaElCliente() {
+        // Marcas vacías: los bytes no cortan nunca, la cantidad sí (si no, el cliente rechaza el paquete).
+        int n = RebanadaPayload.MAX_ENTRADAS * 2 + 5;
+        long[] claves = new long[n];
+        byte[][] datos = new byte[n][];
+        for (int i = 0; i < n; i++) {
+            claves[i] = i;
+            datos[i] = new byte[0];
+        }
+        List<RebanadaPayload> partes = RebanadaPayload.partir((byte) 0, new RebanadaId(0, 0, 15), 7, claves, datos);
+        assertEquals(3, partes.size());
+        assertTrue(partes.stream().allMatch(p -> p.claves().length <= RebanadaPayload.MAX_ENTRADAS));
+        assertEquals(n, partes.stream().mapToInt(p -> p.claves().length).sum());
+    }
+
+    @Test
     void elServidorMandaSoloElNivelPedidoYSinCambiosSiLaHuellaCoincide(@TempDir Path dir) throws Exception {
         try (RegionFileStore store = new RegionFileStore(dir, 1, 0)) {
             RegionFileStore.ClaveRegion region = new RegionFileStore.ClaveRegion((byte) 0, 0, 0);

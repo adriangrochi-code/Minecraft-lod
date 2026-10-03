@@ -165,7 +165,7 @@ public final class ProtocoloLod {
     static RespuestaNodoPayload responder(RegionFileStore store, byte dimensionId, NodoId nodo) {
         RegionFileStore.ClaveRegion region = GeneradorLocal.claveRegion(dimensionId, nodo.seccionX(), nodo.seccionZ());
         byte[] datos = store.leer(region, nodo.claveNodo());
-        if (datos != null) {
+        if (com.example.minecraftlodmod.storage.OctreeNodeCodec.esNodo(datos)) {
             return new RespuestaNodoPayload(dimensionId, nodo, RespuestaNodoPayload.Estado.EXISTE, datos);
         }
         boolean chunkGenerado = GeneradorLocal.tieneMarca(store, region, nodo.seccionX(), nodo.seccionZ());

@@ -79,7 +79,7 @@ public record RebanadaPayload(byte dimensionId, RebanadaId rebanada, boolean ult
 
     /**
      * Parte una rebanada en paquetes de hasta {@link #BYTES_POR_PARTE} bytes de
-     * datos (al menos una entrada por parte); siempre al menos una parte, la
+     * datos y {@link #MAX_ENTRADAS} entradas (al menos una entrada por parte); siempre al menos una parte, la
      * última con {@code ultima}, aunque la rebanada esté vacía.
      */
     public static List<RebanadaPayload> partir(byte dimensionId, RebanadaId rebanada, long huella, long[] claves,
@@ -89,7 +89,8 @@ public record RebanadaPayload(byte dimensionId, RebanadaId rebanada, boolean ult
         while (true) {
             int hasta = desde;
             long bytes = 0;
-            while (hasta < claves.length && (hasta == desde || bytes + datos[hasta].length <= BYTES_POR_PARTE)) {
+            while (hasta < claves.length && (hasta == desde
+                    || bytes + datos[hasta].length <= BYTES_POR_PARTE && hasta - desde < MAX_ENTRADAS)) {
                 bytes += datos[hasta].length;
                 hasta++;
             }

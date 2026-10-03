@@ -20,8 +20,11 @@ import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.TagsUpdatedEvent;
+import net.neoforged.neoforge.event.level.ChunkDataEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.event.level.ChunkWatchEvent;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.minecraft.world.level.ChunkPos;
@@ -31,6 +34,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -54,6 +58,9 @@ import java.util.function.Function;
  * Un chunk se genera la primera vez que se carga y otra vez al descargarse
  * si quedó modificado — invalidación gruesa pero barata (sección 10); la
  * fina por evento de bloque queda para cuando network/ la necesite.
+ * "Modificado" sale de los guardados de vanilla ({@link #alGuardarChunk}):
+ * vanilla guarda los chunks cargados que cambian cada ~10 s, así que al
+ * descargarse casi nunca siguen {@code isUnsaved()}.
  *
  * Si la cola de generación está llena el chunk queda PENDIENTE y se
  * reintenta de a {@link #REINTENTOS_POR_TICK} por tick mientras siga
@@ -85,6 +92,8 @@ public final class GeneradorLocal {
     private static final byte[] MARCA = {VERSION_MARCA};
     private static final long PERIODO_ESCRITURA_MS = 3000;
     static final int REINTENTOS_POR_TICK = 8;
+    /** Al cerrar el mundo, cuánto se espera a que la generación en curso termine de guardar. */
+    static final long ESPERA_APAGADO_MS = 5000;
     /** Parte del heap de Java que puede ocupar el store del LOD (cache + pendientes). */
     static final double FRACCION_HEAP_MAXIMA = 0.4;
 
@@ -93,6 +102,16 @@ public final class GeneradorLocal {
     }
 
     private final LinkedHashSet<Pendiente> pendientes = new LinkedHashSet<>();
+    /**
+     * Chunks cuyo próximo guardado es del mismo contenido que tiene el LOD, no una
+     * modificación: recién extraídos sin guardar (recién generados) o recién cargados
+     * (vanilla los marca sin guardar al cargarlos). Solo hilo del servidor.
+     */
+    private final Set<Pendiente> extraidosSinGuardar = new HashSet<>();
+    /** Cargados con cambios desde que se extrajeron: su marca ya quedó vencida. Solo hilo del servidor. */
+    private final Set<Pendiente> modificados = new HashSet<>();
+    /** El que se está descargando: el guardado que vanilla hace después del evento de descarga no es un cambio. */
+    private Pendiente descargando;
     private final PregeneradorChunks pregenerador = new PregeneradorChunks(this);
     private final ChunksEnRam chunksEnRam = new ChunksEnRam();
     private final GeneradorAproximado aproximado = new GeneradorAproximado(this);
@@ -111,6 +130,8 @@ public final class GeneradorLocal {
     // Estadísticas para estimar el costo en cada hardware (log cada 10 s si hubo trabajo).
     private final LongAdder nanosChunks = new LongAdder();
     private final LongAdder chunksHechos = new LongAdder();
+    /** De los hechos, cuántos eran re-extracciones (el chunk cambió). */
+    private final LongAdder chunksReextraidos = new LongAdder();
     /** Total desde que arrancó el juego (no se reinicia): el monitor de rendimiento saca el ritmo por diferencia. */
     private final java.util.concurrent.atomic.AtomicLong chunksExtraidosTotal = new java.util.concurrent.atomic.AtomicLong();
     private final LongAdder nanosLotesGrandes = new LongAdder();
@@ -123,16 +144,18 @@ public final class GeneradorLocal {
         }
         ticksDesdeEstadistica = 0;
         long chunks = chunksHechos.sumThenReset();
+        long reextraidos = chunksReextraidos.sumThenReset();
         long nanos = nanosChunks.sumThenReset();
         long nanosGrandes = nanosLotesGrandes.sumThenReset();
-        if (chunks == 0 && pendientes.isEmpty()) {
+        if (chunks == 0 && pendientes.isEmpty() && modificados.isEmpty()) {
             nanosCapturaHiloServidor = 0;
             return;
         }
         RegionFileStore s = store;
-        LOG.info("LOD gen: {} chunks en 10 s ({} ms/chunk en el pool, {} ms/chunk en el hilo del servidor), "
+        LOG.info("LOD gen: {} chunks en 10 s ({} re-extraídos por cambios, {} cambiados sin re-extraer todavía; "
+                        + "{} ms/chunk en el pool, {} ms/chunk en el hilo del servidor), "
                         + "niveles grandes {} ms, {} pendientes | RAM LOD: {} MB por escribir, {} MB en cache",
-                chunks, chunks == 0 ? 0 : String.format("%.1f", nanos / 1e6 / chunks),
+                chunks, reextraidos, modificados.size(), chunks == 0 ? 0 : String.format("%.1f", nanos / 1e6 / chunks),
                 chunks == 0 ? 0 : String.format("%.2f", nanosCapturaHiloServidor / 1e6 / chunks),
                 nanosGrandes / 1_000_000, pendientes.size(),
                 s == null ? 0 : s.bytesPendientes() >> 20, s == null ? 0 : s.bytesEnCache() >> 20);
@@ -204,10 +227,29 @@ public final class GeneradorLocal {
 
     @SubscribeEvent
     public void alDetenerServidor(ServerStoppingEvent evento) {
-        if (scheduler != null) {
-            scheduler.apagar();
-            scheduler = null;
+        GenerationTaskScheduler viejo = scheduler;
+        scheduler = null;
+        if (viejo != null && !viejo.apagarYEsperar(ESPERA_APAGADO_MS)) {
+            LOG.warn("LOD: quedaron tareas de generación sin terminar al cerrar el mundo");
         }
+        // El store se cierra recién en alTerminarServidor: después de este evento vanilla guarda
+        // todos los chunks, y los cambiados tienen que dejar su marca vencida (alGuardarChunk).
+        if (descartadosPorColaLlena > 0) {
+            LOG.info("LOD: {} veces la cola estuvo llena; {} chunks quedaron pendientes al cerrar",
+                    descartadosPorColaLlena, pendientes.size());
+        }
+        pendientes.clear();
+        chunksSucios.clear();
+        pregenerador.reiniciar();
+        chunksEnRam.reiniciar();
+        pregeneradorRoto = false;
+        aproximado.reiniciar();
+        aproximadoRoto = false;
+        descartadosPorColaLlena = 0;
+    }
+
+    @SubscribeEvent
+    public void alTerminarServidor(ServerStoppedEvent evento) {
         if (store != null) {
             try {
                 store.close();
@@ -216,17 +258,9 @@ public final class GeneradorLocal {
             }
             store = null;
         }
-        if (descartadosPorColaLlena > 0) {
-            LOG.info("LOD: {} veces la cola estuvo llena; {} chunks quedaron pendientes al cerrar",
-                    descartadosPorColaLlena, pendientes.size());
-        }
-        pendientes.clear();
-        chunksSucios.clear();
-        pregenerador.reiniciar();
-        pregeneradorRoto = false;
-        aproximado.reiniciar();
-        aproximadoRoto = false;
-        descartadosPorColaLlena = 0;
+        modificados.clear();
+        extraidosSinGuardar.clear();
+        descargando = null;
     }
 
     @SubscribeEvent
@@ -234,7 +268,20 @@ public final class GeneradorLocal {
         if (!(evento.getLevel() instanceof ServerLevel nivel) || !(evento.getChunk() instanceof LevelChunk chunk)) {
             return;
         }
-        if (store == null || extraidoVigente(claveRegion(nivel, chunk), chunk.getPos().x, chunk.getPos().z)) {
+        Pendiente clave = new Pendiente(nivel.dimension(), chunk.getPos().toLong());
+        if (clave.equals(descargando)) {
+            descargando = null;
+        }
+        if (store == null) {
+            return;
+        }
+        if (extraidoVigente(claveRegion(nivel, chunk), chunk.getPos().x, chunk.getPos().z)) {
+            // Vanilla marca "sin guardar" todo chunk que carga (LevelChunk desde el ProtoChunk) y lo
+            // guarda a los pocos segundos: ese guardado no es un cambio. Sin esto, cada chunk visitado
+            // se volvía a extraer al descargarse.
+            if (chunk.isUnsaved()) {
+                extraidosSinGuardar.add(clave);
+            }
             return;
         }
         encolar(nivel, chunk);
@@ -296,11 +343,113 @@ public final class GeneradorLocal {
         return nivel.getBrightness(net.minecraft.world.level.LightLayer.SKY, pos) > 0;
     }
 
+    /**
+     * Marca de un chunk que cambió después de extraerse: la versión 0 no es vigente (se vuelve a
+     * extraer al cargarlo) pero el chunk sigue contando como generado, con sus nodos viejos
+     * mientras tanto. Persiste: un cambio no se pierde aunque el juego se cierre con el chunk cargado.
+     */
+    private static final byte[] MARCA_VENCIDA = {0};
+
     @SubscribeEvent
     public void alDescargarChunk(ChunkEvent.Unload evento) {
-        if (evento.getLevel() instanceof ServerLevel nivel && evento.getChunk() instanceof LevelChunk chunk
-                && chunk.isUnsaved()) {
+        if (!(evento.getLevel() instanceof ServerLevel nivel) || !(evento.getChunk() instanceof LevelChunk chunk)) {
+            return;
+        }
+        Pendiente clave = new Pendiente(nivel.dimension(), chunk.getPos().toLong());
+        descargando = clave;
+        boolean cambiado = modificados.remove(clave) | chunk.isUnsaved() && !extraidosSinGuardar.contains(clave);
+        extraidosSinGuardar.remove(clave);
+        if (cambiado && store != null) {
+            // Vencida antes de encolar: si no entra en la cola, se extrae en la próxima carga.
+            store.guardar(claveRegion(nivel, chunk), claveMarca(chunk), MARCA_VENCIDA);
             encolar(nivel, chunk);
+        }
+    }
+
+    /**
+     * Un chunk cambiado sale de la vista de un jugador: desde ahí lo dibuja el LOD, así que se
+     * vuelve a extraer ya. La descarga no alcanza: cerca del spawn (y de otros tickets) el chunk
+     * queda en memoria, inaccesible, sin evento de descarga, y su LOD seguía viejo. Hilo del
+     * servidor; el chunk todavía está completo (los tickets se actualizan después).
+     */
+    @SubscribeEvent
+    public void alSalirDeLaVista(ChunkWatchEvent.UnWatch evento) {
+        ServerLevel nivel = evento.getLevel();
+        if (store == null || modificados.isEmpty()
+                || !modificados.contains(new Pendiente(nivel.dimension(), evento.getPos().toLong()))) {
+            return;
+        }
+        LevelChunk chunk = nivel.getChunkSource().getChunkNow(evento.getPos().x, evento.getPos().z);
+        if (chunk != null) {
+            encolar(nivel, chunk); // si no entra, queda pendiente; y la marca vencida cubre el resto
+        }
+    }
+
+    /** Tope por pasada de {@link #reextraerFueraDeVista}. */
+    static final int REEXTRACCIONES_POR_PASADA = 32;
+    /**
+     * Cada cuánto (30 s): un chunk fuera de la vista que cambia seguido (cultivos, pasto) no se
+     * re-extrae en cada guardado; lo que sale de la vista sí, en el acto.
+     */
+    static final int TICKS_ENTRE_BARRIDOS = 600;
+    private int ticksDesdeBarrido;
+
+    /**
+     * Cambiados que ningún jugador tiene a la vista: los que cambian por ticks aleatorios entre la
+     * distancia de vista y la de simulación nunca "salen de la vista" ({@link #alSalirDeLaVista}),
+     * y ahí ya los dibuja el LOD. Cada {@link #TICKS_ENTRE_BARRIDOS}, hilo del servidor.
+     */
+    private void reextraerFueraDeVista(MinecraftServer servidor) {
+        if (modificados.isEmpty() || store == null) {
+            return;
+        }
+        int vista = servidor.getPlayerList().getViewDistance();
+        var jugadores = servidor.getPlayerList().getPlayers();
+        int hechas = 0;
+        for (Pendiente p : List.copyOf(modificados)) {
+            if (hechas >= REEXTRACCIONES_POR_PASADA) {
+                return;
+            }
+            int x = ChunkPos.getX(p.chunk()), z = ChunkPos.getZ(p.chunk());
+            boolean aLaVista = false;
+            for (ServerPlayer jugador : jugadores) {
+                if (jugador.level().dimension() == p.dimension()
+                        && Math.max(Math.abs(jugador.chunkPosition().x - x), Math.abs(jugador.chunkPosition().z - z)) <= vista) {
+                    aLaVista = true;
+                    break;
+                }
+            }
+            ServerLevel nivel = aLaVista ? null : servidor.getLevel(p.dimension());
+            LevelChunk chunk = nivel == null ? null : nivel.getChunkSource().getChunkNow(x, z);
+            if (chunk != null) {
+                encolar(nivel, chunk);
+                hechas++;
+            }
+        }
+    }
+
+    /**
+     * Vanilla guarda solo los chunks con cambios: si uno ya extraído se guarda, cambió
+     * (salvo el primer guardado de uno recién generado, o el de su descarga). Hilo del servidor.
+     */
+    @SubscribeEvent
+    public void alGuardarChunk(ChunkDataEvent.Save evento) {
+        if (store == null || !(evento.getLevel() instanceof ServerLevel nivel)
+                || !(evento.getChunk() instanceof LevelChunk chunk)) {
+            return;
+        }
+        Pendiente clave = new Pendiente(nivel.dimension(), chunk.getPos().toLong());
+        if (clave.equals(descargando)) {
+            descargando = null;
+            return;
+        }
+        if (extraidosSinGuardar.remove(clave) || modificados.contains(clave)) {
+            return;
+        }
+        RegionFileStore.ClaveRegion region = claveRegion(nivel, chunk);
+        if (extraidoVigente(region, chunk.getPos().x, chunk.getPos().z)) {
+            modificados.add(clave);
+            store.guardar(region, claveMarca(chunk), MARCA_VENCIDA);
         }
     }
 
@@ -320,6 +469,10 @@ public final class GeneradorLocal {
             ticksDesdeLote = 0;
             lanzarLoteGrande();
         }
+        if (++ticksDesdeBarrido >= TICKS_ENTRE_BARRIDOS) {
+            ticksDesdeBarrido = 0;
+            reextraerFueraDeVista(evento.getServer());
+        }
         reintentarPendientes(evento.getServer());
     }
 
@@ -332,7 +485,7 @@ public final class GeneradorLocal {
             ServerLevel nivel = servidor.getLevel(p.dimension());
             LevelChunk chunk = nivel == null ? null
                     : nivel.getChunkSource().getChunkNow(ChunkPos.getX(p.chunk()), ChunkPos.getZ(p.chunk()));
-            // Descargado: se regenera en la próxima carga. Ya generado: nada que hacer.
+            // Descargado: se extrae en la próxima carga (sin marca o con la marca vencida). Ya generado: nada que hacer.
             if (chunk == null || extraidoVigente(claveRegion(nivel, chunk), chunk.getPos().x, chunk.getPos().z)) {
                 pendientes.remove(p);
                 continue;
@@ -610,6 +763,15 @@ public final class GeneradorLocal {
                     OctreeNodeCodec.serializar(nodo, VOXELES_GRANDE));
         }
 
+        @Override
+        public void borrarGrande(int nivel, int nodoX, int nodoY, int nodoZ) {
+            RegionFileStore.ClaveRegion region = regionGrande(nivel, nodoX, nodoZ);
+            long clave = NivelesGrandes.clave(nivel, nodoX, nodoY, nodoZ);
+            if (store.contiene(region, clave)) {
+                store.guardar(region, clave, SIN_NODO); // entrada vacía: ningún lector la toma como nodo
+            }
+        }
+
         private RegionFileStore.ClaveRegion regionGrande(int nivel, int nodoX, int nodoZ) {
             return new RegionFileStore.ClaveRegion(dimension,
                     NivelesGrandes.regionDe(nivel, nodoX), NivelesGrandes.regionDe(nivel, nodoZ));
@@ -639,13 +801,17 @@ public final class GeneradorLocal {
         Dimension dimension = new Dimension(idDimension(nivel.dimension()), nivel.getMinSection(), nivel.getMaxSection());
         long chunkEmpaquetado = NivelesGrandes.empaquetar(chunk.getPos().x, chunk.getPos().z);
 
+        int chunkX = chunk.getPos().x, chunkZ = chunk.getPos().z;
+        boolean reextraccion = destino.contiene(region, marca);
         var tarea = scheduler.intentarEnviar(() -> {
             long inicioTarea = System.nanoTime();
+            boolean[] conNodos = new boolean[dimension.maxSeccion() - dimension.minSeccion()];
             for (LectorSeccionMinecraft.Captura captura : capturas) {
                 SectionExtractor.SeccionExtraida seccion = captura.extraer();
                 if (seccion == null) {
                     continue;
                 }
+                conNodos[seccion.seccionY() - dimension.minSeccion()] = true;
                 for (OctreeNode nodo : SectionExtractor.generarNiveles(seccion, colapsoDesde)) {
                     long clave = SectionExtractor.claveNodo(nodo.nivelLod(),
                             seccion.seccionX(), seccion.seccionY(), seccion.seccionZ());
@@ -653,7 +819,27 @@ public final class GeneradorLocal {
                             OctreeNodeCodec.serializar(nodo, SectionExtractor.voxelesPorNodo(nodo.nivelLod())));
                 }
             }
+            // Al volver a extraer, una sección que quedó vacía (excavada, o un árbol que ya no está)
+            // conservaba sus nodos viejos: se pisan con una entrada vacía, que ningún lector toma como nodo.
+            for (int i = 0; i < conNodos.length; i++) {
+                if (conNodos[i]) {
+                    continue;
+                }
+                for (int n = 0; n < SectionExtractor.NIVELES; n++) {
+                    long clave = SectionExtractor.claveNodo(n, chunkX, dimension.minSeccion() + i, chunkZ);
+                    if (destino.contiene(region, clave)) {
+                        destino.guardar(region, clave, SIN_NODO);
+                    }
+                }
+            }
             destino.guardar(region, marca, MARCA);
+            AvisoChunk aviso = avisoReextraccion;
+            if (reextraccion) {
+                chunksReextraidos.increment();
+                if (aviso != null) {
+                    aviso.cambio(chunkX, chunkZ);
+                }
+            }
             nanosChunks.add(System.nanoTime() - inicioTarea);
             chunksHechos.increment();
             chunksExtraidosTotal.incrementAndGet();
@@ -664,8 +850,30 @@ public final class GeneradorLocal {
             descartadosPorColaLlena++;
             return false;
         }
+        Pendiente clave = new Pendiente(nivel.dimension(), chunk.getPos().toLong());
+        modificados.remove(clave); // lo capturado ya incluye los cambios
+        if (chunk.isUnsaved()) {
+            extraidosSinGuardar.add(clave);
+        } else {
+            extraidosSinGuardar.remove(clave);
+        }
         return true;
     }
+
+    private static final byte[] SIN_NODO = new byte[0];
+
+    /** Quién se entera de que los datos de un chunk se rehicieron. */
+    @FunctionalInterface
+    public interface AvisoChunk {
+        void cambio(int chunkX, int chunkZ);
+    }
+
+    /**
+     * El render del cliente integrado ({@code RenderLod}): una celda ya completa no se vuelve a
+     * armar sola, así que sin el aviso un chunk re-extraído seguía con la malla vieja. Desde los
+     * hilos del pool; null en un servidor dedicado.
+     */
+    public static volatile AvisoChunk avisoReextraccion;
 
     /** Calidad con que genera el servidor en curso, o null si no hay servidor corriendo. */
     public ParametrosCalidad calidad() {

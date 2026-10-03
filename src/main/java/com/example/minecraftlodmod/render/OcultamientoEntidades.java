@@ -112,7 +112,14 @@ public final class OcultamientoEntidades {
         camZ = z;
         iniciarHilo();
         long ahora = System.nanoTime();
-        Candidato c = CANDIDATOS.computeIfAbsent(clave, k -> new Candidato());
+        // Caja y momento ya puestos al crearlo: el hilo de pruebas lo podía ver sin caja (NullPointerException,
+        // que dejaba todo visible una vuelta) o con vistoNs en 0 (y lo olvidaba enseguida).
+        Candidato c = CANDIDATOS.computeIfAbsent(clave, k -> {
+            Candidato nuevo = new Candidato();
+            nuevo.caja = caja;
+            nuevo.vistoNs = ahora;
+            return nuevo;
+        });
         c.caja = caja;
         c.vistoNs = ahora;
         if (!c.oculto || ahora - c.verificadoNs > VIGENCIA_NS) {

@@ -50,9 +50,22 @@ public final class GenerationTaskScheduler {
 
     private final ForkJoinPool pool;
     static final int PRIORIDAD_HILOS = Thread.NORM_PRIORITY - 2;
-    private final Semaphore permisos;
-    private int limiteActual;
+    private final SemaforoAjustable permisos;
+    private volatile int limiteActual;
     private final Semaphore permisosDeCola;
+    /** Apagado: el trabajo de fondo cede en su próximo punto de corte ({@link #hayPrioritariasEsperando}). */
+    private volatile boolean apagado;
+
+    /** Semáforo que puede quedar en negativo al bajar el límite (sin esperar a que se liberen permisos). */
+    private static final class SemaforoAjustable extends Semaphore {
+        SemaforoAjustable(int permisos) {
+            super(permisos);
+        }
+
+        void reducir(int cantidad) {
+            reducePermits(cantidad);
+        }
+    }
 
     public GenerationTaskScheduler(int hilosMaximos) {
         this(hilosMaximos, Integer.MAX_VALUE);
@@ -89,7 +102,7 @@ public final class GenerationTaskScheduler {
             hilo.setPriority(PRIORIDAD_HILOS);
             return hilo;
         }, null, false);
-        this.permisos = new Semaphore(hilosMaximos);
+        this.permisos = new SemaforoAjustable(hilosMaximos);
         this.limiteActual = hilosMaximos;
         this.permisosDeCola = new Semaphore(maxTareasEnCola);
     }
@@ -217,9 +230,9 @@ public final class GenerationTaskScheduler {
         return Math.max(1, limite - 1);
     }
 
-    /** ¿Hay extracción u otro trabajo prioritario esperando turno? El trabajo de fondo cede si sí. */
+    /** ¿Hay extracción u otro trabajo prioritario esperando turno (o se apagó)? El trabajo de fondo cede si sí. */
     public boolean hayPrioritariasEsperando() {
-        return prioritariasEsperando.get() > 0;
+        return apagado || prioritariasEsperando.get() > 0;
     }
 
     private <T> Future<T> enviarConCupoTomado(Callable<T> tarea) {
@@ -250,13 +263,13 @@ public final class GenerationTaskScheduler {
      * periódicamente junto con sus otras dos perillas (umbral de detalle y
      * radio activo — sección 21).
      *
-     * IMPORTANTE: si el nuevo límite es menor al actual, este método
-     * BLOQUEA hasta poder retener los permisos de sobra — se espera que
-     * quien llama lo haga desde el hilo de control del auto-ajuste (no
-     * desde el hilo principal del juego), donde una espera corta es
-     * aceptable.
+     * No bloquea: al bajar, los permisos de sobra se descuentan aunque estén
+     * en uso (el semáforo puede quedar en negativo) y las tareas en curso
+     * los devuelven al terminar. Antes se esperaba a tomarlos todos juntos, y
+     * con tareas entrando sin parar (que los toman de a uno) esa espera podía
+     * no terminar nunca, trabando el hilo del auto-ajuste.
      */
-    public void ajustarLimiteConcurrencia(int nuevoLimite) {
+    public synchronized void ajustarLimiteConcurrencia(int nuevoLimite) {
         if (nuevoLimite < 1) {
             throw new IllegalArgumentException("nuevoLimite debe ser al menos 1, fue: " + nuevoLimite);
         }
@@ -264,7 +277,7 @@ public final class GenerationTaskScheduler {
         if (delta > 0) {
             permisos.release(delta);
         } else if (delta < 0) {
-            permisos.acquireUninterruptibly(-delta);
+            permisos.reducir(-delta);
         }
         limiteActual = nuevoLimite;
     }
@@ -282,7 +295,25 @@ public final class GenerationTaskScheduler {
         return enviar(tarea).get();
     }
 
+    /** Sin esperar: las tareas encoladas igual se ejecutan; las de fondo ceden. */
     public void apagar() {
+        apagado = true;
         pool.shutdown();
+    }
+
+    /**
+     * Apaga y espera a que terminen las tareas (como mucho {@code maximoMs}): quien
+     * cierra el store después no pierde lo que todavía se estaba generando.
+     *
+     * @return true si terminaron todas
+     */
+    public boolean apagarYEsperar(long maximoMs) {
+        apagar();
+        try {
+            return pool.awaitTermination(maximoMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 }

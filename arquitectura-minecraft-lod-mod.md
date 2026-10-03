@@ -1315,3 +1315,59 @@ descarte por campo de visión con la ortogonal de la sombra recorta lo que no
 entra en su volumen. No con el contrato Voxy (otro formato de malla).
 Verificado con un pack propio que muestra `shadowtex0` como curvas de nivel:
 continuas en el borde LOD/vanilla.
+
+
+## 43. Revisión de errores de todo el código — 2026-10-03
+
+**Re-extracción de chunks cambiados (0.26.36, `GeneradorLocal`):** la
+invalidación de la sección 10 ("al descargarse si quedó modificado") no andaba:
+vanilla guarda los chunks cargados que cambian cada ~10 s
+(`ChunkMap#processUnloads` → `saveChunkIfNeeded`), así que al descargarse casi
+nunca siguen `isUnsaved()`. Ahora:
+- `ChunkDataEvent.Save` de un chunk ya extraído = cambió → marca **vencida**
+  (versión 0: `extraidoVigente` da false, `tieneMarca` sigue true) y el chunk
+  queda en `modificados`. Persiste: si el juego se cierra con el chunk cargado,
+  se re-extrae en la próxima carga.
+- No cuentan como cambio el primer guardado de un chunk recién cargado (vanilla
+  marca sin guardar todo `LevelChunk` que sale de un `ProtoChunk`, o sea cada
+  carga) ni el de uno recién extraído sin guardar (`extraidosSinGuardar`), ni el
+  que vanilla hace justo después del evento de descarga (`descargando`).
+- Cuando sale de la vista de un jugador (`ChunkWatchEvent.UnWatch`, el chunk
+  todavía está completo) se encola la extracción: desde ahí lo dibuja el LOD.
+  La descarga sola no alcanzaba: cerca del spawn (sus tickets) los chunks
+  quedan en memoria, inaccesibles, sin `ChunkEvent.Unload`. Al descargarse,
+  si sigue en `modificados`: marca vencida y se encola (la luz todavía está).
+  El store se cierra en `ServerStoppedEvent`, después del guardado final de
+  vanilla.
+- Los cambiados que nadie tiene a la vista (ticks aleatorios entre la distancia
+  de vista y la de simulación: nunca "salen de la vista") se re-extraen en un
+  barrido cada 30 s (`reextraerFueraDeVista`, hasta 32 por pasada).
+- Re-extraer pisa con una entrada vacía (no es nodo para `esNodo`) los nodos de
+  las secciones que quedaron vacías, y avisa al render
+  (`GeneradorLocal.avisoReextraccion` → `RenderLod.chunkConDatosNuevos`): una
+  celda completa no se rearmaba nunca sola. Se rearman solo las celdas que tocan
+  el chunk o sus vecinos (no la región entera, como con los datos de red).
+  `NivelesGrandes` borra (`Acceso.borrarGrande`) los nodos grandes que quedaron
+  todo aire: antes quedaba el viejo (terreno aproximado más alto que el real).
+- Medido en Xvfb, después de alejarse 430 bloques: 22 chunks re-extraídos en el
+  acto (los que salieron de la vista); los demás, en el barrido.
+- Medido en Xvfb: sin el arreglo de la carga, 1238 chunks "cambiados" con solo
+  entrar al mundo; con él, decenas (ticks aleatorios, lo tocado con `/fill`). Las
+  marcas vencidas de una sesión se re-extrajeron al cargar en la siguiente
+  (761 + 477 chunks).
+
+**Otros (0.26.36):**
+- `ServidorRebanadas`: una rebanada fuera del radio servido se contesta "sin
+  cambios" con huella 0 (antes, silencio: el cliente la tenía 60 s en vuelo, y
+  con su radio mayor que el servido ocupaba los 24 pedidos). `RebanadaPayload.partir`
+  respeta `MAX_ENTRADAS` (el cliente rechazaba el paquete y se desconectaba).
+- `GenerationTaskScheduler`: bajar el límite usa `reducePermits` (semáforo que
+  puede quedar en negativo) en vez de esperar a juntar n permisos libres, que
+  con tareas entrando sin parar podía no pasar nunca y trababa el hilo del
+  auto-ajuste. `apagarYEsperar` (5 s) al cerrar el mundo; apagado, el trabajo de
+  fondo cede (`hayPrioritariasEsperando`).
+- `RenderLod`: al cambiar de mundo se vacía la cola de mallas y el relieve
+  (`CacheRelieve.olvidar`, con generación para lecturas tardías); `ChunksEnRam`
+  se reinicia al detener el servidor. El descarte de caras de arriba por
+  dirección suma la bajada de la curvatura. Memoria nativa liberada si falla el
+  armado de una celda.

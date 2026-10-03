@@ -6,6 +6,39 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.36 — Corrección de errores (revisión de todo el código)
+- **Lo que se construye o se rompe ahora llega al LOD.** Antes casi nunca: el
+  LOD se rehacía al descargarse un chunk solo si seguía "sin guardar", pero
+  vanilla guarda los chunks cambiados cada ~10 s, así que al irse ya estaban
+  guardados (y cerca del spawn los chunks ni siquiera se descargan). Ahora se
+  detecta el cambio al guardarse y el chunk se vuelve a leer apenas sale de la
+  vista (o al volver a cargarse, aunque se cierre el juego antes). Las celdas
+  del LOD que lo muestran se rearman solas.
+- Al volver a leer un chunk, las secciones que quedaron vacías (un pozo, un
+  árbol talado) ya no conservan su LOD viejo.
+- Multijugador: con un radio de LOD más grande que el que sirve el servidor
+  (horizonte, presets altos), los pedidos de afuera quedaban sin respuesta y
+  trababan la llegada de lo cercano hasta un minuto. Ahora el servidor contesta
+  "no hay" y el cliente sigue.
+- Multijugador: un paquete con demasiadas entradas chicas desconectaba al
+  cliente; ahora se parte.
+- El auto-ajuste podía quedar trabado al bajar los hilos de generación con
+  mucha carga (dejaba de ajustar todo lo demás).
+- Al cerrar un mundo se espera a que termine la generación en curso: antes se
+  perdía lo último generado, y el horizonte aproximado seguía calculando un
+  rato después de salir.
+- Al cambiar de mundo: no quedan celdas del mundo anterior en cola (el mundo
+  nuevo aparecía más lento), ni el relieve del anterior ocultando terreno, ni
+  chunks retenidos del anterior.
+- Con curvatura de planeta chico, la parte de arriba de mesetas cercanas ya no
+  desaparece.
+- Entidades recién aparecidas: ya no hay un cuadro en que todas se dibujan sin
+  prueba de ocultamiento (o se olvida la prueba).
+- Una falla al armar una celda ya no pierde memoria nativa.
+- Terreno lejano que ya no existe (por ejemplo, el horizonte aproximado más alto
+  que el terreno real que lo reemplazó) ya no queda flotando en los niveles
+  grandes del LOD.
+
 ## 0.26.35 — Menos LOD repetido bajo vanilla y sombras del LOD con shaders
 - El LOD ya no arma terreno debajo de los chunks que vanilla dibuja: usa la
   misma prueba de distancia que vanilla en vez de un círculo más chico, así que

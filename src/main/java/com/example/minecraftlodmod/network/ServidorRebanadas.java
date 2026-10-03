@@ -43,12 +43,18 @@ final class ServidorRebanadas {
     void pedir(ServerPlayer jugador, List<RebanadaId> rebanadas, long[] huellas, int radioChunks) {
         Jugador j = jugadores.computeIfAbsent(jugador.getUUID(), u -> new Jugador());
         int cx = jugador.chunkPosition().x, cz = jugador.chunkPosition().z;
+        byte dimension = GeneradorLocal.idDimension(jugador.serverLevel().dimension());
         for (int i = 0; i < rebanadas.size(); i++) {
             RebanadaId r = rebanadas.get(i);
             if (j.cola.size() >= MAX_COLA) {
                 return;
             }
-            if (r.dentroDelRadio(cx, cz, radioChunks) && j.enCola.add(r.empaquetada())) {
+            if (!r.dentroDelRadio(cx, cz, radioChunks)) {
+                // Respuesta vacía en vez de silencio: si no, el cliente la cuenta "en vuelo"
+                // hasta que vence la espera, y con su radio mayor que el servido (horizonte)
+                // esas esperas ocupaban todos sus pedidos y lo cercano no llegaba.
+                j.salida.add(RebanadaPayload.sinCambios(dimension, r, 0));
+            } else if (j.enCola.add(r.empaquetada())) {
                 j.cola.add(r);
                 j.huellas.put(r.empaquetada(), huellas[i]);
             }

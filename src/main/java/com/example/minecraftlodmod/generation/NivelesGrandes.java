@@ -49,6 +49,13 @@ public final class NivelesGrandes {
         void guardarGrande(int nivel, int nodoX, int nodoY, int nodoZ, SuperVoxel[] grilla);
 
         /**
+         * El nodo quedó todo de aire (si existía, se borra): sin esto quedaba el viejo, por ejemplo
+         * terreno aproximado más alto que el real que lo reemplazó, flotando en el horizonte.
+         */
+        default void borrarGrande(int nivel, int nodoX, int nodoY, int nodoZ) {
+        }
+
+        /**
          * true si el chunk tiene LOD por sección (real o aproximado chunk por
          * chunk): ahí una sección que falta es aire de verdad.
          */
@@ -118,6 +125,8 @@ public final class NivelesGrandes {
                     if (grilla != null) {
                         acceso.guardarGrande(nivel, x(nodo), nodoY, z(nodo), grilla);
                         guardados++;
+                    } else {
+                        acceso.borrarGrande(nivel, x(nodo), nodoY, z(nodo));
                     }
                 }
                 padres.add(empaquetar(Math.floorDiv(x(nodo), 2), Math.floorDiv(z(nodo), 2)));

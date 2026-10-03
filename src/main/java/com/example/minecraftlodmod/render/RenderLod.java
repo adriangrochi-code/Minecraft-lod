@@ -61,7 +61,6 @@ import com.example.minecraftlodmod.cubico.RangoSecciones;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -300,7 +299,7 @@ public final class RenderLod {
                 bytes += (long) e.vertices * e.bytesVertice;
             }
         }
-        int enCola = hiloMallas instanceof ThreadPoolExecutor t ? t.getQueue().size() : 0;
+        int enCola = hiloMallas.getQueue().size();
         return new Resumen(dibujoPermitido() && calidad != null, piezas, vertices, verticesUltimoFrame,
                 llamadasUltimoFrame, nanosDibujoUltimoFrame / 1e6, bytes >> 20, piezasOcultas, enCola, radioEnUso);
     }
@@ -375,12 +374,44 @@ public final class RenderLod {
         regionesNuevas.add(PlanCeldas.claveChunk(regionX, regionZ));
     }
 
+    /** Chunks (x, z empaquetados) re-extraídos en el servidor integrado, por rearmar. */
+    private static final java.util.concurrent.ConcurrentLinkedQueue<Long> chunksNuevos =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    /**
+     * Un chunk re-extraído en el servidor integrado ({@code GeneradorLocal.avisoReextraccion},
+     * cualquier hilo): se rearman solo las celdas que lo tocan o tocan a sus vecinos (sus caras
+     * del borde dependen de ellos), no la región entera.
+     */
+    public static void chunkConDatosNuevos(int chunkX, int chunkZ) {
+        chunksNuevos.add(PlanCeldas.claveChunk(chunkX, chunkZ));
+    }
+
     /** Rearma las celdas que tocan las regiones avisadas (hilo de render). */
     private void rearmarRegionesNuevas(long ahora) {
-        if (regionesNuevas.isEmpty() || ahora - ultimoRearmeRemotoNanos < 1_000_000_000L) {
+        if (regionesNuevas.isEmpty() && chunksNuevos.isEmpty() || ahora - ultimoRearmeRemotoNanos < 1_000_000_000L) {
             return;
         }
         ultimoRearmeRemotoNanos = ahora;
+        boolean replanificar = false;
+        for (Long c; (c = chunksNuevos.poll()) != null; ) {
+            int chunkX = (int) c.longValue(), chunkZ = (int) (c >> 32);
+            for (int cx = Math.floorDiv(chunkX - 1, PlanCeldas.LADO_CELDA); cx <= Math.floorDiv(chunkX + 1, PlanCeldas.LADO_CELDA); cx++) {
+                for (int cz = Math.floorDiv(chunkZ - 1, PlanCeldas.LADO_CELDA); cz <= Math.floorDiv(chunkZ + 1, PlanCeldas.LADO_CELDA); cz++) {
+                    EstadoCelda e = celdas.get(((long) (cx & 0x3FFFFFFF) << 30) | (cz & 0x3FFFFFFF));
+                    if (e != null && e.construidaCon != null) {
+                        e.construidaCon = null;
+                        replanificar = true;
+                    }
+                }
+            }
+        }
+        if (replanificar) {
+            chunkPlanX = Integer.MIN_VALUE;
+        }
+        if (regionesNuevas.isEmpty()) {
+            return;
+        }
         it.unimi.dsi.fastutil.longs.LongOpenHashSet regiones = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
         Long r;
         while ((r = regionesNuevas.poll()) != null) {
@@ -431,7 +462,7 @@ public final class RenderLod {
      * encolado antes. Solo {@code execute()}: {@code submit()} envolvería la
      * tarea en algo no comparable.
      */
-    private final ExecutorService hiloMallas = new ThreadPoolExecutor(HILOS_MALLAS, HILOS_MALLAS, 0,
+    private final ThreadPoolExecutor hiloMallas = new ThreadPoolExecutor(HILOS_MALLAS, HILOS_MALLAS, 0,
             TimeUnit.MILLISECONDS, new PriorityBlockingQueue<>(), new java.util.concurrent.ThreadFactory() {
         private final java.util.concurrent.atomic.AtomicInteger numero = new java.util.concurrent.atomic.AtomicInteger();
 
@@ -615,6 +646,8 @@ public final class RenderLod {
         this.generador = generador;
         this.balance = balance;
         instancia = this;
+        // Chunk re-extraído en el servidor integrado (cambió): sus celdas se rearman como con datos de red.
+        GeneradorLocal.avisoReextraccion = RenderLod::chunkConDatosNuevos;
     }
 
     /** Para la pasada de sombras de Iris ({@code mixin/MixinSombrasIris}), que no tiene a mano la instancia. */
@@ -1103,6 +1136,7 @@ public final class RenderLod {
                        int vecinas, GeometriaLod.Texturas texturas, int oclusion, boolean unBuffer, boolean bloque,
                        boolean voxy, boolean separarAgua, boolean cruces) {
         long inicioArmado = System.nanoTime();
+        ByteBufferBuilder memoria = null;
         try {
             GeometriaLod geometria = geometriaMallas.get();
             geometria.reiniciar();
@@ -1131,7 +1165,7 @@ public final class RenderLod {
                         : DefaultVertexFormat.BLOCK;
             };
             // Toda la memoria de una vez: las 6 mallas salen del mismo bloque, sin realocar.
-            ByteBufferBuilder memoria = new ByteBufferBuilder(geometria.vertices() * formato.getVertexSize());
+            memoria = new ByteBufferBuilder(geometria.vertices() * formato.getVertexSize());
             MeshData[][] mallas = new MeshData[GeometriaLod.GRUPOS][];
             float[] planos = new float[2 * GeometriaLod.GRUPOS];
             // El agua separada (contrato Voxy): un buffer con todas sus caras, para la pasada translúcida.
@@ -1175,6 +1209,9 @@ public final class RenderLod {
             mallasArmadas.increment();
         } catch (RuntimeException e) {
             LOG.error("LOD: no se pudo armar la celda {},{}", celda.celdaX(), celda.celdaZ(), e);
+            if (memoria != null) {
+                memoria.close(); // memoria nativa: sin esto quedaba perdida en cada error
+            }
             listas.add(new MallaLista(clave, celda, null, null, null, 0, TipoMalla.PLANA));
         }
     }
@@ -1859,7 +1896,9 @@ public final class RenderLod {
                 VertexBuffer[] piezas = buffers[cara];
                 double camaraEnEje = switch (cara >> 1) {
                     case 0 -> camara.x - origenX;
-                    case 1 -> camara.y;
+                    // La curvatura baja la celda: una cara de arriba (3, +Y) se ve desde más abajo que su
+                    // altura sin curvar. Se compara con la bajada máxima (de abajo, sin bajar: también seguro).
+                    case 1 -> cara == 3 ? camara.y + bajadaCelda + curvaAbajo : camara.y;
                     case 2 -> camara.z - origenZ;
                     default -> 0; // agua y cruces: planos infinitos, siempre visibles
                 };
@@ -1968,7 +2007,16 @@ public final class RenderLod {
         private final Map<Long, Datos> regiones = new java.util.concurrent.ConcurrentHashMap<>();
         private final Set<Long> enCurso = java.util.concurrent.ConcurrentHashMap.newKeySet();
         private volatile byte dimension = -1;
+        /** Sube al cambiar de mundo: una lectura del mundo anterior que termina tarde no entra. */
+        private volatile int generacion;
         private java.util.concurrent.ExecutorService lector;
+
+        /** Otro mundo (puede tener el mismo id de dimensión): lo leído no vale. Hilo de render. */
+        void olvidar() {
+            generacion++;
+            regiones.clear();
+            dimension = -1;
+        }
 
         void preparar(RegionFileStore store, byte dimension, int minSeccion, int maxSeccion,
                       double camX, double camZ, double radio) {
@@ -1998,10 +2046,11 @@ public final class RenderLod {
                 int rx = (int) faltan.get(i)[1], rz = (int) faltan.get(i)[2];
                 long clave = PlanCeldas.claveChunk(rx, rz);
                 enCurso.add(clave);
+                int deGeneracion = generacion;
                 lector().execute(() -> {
                     try {
                         Datos leido = leer(store, dimension, rx, rz, minSeccion, maxSeccion, System.nanoTime());
-                        if (this.dimension == dimension) {
+                        if (this.dimension == dimension && generacion == deGeneracion) {
                             regiones.put(clave, leido);
                         }
                     } catch (RuntimeException e) {
@@ -2413,6 +2462,10 @@ public final class RenderLod {
         celdas.values().forEach(RenderLod::cerrarBuffer);
         celdas.clear();
         ordenDibujo.clear();
+        // Las celdas encoladas del mundo anterior ya no tienen dueño: armarlas leía el store viejo
+        // y demoraba las del mundo nuevo detrás de cientos de tareas.
+        hiloMallas.getQueue().clear();
+        relieve.olvidar();
         alcanceLodBloques = 0;
         MallaLista lista;
         while ((lista = listas.poll()) != null) {

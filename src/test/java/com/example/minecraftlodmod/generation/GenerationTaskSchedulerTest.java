@@ -97,6 +97,62 @@ class GenerationTaskSchedulerTest {
     }
 
     @Test
+    @Timeout(10)
+    void bajarElLimiteConTareasEnCursoNoBloqueaYSeRespeta() throws Exception {
+        GenerationTaskScheduler scheduler = new GenerationTaskScheduler(4);
+        try {
+            CountDownLatch soltar = new CountDownLatch(1);
+            CountDownLatch arrancaron = new CountDownLatch(4);
+            for (int i = 0; i < 4; i++) {
+                scheduler.enviar(() -> {
+                    arrancaron.countDown();
+                    soltar.await();
+                    return null;
+                });
+            }
+            assertTrue(arrancaron.await(5, TimeUnit.SECONDS));
+            // Con los 4 permisos en uso: antes esperaba a tomarlos y quedaba trabado acá.
+            scheduler.ajustarLimiteConcurrencia(1);
+            assertEquals(1, scheduler.limiteConcurrenciaActual());
+            soltar.countDown();
+
+            AtomicInteger enEjecucion = new AtomicInteger();
+            AtomicInteger maximo = new AtomicInteger();
+            List<Future<Object>> futuros = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                futuros.add(scheduler.enviar(() -> {
+                    maximo.accumulateAndGet(enEjecucion.incrementAndGet(), Math::max);
+                    Thread.sleep(10);
+                    enEjecucion.decrementAndGet();
+                    return null;
+                }));
+            }
+            for (Future<Object> f : futuros) {
+                f.get(5, TimeUnit.SECONDS);
+            }
+            assertEquals(1, maximo.get());
+        } finally {
+            scheduler.apagar();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void apagarYEsperarDejaTerminarLoEncolado() {
+        GenerationTaskScheduler scheduler = new GenerationTaskScheduler(2);
+        AtomicInteger hechas = new AtomicInteger();
+        for (int i = 0; i < 20; i++) {
+            scheduler.enviar(() -> {
+                Thread.sleep(5);
+                return hechas.incrementAndGet();
+            });
+        }
+        assertTrue(scheduler.apagarYEsperar(5000));
+        assertEquals(20, hechas.get());
+        assertTrue(scheduler.hayPrioritariasEsperando(), "el trabajo de fondo cede una vez apagado");
+    }
+
+    @Test
     void ajustarLimiteConcurrenciaRechazaValoresMenoresAUno() {
         GenerationTaskScheduler scheduler = new GenerationTaskScheduler(2);
         try {
