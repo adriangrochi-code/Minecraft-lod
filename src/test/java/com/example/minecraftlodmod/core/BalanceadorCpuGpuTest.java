@@ -10,6 +10,8 @@ class BalanceadorCpuGpuTest {
 
     private static final double OBJETIVO = 25; // 40 fps
     private static final double SIN_TIRONES = 30;
+    /** 60 FPS de objetivo con vsync a 60 Hz: el intervalo del tope es el mismo objetivo. */
+    private static final double OBJETIVO_60 = 1000.0 / 60;
 
     @Test
     void diagnosticaSegunCuantoTrabajaLaGpu() {
@@ -159,5 +161,100 @@ class BalanceadorCpuGpuTest {
             b.ajustar(22, 26, 20, OBJETIVO, false); // dentro del objetivo pero sin el 20% de margen
         }
         assertEquals(1, b.detalleExtra());
+    }
+
+    @Test
+    void enElTopeDelVsyncNoBajaPorLaEsperaInexacta() {
+        BalanceadorCpuGpu b = new BalanceadorCpuGpu(2.5, 160, 2);
+        for (int i = 0; i < 20; i++) {
+            // Apenas por encima del intervalo, sin margen en la carga: ni baja ni sube.
+            assertFalse(b.ajustar(17.2, 20, 15, 14, OBJETIVO_60, OBJETIVO_60, false));
+        }
+        assertEquals(2.5, b.umbralPx());
+        assertEquals(160, b.radioChunks());
+        assertEquals(2, b.limiteConcurrencia());
+        assertEquals(BalanceadorCpuGpu.UN_BUFFER_INICIAL, b.distanciaUnBuffer());
+        BalanceadorCpuGpu sinTope = new BalanceadorCpuGpu(2.5, 160, 2);
+        assertTrue(sinTope.ajustar(17.2, 20, 15, 14, 0, OBJETIVO_60, false), "sin tope, el mismo cuadro sí se pasa");
+    }
+
+    @Test
+    void enElTopeRecuperaPorLaCargaMedida() {
+        BalanceadorCpuGpu b = new BalanceadorCpuGpu(2.5, 160, 1);
+        for (int i = 0; i < 40; i++) {
+            b.ajustar(60, 70, Double.NaN, OBJETIVO_60, false);
+        }
+        assertTrue(b.enPisoAbsoluto());
+        int radio = b.radioChunks();
+        for (int i = 0; i < 5; i++) {
+            assertFalse(b.ajustar(16.9, 20, Double.NaN, Double.NaN, OBJETIVO_60, OBJETIVO_60, false),
+                    "en el tope y sin medir la carga no se sabe si sobra");
+        }
+        assertFalse(b.ajustar(16.9, 20, 8, 7, OBJETIVO_60, OBJETIVO_60, false));
+        assertTrue(b.ajustar(16.9, 20, 8, 7, OBJETIVO_60, OBJETIVO_60, false));
+        assertTrue(b.radioChunks() > radio, "antes no volvía nunca: el cuadro no baja del intervalo del vsync");
+    }
+
+    @Test
+    void porLaCargaSubeDeAUnPasoYEsperaVerSiSeSostiene() {
+        BalanceadorCpuGpu b = new BalanceadorCpuGpu(2.5, 160, 1);
+        for (int i = 0; i < 40; i++) {
+            b.ajustar(60, 70, Double.NaN, OBJETIVO_60, false);
+        }
+        int radio = b.radioChunks();
+        b.ajustar(16.9, 20, 8, 7, OBJETIVO_60, OBJETIVO_60, false);
+        assertTrue(b.ajustar(16.9, 20, 8, 7, OBJETIVO_60, OBJETIVO_60, false));
+        int unPaso = b.radioChunks();
+        assertTrue(unPaso > radio);
+        for (int i = 0; i < BalanceadorCpuGpu.CICLOS_PRUEBA_CARGA; i++) {
+            b.ajustar(16.9, 20, 8, 7, OBJETIVO_60, OBJETIVO_60, false);
+        }
+        assertEquals(unPaso, b.radioChunks(), "las mallas nuevas tardan: no se apila otro paso antes de verlo");
+        boolean otro = false;
+        for (int i = 0; i < 3; i++) {
+            otro |= b.ajustar(16.9, 20, 8, 7, OBJETIVO_60, OBJETIVO_60, false);
+        }
+        assertTrue(otro && b.radioChunks() > unPaso, "el paso se sostuvo: sigue");
+    }
+
+    @Test
+    void siRecuperarPorLaCargaHacePerderElTopeTardaEnReintentarCadaVezMas() {
+        BalanceadorCpuGpu b = new BalanceadorCpuGpu(2.5, 160, 1);
+        for (int i = 0; i < 40; i++) {
+            b.ajustar(60, 70, Double.NaN, OBJETIVO_60, false);
+        }
+        int bloqueo = BalanceadorCpuGpu.CICLOS_BLOQUEO_CARGA;
+        for (int falla = 0; falla < 2; falla++, bloqueo *= 2) {
+            int ciclos = 0;
+            while (!b.ajustar(16.9, 20, 8, 7, OBJETIVO_60, OBJETIVO_60, false)) {
+                ciclos++;
+                assertTrue(ciclos < bloqueo + 5, "vuelve a probar pasado el bloqueo");
+            }
+            int recuperado = b.radioChunks();
+            // A los 4 ciclos (como en Xvfb) el cuadro pierde el tope: falla.
+            for (int i = 0; i < 3; i++) {
+                b.ajustar(16.9, 20, 8, 7, OBJETIVO_60, OBJETIVO_60, false);
+            }
+            assertTrue(b.ajustar(25, 34, 8, 7, OBJETIVO_60, OBJETIVO_60, false), "pierde el tope: alivia");
+            assertTrue(b.radioChunks() <= recuperado);
+            for (int i = 0; i < bloqueo - 2; i++) {
+                assertFalse(b.ajustar(16.9, 20, 8, 7, OBJETIVO_60, OBJETIVO_60, false), "no oscila");
+            }
+        }
+    }
+
+    @Test
+    void conTironesYLaGeneracionAlMinimoIgualRecuperaLoVisible() {
+        BalanceadorCpuGpu b = new BalanceadorCpuGpu(2.5, 160, 3);
+        for (int i = 0; i < 40; i++) {
+            b.ajustar(60, 70, Double.NaN, OBJETIVO, false);
+        }
+        assertTrue(b.enPisoAbsoluto());
+        int radio = b.radioChunks();
+        for (int i = 0; i < 10; i++) {
+            b.ajustar(10, 90, Double.NaN, OBJETIVO, false); // de sobra, con tirones que no son de la generación
+        }
+        assertTrue(b.radioChunks() > radio, "antes los tirones frenaban toda la recuperación");
+        assertEquals(1, b.limiteConcurrencia(), "con tirones la generación no vuelve a subir");
     }
 }

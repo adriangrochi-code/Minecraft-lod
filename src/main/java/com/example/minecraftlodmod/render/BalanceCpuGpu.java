@@ -10,6 +10,7 @@ import com.mojang.blaze3d.systems.TimerQuery;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import org.slf4j.Logger;
 
@@ -27,6 +28,11 @@ import java.util.concurrent.Executors;
  * llamadas GL propias) entre el inicio y el fin del cuadro. Minecraft usa esa
  * misma consulta con F3 abierto: ahí se lee su {@code getGpuUtilization()}.
  * Con VulkanMod no hay medición de GPU y se ajusta sin saber qué limita.
+ *
+ * Hilo de render: lo ocupado por cuadro son los ticks y el render (de
+ * {@link RenderFrameEvent.Pre} a {@link RenderFrameEvent.Post}), sin la espera
+ * del vsync ni la del tope de FPS, que vienen después. Con el cuadro atado al
+ * tope es lo único que muestra si sobra margen (ver {@link BalanceadorCpuGpu}).
  *
  * Solo hilo de render, salvo el cambio de concurrencia de generación, que
  * puede esperar a que terminen tareas y va en un hilo aparte.
@@ -72,6 +78,9 @@ public final class BalanceCpuGpu {
     private boolean gpuNoDisponible;
     private boolean estabaActivo = true;
     private double ultimoGpuMs = Double.NaN;
+    /** Hilo de render ocupado en el período (ticks y render), sin las esperas del vsync ni del tope. */
+    private long sumaOcupadoNanos;
+    private long inicioRenderNanos, inicioTickNanos;
 
     public BalanceCpuGpu(GeneradorLocal generador) {
         this.generador = generador;
@@ -91,7 +100,21 @@ public final class BalanceCpuGpu {
     }
 
     @SubscribeEvent
+    public void alEmpezarTick(ClientTickEvent.Pre evento) {
+        inicioTickNanos = System.nanoTime();
+    }
+
+    @SubscribeEvent
+    public void alTerminarTick(ClientTickEvent.Post evento) {
+        if (inicioTickNanos != 0) {
+            sumaOcupadoNanos += System.nanoTime() - inicioTickNanos;
+            inicioTickNanos = 0;
+        }
+    }
+
+    @SubscribeEvent
     public void alEmpezarCuadro(RenderFrameEvent.Pre evento) {
+        inicioRenderNanos = System.nanoTime();
         // También sin auto-ajuste si el HUD muestra el uso de GPU.
         if (!(activo() || ConfigLod.CLIENTE.hudRendimiento.get()
                 || com.example.minecraftlodmod.benchmark.SesionCalibracion.enCurso()) || gpuNoDisponible || midiendo) {
@@ -117,6 +140,10 @@ public final class BalanceCpuGpu {
     @SubscribeEvent
     public void alTerminarCuadro(RenderFrameEvent.Post evento) {
         long ahora = System.nanoTime();
+        if (inicioRenderNanos != 0) {
+            sumaOcupadoNanos += ahora - inicioRenderNanos;
+            inicioRenderNanos = 0;
+        }
         if (midiendo) {
             midiendo = false;
             TimerQuery.getInstance().ifPresent(t -> consultas.addLast(t.endProfile()));
@@ -154,9 +181,11 @@ public final class BalanceCpuGpu {
     private void cerrarPeriodo() {
         int n = cantidadCuadros;
         double gpuMs = muestrasGpu > 0 ? sumaGpuMs / muestrasGpu : Double.NaN;
+        double cpuMs = n > 0 ? sumaOcupadoNanos / 1e6 / n : Double.NaN;
         cantidadCuadros = 0;
         sumaGpuMs = 0;
         muestrasGpu = 0;
+        sumaOcupadoNanos = 0;
         ultimoGpuMs = gpuMs;
         ParametrosCalidad c = base;
         boolean ahoraActivo = activo();
@@ -172,8 +201,9 @@ public final class BalanceCpuGpu {
             version++;
         }
         estabaActivo = ahoraActivo;
-        if (!ahoraActivo || c == null || n == 0 || Minecraft.getInstance().isPaused()) {
-            return;
+        Minecraft mc = Minecraft.getInstance();
+        if (!ahoraActivo || c == null || n == 0 || mc.isPaused() || mc.level == null) {
+            return; // en el menú principal no hay LOD (y su tope de 60 FPS movía las perillas)
         }
         double suma = 0;
         for (int i = 0; i < n; i++) {
@@ -184,8 +214,9 @@ public final class BalanceCpuGpu {
         boolean escalado = ConfigLod.CLIENTE.escalado.get() != ModoEscalado.APAGADO;
         BalanceadorCpuGpu b = balanceador;
         int concurrenciaAntes = b.limiteConcurrencia();
-        boolean cambio = b.ajustar(suma / n, peor, gpuMs, objetivoMs(c), escalado);
-        diagnostico = texto(b, gpuMs);
+        double tope = topeMs(mc);
+        boolean cambio = b.ajustar(suma / n, peor, gpuMs, cpuMs, tope, objetivoMs(c, tope), escalado);
+        diagnostico = texto(b, gpuMs, cpuMs);
         if (!cambio) {
             return;
         }
@@ -204,24 +235,40 @@ public final class BalanceCpuGpu {
                 (int) b.distanciaUnBuffer(), b.factorOclusion(), b.reduccionEscala(), b.detalleExtra());
     }
 
-    /** Frame time objetivo: el FPS objetivo del preset, o el tope de FPS del jugador si es menor. */
-    static double objetivoMs(ParametrosCalidad c) {
-        int fps = c.fpsObjetivo();
-        int tope = Minecraft.getInstance().options.framerateLimit().get();
-        if (tope > 0 && tope < FPS_SIN_LIMITE) {
-            fps = Math.min(fps, tope);
-        }
-        return 1000.0 / fps;
+    /**
+     * Frame time objetivo: el del FPS objetivo, o el intervalo del tope si es mayor (con vsync
+     * a 60 Hz no hay forma de llegar a 75 FPS: ese objetivo bajaba todo hasta el piso).
+     */
+    static double objetivoMs(ParametrosCalidad c, double topeMs) {
+        return Math.max(1000.0 / c.fpsObjetivo(), topeMs);
     }
 
-    private static String texto(BalanceadorCpuGpu b, double gpuMs) {
+    /** Intervalo mínimo entre cuadros que imponen el tope de FPS y el vsync, en ms; 0 sin tope. */
+    static double topeMs(Minecraft mc) {
+        double tope = 0;
+        int limite = mc.getWindow().getFramerateLimit();
+        if (limite > 0 && limite < FPS_SIN_LIMITE) {
+            tope = 1000.0 / limite;
+        }
+        if (mc.options.enableVsync().get()) {
+            int hz = mc.getWindow().getRefreshRate();
+            if (hz > 0) {
+                tope = Math.max(tope, 1000.0 / hz);
+            }
+        }
+        return tope;
+    }
+
+    private static String texto(BalanceadorCpuGpu b, double gpuMs, double cpuMs) {
         String limite = switch (b.ultimoLimite()) {
             case CPU -> "CPU";
             case GPU -> "GPU";
             case DESCONOCIDO -> "?";
         };
         String gpu = Double.isNaN(gpuMs) ? "-" : String.format(java.util.Locale.ROOT, "%.1f", gpuMs);
-        return limite + " (GPU " + gpu + " ms)" + (b.conTirones() ? " tirones" : "")
+        String cpu = Double.isNaN(cpuMs) ? "-" : String.format(java.util.Locale.ROOT, "%.1f", cpuMs);
+        return limite + " (GPU " + gpu + " ms, render " + cpu + " ms)" + (b.enTope() ? " tope" : "")
+                + (b.conTirones() ? " tirones" : "")
                 + (b.detalleExtra() < 1 ? String.format(java.util.Locale.ROOT, " detalle +%.0f%%",
                 (1 / b.detalleExtra() - 1) * 100) : "")
                 + (b.enPisoAbsoluto() ? " PISO" : "");
@@ -289,7 +336,7 @@ public final class BalanceCpuGpu {
         return version;
     }
 
-    /** Para el HUD: "CPU (GPU 12.3 ms)", "GPU (...)" o "-" si está apagado. */
+    /** Para el HUD: "CPU (GPU 12.3 ms, render 8.1 ms)", "GPU (...) tope" o "-" si está apagado. */
     public String diagnostico() {
         return activo() ? diagnostico : "-";
     }

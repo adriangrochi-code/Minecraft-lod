@@ -25,6 +25,15 @@ package com.example.minecraftlodmod.core;
  *
  * Al sobrar margen se recupera primero lo visible (radio, detalle, escala) y
  * la generación; las perillas invisibles de reparto quedan donde están.
+ *
+ * Con vsync o tope de FPS el cuadro no baja del intervalo del tope y lo pasa
+ * por poco (la espera no es exacta): ahí el tiempo de cuadro no muestra el
+ * margen. En el tope el objetivo cuenta como cumplido, y el margen sale de la
+ * carga medida (GPU y hilo de render sin las esperas), un paso por vez: el
+ * siguiente espera {@link #CICLOS_PRUEBA_CARGA} ciclos a ver si el anterior
+ * hizo perder el tope (las mallas nuevas tardan unos segundos en armarse). Si
+ * lo hizo, no se recupera por carga durante {@link #CICLOS_BLOQUEO_CARGA}
+ * ciclos, el doble con cada falla seguida.
  * Lógica pura: sin Minecraft, con tests.
  */
 public final class BalanceadorCpuGpu {
@@ -54,6 +63,19 @@ public final class BalanceadorCpuGpu {
     static final double PASO_DETALLE_EXTRA = 0.1;
     /** Ciclos (≈ s) sin volver a sumar detalle extra después de haberlo sacado. */
     static final int CICLOS_BLOQUEO_EXTRA = 30;
+    /** Cuadros hasta este exceso sobre el intervalo del tope (vsync o tope de FPS) siguen "en el tope". */
+    static final double TOLERANCIA_TOPE = 0.1;
+    /**
+     * Ciclos sin recuperar por la carga medida después de que una recuperación así hizo perder
+     * el tope; se duplica con cada falla seguida, hasta el máximo.
+     */
+    static final int CICLOS_BLOQUEO_CARGA = 30, CICLOS_BLOQUEO_CARGA_MAX = 240;
+    /**
+     * Una recuperación por la carga que en estos ciclos termina pasando el objetivo cuenta como
+     * fallida; hasta que pasan, no se da otro paso por carga. Medido en Xvfb: el aumento de GPU
+     * de un paso de radio se vio recién a los 3-4 ciclos.
+     */
+    static final int CICLOS_PRUEBA_CARGA = 8;
 
     private final double umbralMin, umbralMax, pasoUmbral;
     private final int radioMin, radioMax, pasoRadio;
@@ -67,10 +89,14 @@ public final class BalanceadorCpuGpu {
     private int reduccionEscala;
     private double detalleExtra = 1;
     private int bloqueoExtra;
+    private int bloqueoCarga;
+    private int proximoBloqueoCarga = CICLOS_BLOQUEO_CARGA;
+    private int ciclosTrasRecuperarPorCarga = Integer.MAX_VALUE;
 
     private Limite ultimoLimite = Limite.DESCONOCIDO;
     private int ciclosConMargen;
     private boolean tirones;
+    private boolean enTope;
 
     /**
      * @param umbralBase detalle del preset (el mejor que se permite)
@@ -112,14 +138,23 @@ public final class BalanceadorCpuGpu {
         return gpuMs >= frameMs * FRACCION_GPU ? Limite.GPU : Limite.CPU;
     }
 
+    /** Un ciclo sin tope de FPS ni medición del hilo de render (ver el otro {@code ajustar}). */
+    public boolean ajustar(double frameMs, double peorMs, double gpuMs, double objetivoMs, boolean escalado) {
+        return ajustar(frameMs, peorMs, gpuMs, Double.NaN, 0, objetivoMs, escalado);
+    }
+
     /**
      * Un ciclo (≈1 s) con los promedios medidos.
      *
      * @param peorMs   cuadro lento representativo del ciclo (el 1% peor): tirones
+     * @param cpuMs    tiempo ocupado del hilo de render por cuadro (ticks y render, sin las
+     *                 esperas del vsync ni del tope); NaN si no se midió
+     * @param topeMs   intervalo mínimo entre cuadros que imponen el vsync o el tope de FPS; 0 sin tope
      * @param escalado true si hay un modo de escalado activo (la perilla de escala sirve)
      * @return true si cambió alguna perilla
      */
-    public boolean ajustar(double frameMs, double peorMs, double gpuMs, double objetivoMs, boolean escalado) {
+    public boolean ajustar(double frameMs, double peorMs, double gpuMs, double cpuMs, double topeMs,
+                           double objetivoMs, boolean escalado) {
         Limite anterior = ultimoLimite;
         ultimoLimite = diagnosticar(frameMs, gpuMs);
         // Justo en el borde el diagnóstico alterna entre CPU y GPU y las perillas de reparto
@@ -130,24 +165,38 @@ public final class BalanceadorCpuGpu {
         if (bloqueoExtra > 0) {
             bloqueoExtra--;
         }
-        if (frameMs > objetivoMs && detalleExtra < 1) {
+        if (bloqueoCarga > 0) {
+            bloqueoCarga--;
+        }
+        if (ciclosTrasRecuperarPorCarga < Integer.MAX_VALUE && ++ciclosTrasRecuperarPorCarga > CICLOS_PRUEBA_CARGA) {
+            proximoBloqueoCarga = CICLOS_BLOQUEO_CARGA; // el último paso por carga se sostuvo
+        }
+        enTope = topeMs > 0 && frameMs <= topeMs * (1 + TOLERANCIA_TOPE);
+        boolean excedido = frameMs > objetivoMs && !enTope;
+        if (excedido && ciclosTrasRecuperarPorCarga <= CICLOS_PRUEBA_CARGA) {
+            // Lo último que se recuperó por la carga hizo perder el tope: en esta máquina la
+            // carga medida se queda corta. Un rato sin recuperar así, para no oscilar.
+            bloqueoCarga = proximoBloqueoCarga;
+            proximoBloqueoCarga = Math.min(CICLOS_BLOQUEO_CARGA_MAX, proximoBloqueoCarga * 2);
+            ciclosTrasRecuperarPorCarga = Integer.MAX_VALUE;
+        }
+        if (excedido && detalleExtra < 1) {
             // El detalle extra es un lujo: es lo primero que se saca, sin esperar a confirmar el lado.
             ciclosConMargen = 0;
             detalleExtra = Math.min(1, redondear(detalleExtra + PASO_DETALLE_EXTRA));
             bloqueoExtra = CICLOS_BLOQUEO_EXTRA;
             return true;
         }
-        if (tirones && frameMs <= objetivoMs) {
+        if (tirones && !excedido && limiteConcurrencia > concurrenciaMin) {
             // El promedio alcanza pero hay tirones: casi siempre son hilos de generación
             // compitiendo con el de render. Menos generación simultánea, nada más visible.
+            // Con la generación ya al mínimo los tirones vienen de otro lado: no frenan
+            // la recuperación de lo visible (si no, quedaba en el piso para siempre).
             ciclosConMargen = 0;
-            if (limiteConcurrencia > concurrenciaMin) {
-                limiteConcurrencia--;
-                return true;
-            }
-            return false;
+            limiteConcurrencia--;
+            return true;
         }
-        if (frameMs > objetivoMs) {
+        if (excedido) {
             ciclosConMargen = 0;
             if (cambioDeLado) {
                 return false;
@@ -158,15 +207,28 @@ public final class BalanceadorCpuGpu {
                 case DESCONOCIDO -> aliviarGenerico();
             };
         }
-        if (frameMs < objetivoMs * MARGEN) {
+        // En el tope, el tiempo de cuadro no baja del intervalo del tope: el margen solo se ve en la carga.
+        boolean porCarga = frameMs >= objetivoMs * MARGEN;
+        boolean conMargen = !porCarga || enTope && bloqueoCarga == 0
+                && ciclosTrasRecuperarPorCarga > CICLOS_PRUEBA_CARGA && carga(gpuMs, cpuMs) < objetivoMs * MARGEN;
+        if (conMargen) {
             if (++ciclosConMargen < CICLOS_PARA_RECUPERAR) {
                 return false;
             }
             ciclosConMargen = 0;
-            return recuperar();
+            boolean cambio = recuperar();
+            if (cambio && porCarga) {
+                ciclosTrasRecuperarPorCarga = 0;
+            }
+            return cambio;
         }
         ciclosConMargen = 0;
         return false;
+    }
+
+    /** Lo que tardaría el cuadro sin las esperas: el más lento de GPU e hilo de render; NaN sin medir. */
+    static double carga(double gpuMs, double cpuMs) {
+        return gpuMs > 0 && cpuMs > 0 ? Math.max(gpuMs, cpuMs) : Double.NaN;
     }
 
     private boolean aliviarGpu(boolean escalado) {
@@ -215,7 +277,8 @@ public final class BalanceadorCpuGpu {
     }
 
     private boolean recuperar() {
-        if (limiteConcurrencia < concurrenciaMax) {
+        // Con tirones la generación no vuelve a subir (volverían): se recupera lo demás.
+        if (!tirones && limiteConcurrencia < concurrenciaMax) {
             limiteConcurrencia++;
         } else if (radioChunks < radioMax) {
             radioChunks = Math.min(radioMax, radioChunks + pasoRadio);
@@ -223,7 +286,7 @@ public final class BalanceadorCpuGpu {
             umbralPx = Math.max(umbralMin, umbralPx - pasoUmbral);
         } else if (reduccionEscala > 0) {
             reduccionEscala = Math.max(0, reduccionEscala - PASO_REDUCCION_ESCALA);
-        } else if (bloqueoExtra == 0 && detalleExtra > DETALLE_EXTRA_MIN) {
+        } else if (!tirones && bloqueoExtra == 0 && detalleExtra > DETALLE_EXTRA_MIN) {
             detalleExtra = Math.max(DETALLE_EXTRA_MIN, redondear(detalleExtra - PASO_DETALLE_EXTRA));
         } else {
             return false;
@@ -272,6 +335,11 @@ public final class BalanceadorCpuGpu {
     /** true si el último ciclo tuvo tirones (1% peor muy por encima del objetivo). */
     public boolean conTirones() {
         return tirones;
+    }
+
+    /** true si en el último ciclo el cuadro estaba atado al vsync o al tope de FPS. */
+    public boolean enTope() {
+        return enTope;
     }
 
     /** Detalle y radio en el piso y generación al mínimo: el hardware no da ni para eso. */

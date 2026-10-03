@@ -680,4 +680,15 @@ class RenderPuroTest {
         lejos.agregarSeccion(grid, 1, 0, 0, 0, 16);
         assertEquals(0, lejos.vertices(), "solo en el nivel 0");
     }
+
+    @Test
+    void laCajaDeLaMallaVaDeSuYMasBajaASuMasAlta() {
+        GeometriaLod g = new GeometriaLod();
+        assertTrue(g.minY() > g.maxY(), "sin vértices, caja vacía (se usa la altura del mundo)");
+        g.agregarSeccion(new SuperVoxel[]{solido(15)}, 1, 32, 64, 16, 16);
+        assertEquals(64, g.minY());
+        assertEquals(80, g.maxY());
+        g.reiniciar();
+        assertTrue(g.minY() > g.maxY(), "reiniciar la vacía");
+    }
 }

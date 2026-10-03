@@ -23,14 +23,12 @@ import net.neoforged.neoforge.common.NeoForge;
 /**
  * Punto de entrada del mod.
  *
- * TODO (próximos hitos, ver el documento de arquitectura):
- *  - Render en multiplayer: guardar en el cliente lo que llega por red.
- *
- * Ya registrado: la config ({@link ConfigLod}, con pantalla en el cliente),
- * la generación en modo LOCAL ({@link GeneradorLocal}), que corre en todo
+ * Registra la config ({@link ConfigLod}, con pantalla en el cliente), la
+ * generación en modo LOCAL ({@link GeneradorLocal}), que corre en todo
  * servidor con el mod — dedicado o integrado de singleplayer — y el
- * protocolo de red que sirve esos nodos ({@link ProtocoloLod}) y, en el
- * cliente, el render de LOD ({@link RenderLod}).
+ * protocolo de red que sirve esos nodos ({@link ProtocoloLod}); en el
+ * cliente, el render de LOD ({@link RenderLod}) y el espejo de lo que llega
+ * del servidor en multijugador ({@code network.EspejoServidor}).
  */
 @Mod(MinecraftLodMod.MOD_ID)
 public class MinecraftLodMod {

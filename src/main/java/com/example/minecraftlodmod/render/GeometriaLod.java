@@ -56,6 +56,11 @@ public final class GeometriaLod {
     /** Grupos de vértices: las 6 caras, el agua y las cruces. */
     public static final int GRUPOS = CARAS + 2;
     /**
+     * Arreglo de planos de una malla (ver {@code RenderLod}): por grupo, el plano mínimo y
+     * máximo de sus caras; al final, la Y más baja y la más alta de sus vértices (mundo).
+     */
+    public static final int PLANO_MIN_Y = 2 * GRUPOS, PLANO_MAX_Y = 2 * GRUPOS + 1, LARGO_PLANOS = 2 * GRUPOS + 2;
+    /**
      * Marca de cruz en {@link #niveles} (bit 7 del byte de alfa del vértice compacto; el
      * log2 del vóxel no pasa de 10): el shader corre el plano medio bloque hacia adentro,
      * al centro del bloque, que el formato de posiciones enteras no puede expresar.
@@ -146,6 +151,9 @@ public final class GeometriaLod {
     private final float[] planoMin = new float[GRUPOS];
     private final float[] planoMax = new float[GRUPOS];
 
+    /** Y más baja y más alta de los vértices (coordenada de mundo): la caja del descarte por campo de visión. */
+    private float minY = Float.POSITIVE_INFINITY, maxY = Float.NEGATIVE_INFINITY;
+
     {
         Arrays.fill(planoMin, Float.POSITIVE_INFINITY);
         Arrays.fill(planoMax, Float.NEGATIVE_INFINITY);
@@ -197,6 +205,8 @@ public final class GeometriaLod {
         Arrays.fill(verticesPorCara, 0);
         Arrays.fill(planoMin, Float.POSITIVE_INFINITY);
         Arrays.fill(planoMax, Float.NEGATIVE_INFINITY);
+        minY = Float.POSITIVE_INFINITY;
+        maxY = Float.NEGATIVE_INFINITY;
         fuenteTexturas = null;
         descartarSinLuz = false;
         costadosAlAire = false;
@@ -380,6 +390,8 @@ public final class GeometriaLod {
         posiciones[i] = x;
         posiciones[i + 1] = y;
         posiciones[i + 2] = z;
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
         int luz = v.luzHorneada();
         colores[vertices] = color(rgb, SOMBRA_CRUZ, luz);
         coloresBase[vertices] = color(rgb, 1f, 15);
@@ -564,6 +576,8 @@ public final class GeometriaLod {
         posiciones[i] = ox + x * escala;
         posiciones[i + 1] = oy + y * escala + ajusteY;
         posiciones[i + 2] = oz + z * escala;
+        minY = Math.min(minY, posiciones[i + 1]);
+        maxY = Math.max(maxY, posiciones[i + 1]);
         colores[vertices] = color(rgbBase, sombra * brilloOclusion, luz);
         coloresBase[vertices] = color(rgbBase, brilloOclusion, 15);
         luces[vertices] = (byte) luz;
@@ -780,6 +794,16 @@ public final class GeometriaLod {
     /** El int extra del formato Voxy: estado (16 bits), luz de cielo (4) y agua (1). */
     static int extraVoxy(int idEstado, int luzCielo, boolean agua) {
         return (idEstado & 0xFFFF) | (luzCielo & 0xF) << 16 | (agua ? 1 << 20 : 0);
+    }
+
+    /** Y más baja de los vértices (mundo); +infinito sin vértices. */
+    public float minY() {
+        return minY;
+    }
+
+    /** Y más alta de los vértices (mundo); -infinito sin vértices. */
+    public float maxY() {
+        return maxY;
     }
 
     /** Plano más bajo de las caras de ese índice, sobre su eje (bloques de la celda). */

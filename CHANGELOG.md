@@ -6,6 +6,38 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.38 — Auto-ajuste con vsync y calibración
+- **Con vsync o tope de FPS, el auto-ajuste ya no baja la calidad de más.**
+  Con el cuadro atado al tope (vsync a 60 Hz, como viene Minecraft) el tiempo
+  de cuadro no baja del intervalo, y lo pasa por poco porque la espera no es
+  exacta. Con un objetivo igual al tope (Ultra a 60 Hz, o el tope de FPS igual
+  al objetivo) el auto-ajuste bajaba todo hasta el piso; con uno cercano (Alto a
+  60 Hz) nunca recuperaba lo que había bajado. Ahora, en el tope, el objetivo
+  cuenta como cumplido, y para recuperar se mira la carga real (GPU y el hilo
+  de render sin las esperas), de a un paso: si un paso hace perder el tope, se
+  vuelve atrás y se espera cada vez más antes de probar de nuevo. Un objetivo
+  de más FPS que la pantalla (75 con 60 Hz) se toma como el de la pantalla.
+- Tirones que no vienen de la generación (con la generación ya al mínimo)
+  frenaban toda la recuperación: después de un momento pesado, el LOD podía
+  quedar en el piso para siempre.
+- En el menú principal el auto-ajuste ya no mueve nada (medía el menú).
+- **La calibración mide sin vsync ni tope de FPS**, y los vuelve a poner al
+  terminar, sin tocar las opciones guardadas. Con vsync a 60 Hz, calibrar desde
+  Ultra terminaba siempre en Mínimo.
+- Rendimiento: la niebla que tapa las zonas sin datos recorría todas las
+  celdas en cada cuadro (más de la mitad del tiempo del mod en el hilo de
+  render, en el perfil de un vuelo). Ahora se recalcula cada 100 ms, al moverse
+  la cámara o con un plan nuevo.
+- Rendimiento: mirando hacia arriba (o al cielo desde el aire), el LOD ya no
+  manda a la GPU todo el terreno que queda abajo. Cada zona se descartaba con
+  una caja de toda la altura del mundo; ahora con la altura real de su malla.
+  Medido mirando al cielo: 60% menos vértices y un tercio menos de GPU.
+- Rendimiento: al leer cada sección para el LOD, saber si es de un solo bloque
+  costaba ~8,6 µs (contaba los 4096 bloques en un mapa); ahora ~0,04 µs. Es
+  ~6-8% menos tiempo de extracción por sección.
+- HUD de detalle: el diagnóstico del auto-ajuste muestra también el tiempo del
+  hilo de render y "tope" cuando el cuadro está atado al vsync o al tope de FPS.
+
 ## 0.26.37 — Menos tirones al moverse
 - **Cada vez que se cruza de chunk** el LOD vuelve a planificar qué dibujar, en
   el hilo de render; más de la mitad de ese tiempo era la oclusión por relieve

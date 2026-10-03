@@ -59,4 +59,22 @@ class FormaBloqueTest {
         assertFalse(conAlfombra.nevado());
         assertEquals(Block.getId(Blocks.WHITE_CARPET.defaultBlockState()), conAlfombra.idEstado());
     }
+
+    @Test
+    void unaSeccionEsHomogeneaSoloSiTodosSusBloquesSonElMismoEstado() {
+        PalettedContainer<BlockState> piedra = new PalettedContainer<>(Block.BLOCK_STATE_REGISTRY,
+                Blocks.STONE.defaultBlockState(), PalettedContainer.Strategy.SECTION_STATES);
+        assertTrue(LectorSeccionMinecraft.deEstados(piedra).homogenea());
+
+        // Un bloque cambiado y vuelto atrás deja su estado en la paleta sin usar: sigue homogénea.
+        piedra.set(3, 4, 5, Blocks.DIRT.defaultBlockState());
+        assertFalse(LectorSeccionMinecraft.deEstados(piedra).homogenea());
+        piedra.set(3, 4, 5, Blocks.STONE.defaultBlockState());
+        assertTrue(LectorSeccionMinecraft.deEstados(piedra).homogenea());
+
+        PalettedContainer<BlockState> mixta = new PalettedContainer<>(Block.BLOCK_STATE_REGISTRY,
+                Blocks.STONE.defaultBlockState(), PalettedContainer.Strategy.SECTION_STATES);
+        mixta.set(15, 15, 15, Blocks.DIRT.defaultBlockState());
+        assertFalse(LectorSeccionMinecraft.deEstados(mixta).homogenea(), "el distinto es el último bloque");
+    }
 }

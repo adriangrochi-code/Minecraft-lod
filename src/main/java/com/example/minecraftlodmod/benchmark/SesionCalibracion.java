@@ -64,7 +64,11 @@ import java.util.function.Consumer;
  *  5. Cierra el mundo y vuelve al menú principal.
  *
  * Mientras corre, el auto-ajuste queda congelado (mediría con perillas
- * moviéndose) y la medición de GPU, forzada.
+ * moviéndose) y la medición de GPU, forzada. También van apagados el vsync y
+ * el tope de FPS (en la ventana, sin tocar las opciones guardadas): con el
+ * cuadro atado al tope el promedio no baja del intervalo, y con vsync a 60 Hz
+ * ningún escalón con objetivo de 60 FPS pasaba (la calibración terminaba en
+ * el piso).
  *
  * Mover al jugador se hace directo sobre el servidor integrado (siempre es
  * singleplayer), no con comandos: no depende de que el mundo tenga trucos.
@@ -87,6 +91,8 @@ public final class SesionCalibracion {
     private static final double FRAME_MAXIMO_MS = 2_000;
     /** Muestras seguidas del monitor sin nada pendiente para dar el LOD por listo. */
     static final int MUESTRAS_LISTO = 2;
+    /** "Sin límite" del tope de FPS de las opciones de video. */
+    private static final int FPS_SIN_TOPE = 260;
 
     private static volatile Consumer<ParametrosCalidad> aplicador = p -> { };
 
@@ -152,6 +158,8 @@ public final class SesionCalibracion {
             return;
         }
         activa = sesion;
+        mc.getWindow().updateVsync(false);
+        mc.getWindow().setFramerateLimit(FPS_SIN_TOPE);
         NeoForge.EVENT_BUS.register(activa);
         MonitorRendimiento.escuchar(activa::alMuestrear);
         if (mc.getLevelSource().levelExists(PuntosBenchmark.NOMBRE_MUNDO)) {
@@ -177,6 +185,9 @@ public final class SesionCalibracion {
             NeoForge.EVENT_BUS.unregister(activa);
             MonitorRendimiento.escuchar(null);
             activa = null;
+            Minecraft mc = Minecraft.getInstance();
+            mc.getWindow().updateVsync(mc.options.enableVsync().get());
+            mc.getWindow().setFramerateLimit(mc.options.framerateLimit().get());
         }
     }
 
@@ -420,7 +431,8 @@ public final class SesionCalibracion {
         s.put("Sistema", System.getProperty("os.name") + " " + System.getProperty("os.version") + ", Java "
                 + System.getProperty("java.version"));
         s.put("Ventana", mc.getWindow().getWidth() + "×" + mc.getWindow().getHeight()
-                + ", tope de FPS " + mc.options.framerateLimit().get() + ", vsync " + mc.options.enableVsync().get());
+                + ", tope de FPS " + mc.options.framerateLimit().get() + ", vsync " + mc.options.enableVsync().get()
+                + " (los dos apagados durante la medición)");
         return s;
     }
 

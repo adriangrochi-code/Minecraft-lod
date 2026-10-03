@@ -958,6 +958,7 @@ public final class RenderLod {
     private void planificar(Minecraft mc, Vec3 camara, RegionFileStore store, int chunkX, int chunkZ,
                             double miraX, double miraZ, double fovNormal, int alturaDibujo,
                             long ahora) {
+        alcanceCalculadoNanos = 0; // plan nuevo: lo que no tiene datos entra en la niebla en el próximo cuadro
         ParametrosCalidad c = calidad;
         // Detalle y radio del auto-ajuste (los del preset si está apagado).
         int radioChunks = balance.radioChunks(c);
@@ -1167,7 +1168,9 @@ public final class RenderLod {
             // Toda la memoria de una vez: las 6 mallas salen del mismo bloque, sin realocar.
             memoria = new ByteBufferBuilder(geometria.vertices() * formato.getVertexSize());
             MeshData[][] mallas = new MeshData[GeometriaLod.GRUPOS][];
-            float[] planos = new float[2 * GeometriaLod.GRUPOS];
+            float[] planos = new float[GeometriaLod.LARGO_PLANOS];
+            planos[GeometriaLod.PLANO_MIN_Y] = geometria.minY();
+            planos[GeometriaLod.PLANO_MAX_Y] = geometria.maxY();
             // El agua separada (contrato Voxy): un buffer con todas sus caras, para la pasada translúcida.
             int agua = geometria.verticesDeCara(GeometriaLod.GRUPO_AGUA);
             if (agua > 0) {
@@ -1504,8 +1507,18 @@ public final class RenderLod {
         float minimoLluvia = (mc.options.getEffectiveRenderDistance() + 4) * 16f;
         corteLluvia = intensidadLluvia <= 0 ? Float.MAX_VALUE : Math.max(minimoLluvia,
                 radioEnUso * 16f * (1f - (float) RADIO_CON_LLUVIA * intensidadLluvia));
-        // La niebla termina donde se corta: el borde queda dentro de ella.
-        alcanceLodBloques = Math.min(alcance(camara), corteLluvia);
+        // La niebla termina donde se corta: el borde queda dentro de ella. El recuento recorre
+        // todas las celdas: cada PERIODO_ALCANCE_NANOS o si la cámara se movió (en el perfil de
+        // un vuelo, hacerlo en cada cuadro era el 12% del hilo de render).
+        long ahora = System.nanoTime();
+        if (ahora - alcanceCalculadoNanos >= PERIODO_ALCANCE_NANOS
+                || Math.abs(camara.x - alcanceCamaraX) + Math.abs(camara.z - alcanceCamaraZ) > MOVIMIENTO_ALCANCE) {
+            alcanceCalculado = alcance(camara);
+            alcanceCalculadoNanos = ahora;
+            alcanceCamaraX = camara.x;
+            alcanceCamaraZ = camara.z;
+        }
+        alcanceLodBloques = Math.min(alcanceCalculado, corteLluvia);
         alcancePorSector = ConfigLod.CLIENTE.nieblaSinDatos.get()
                 ? nieblaSectores.alcances(mc.options.getEffectiveRenderDistance() * 16f + 48f) : null;
         if (alcancePorSector != null && corteLluvia < Float.MAX_VALUE) {
@@ -1870,8 +1883,16 @@ public final class RenderLod {
                     Math.hypot(Math.max(Math.abs(ox), Math.abs(ox + lado)), Math.max(Math.abs(oz), Math.abs(oz + lado))),
                     inicioCurva, radioPlaneta);
             float bajadaCelda = (float) -camara.y - oy;
-            if (!campo.tocaCaja(ox, minY - bajadaCelda - curvaAbajo - 1f, oz,
-                    (float) (ox + lado), maxY - bajadaCelda + 1f, (float) (oz + lado))) {
+            // La caja va de la Y más baja a la más alta de la malla (antes, la altura entera del mundo:
+            // mirando hacia arriba se mandaba todo el terreno que quedaba abajo).
+            float abajo = minY, arriba = maxY;
+            if (planos.length == GeometriaLod.LARGO_PLANOS
+                    && planos[GeometriaLod.PLANO_MIN_Y] <= planos[GeometriaLod.PLANO_MAX_Y]) {
+                abajo = (float) (planos[GeometriaLod.PLANO_MIN_Y] - camara.y);
+                arriba = (float) (planos[GeometriaLod.PLANO_MAX_Y] - camara.y);
+            }
+            if (!campo.tocaCaja(ox, abajo - bajadaCelda - curvaAbajo - 1f, oz,
+                    (float) (ox + lado), arriba - bajadaCelda + 1f, (float) (oz + lado))) {
                 celdasFueraDeVista++;
                 return;
             }
@@ -2244,14 +2265,22 @@ public final class RenderLod {
         return PlanCeldas.LADO_CELDA * PlanCeldas.LADO_CELDA - Integer.bitCount(celda.mascaraOmitidos());
     }
 
-    /** Alcance de la niebla por sector ({@link NieblaSectores}), recalculado en cada cuadro. */
+    /** Alcance de la niebla por sector ({@link NieblaSectores}), recontado con {@link #alcance}. */
     private final NieblaSectores nieblaSectores = new NieblaSectores();
     private float[] alcancePorSector;
+    /** Cada cuánto se recuentan el alcance y la niebla por sectores, o antes si la cámara se movió más que esto. */
+    static final long PERIODO_ALCANCE_NANOS = 100_000_000L;
+    static final double MOVIMIENTO_ALCANCE = 8;
+    private long alcanceCalculadoNanos;
+    private double alcanceCamaraX, alcanceCamaraZ;
+    private float alcanceCalculado;
 
     /**
      * Borde más lejano (esquina de celda) entre las celdas con malla. De paso
      * cuenta, por sector, lo dibujado y la primera zona sin datos.
      */
+    private static final double RAIZ_DE_2 = Math.sqrt(2);
+
     private float alcance(Vec3 camara) {
         double maximo = 0;
         nieblaSectores.reiniciar();
@@ -2262,9 +2291,9 @@ public final class RenderLod {
                 double cx = p.origenX() + mitad - camara.x, cz = p.origenZ() + mitad - camara.z;
                 boolean sinDatos = e.construidaCon == null || (!e.tieneMalla && e.chunksConDatos == 0);
                 if (sinDatos) {
-                    nieblaSectores.faltante(cx, cz, mitad * Math.sqrt(2));
+                    nieblaSectores.faltante(cx, cz, mitad * RAIZ_DE_2);
                 } else if (e.tieneMalla) {
-                    nieblaSectores.dibujada(cx, cz, mitad * Math.sqrt(2));
+                    nieblaSectores.dibujada(cx, cz, mitad * RAIZ_DE_2);
                 }
             }
             if (!e.tieneMalla || e.construidaCon == null || e.oculta) {
@@ -2467,6 +2496,7 @@ public final class RenderLod {
         hiloMallas.getQueue().clear();
         relieve.olvidar();
         alcanceLodBloques = 0;
+        alcanceCalculadoNanos = 0;
         MallaLista lista;
         while ((lista = listas.poll()) != null) {
             cerrar(lista);

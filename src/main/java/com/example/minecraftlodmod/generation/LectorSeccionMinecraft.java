@@ -303,11 +303,7 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
 
     @Override
     public boolean homogenea() {
-        // count() recorre la paleta, no los 4096 bloques uno por uno contra
-        // el mundo: con un único estado en la paleta la sección es homogénea.
-        int[] distintos = {0};
-        estados.count((estado, cantidad) -> distintos[0]++);
-        if (distintos[0] != 1) {
+        if (!unSoloEstado()) {
             return false;
         }
         // Una cubierta encima cambia la cara de arriba: ya no es uniforme.
@@ -318,6 +314,27 @@ public final class LectorSeccionMinecraft implements SectionExtractor.LectorSecc
                         return false;
                     }
                 }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * true si los 4096 bloques son el mismo estado: con uno solo en la paleta, sin mirar
+     * más; si no, el primer índice distinto lo descarta (la paleta puede guardar estados
+     * que ya no se usan). Antes {@code count} pasaba los 4096 índices a un mapa para
+     * contarlos, en cada sección mixta.
+     */
+    private boolean unSoloEstado() {
+        var datos = estados.data;
+        if (datos.palette().getSize() == 1) {
+            return true;
+        }
+        net.minecraft.util.BitStorage bits = datos.storage();
+        int primero = bits.get(0);
+        for (int i = 1, n = bits.getSize(); i < n; i++) {
+            if (bits.get(i) != primero) {
+                return false;
             }
         }
         return true;

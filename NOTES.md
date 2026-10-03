@@ -10,6 +10,19 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Auto-ajuste con vsync (0.26.38):** en la 1060 con vsync a 60 Hz y Ultra
+  (o Alto), ver en el HUD de detalle que el diagnóstico diga "tope" y no quede
+  bajando perillas estando en 60 FPS, y que después de un momento pesado vuelva
+  a subir (de a un paso cada ~8 s). Si la carga medida ("render" en el
+  diagnóstico, más la GPU) se queda corta en hardware real, el log de
+  depuración muestra recuperar y aliviar alternando, cada vez más espaciado
+  (bloqueo `CICLOS_BLOQUEO_CARGA`, 30 → 240 s). En Xvfb, un paso de radio subía
+  la GPU (llvmpipe, que comparte el CPU con el armado de mallas) más allá del
+  tope por unos segundos: ver si en GPU real ese pico existe. Calibrar desde Ultra con vsync: que no
+  termine en Mínimo y que al volver al menú el vsync siga prendido. Con
+  VulkanMod el vsync se apaga y se prende rearmando la swapchain: probar que no
+  falle.
+
 - **Cambios del mundo en el LOD (0.26.36):** construir o excavar algo grande,
   alejarse más allá de la distancia de vanilla y mirar que el LOD lo muestre.
   En un servidor con jugadores, que no haya re-extracciones de más (el log "LOD

@@ -32,38 +32,39 @@ public final class NieblaSectores {
 
     /** Una celda dibujada con centro en (dx, dz) relativo a la cámara y radio {@code mitadDiagonal}. */
     public void dibujada(double dx, double dz, double mitadDiagonal) {
-        float lejos = (float) (Math.hypot(dx, dz) + mitadDiagonal);
-        for (int s : sectoresDe(dx, dz, mitadDiagonal)) {
+        double d = Math.sqrt(dx * dx + dz * dz);
+        float lejos = (float) (d + mitadDiagonal);
+        int rango = rango(dx, dz, d, mitadDiagonal);
+        for (int i = 0, desde = rango >>> 8, n = rango & 0xFF; i < n; i++) {
+            int s = (desde + i) % SECTORES;
             dibujado[s] = Math.max(dibujado[s], lejos);
         }
     }
 
     /** Una celda del plan sin datos (todavía): la niebla del sector termina antes de ella. */
     public void faltante(double dx, double dz, double mitadDiagonal) {
-        float cerca = (float) Math.max(0, Math.hypot(dx, dz) - mitadDiagonal);
-        for (int s : sectoresDe(dx, dz, mitadDiagonal)) {
+        double d = Math.sqrt(dx * dx + dz * dz);
+        float cerca = (float) Math.max(0, d - mitadDiagonal);
+        int rango = rango(dx, dz, d, mitadDiagonal);
+        for (int i = 0, desde = rango >>> 8, n = rango & 0xFF; i < n; i++) {
+            int s = (desde + i) % SECTORES;
             faltante[s] = Math.min(faltante[s], cerca);
         }
     }
 
-    /** Sectores que abarca una celda vista desde la cámara (cerca, varios; lejos, uno). */
-    static int[] sectoresDe(double dx, double dz, double mitadDiagonal) {
-        double d = Math.hypot(dx, dz);
+    /**
+     * Sectores que abarca una celda vista desde la cámara (cerca, varios; lejos, uno),
+     * como {@code primero << 8 | cantidad}. Se llama por cada celda en cada recuento: sin
+     * arreglos nuevos (antes, uno por celda) ni {@code hypot}.
+     */
+    static int rango(double dx, double dz, double d, double mitadDiagonal) {
         if (d <= mitadDiagonal) {
-            int[] todos = new int[SECTORES];
-            for (int i = 0; i < SECTORES; i++) {
-                todos[i] = i;
-            }
-            return todos;
+            return SECTORES;
         }
         double ancho = Math.asin(Math.min(1, mitadDiagonal / d)) / (2 * Math.PI) * SECTORES;
         double centro = (Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI) * SECTORES;
         int desde = (int) Math.floor(centro - ancho), hasta = (int) Math.floor(centro + ancho);
-        int[] r = new int[Math.min(SECTORES, hasta - desde + 1)];
-        for (int i = 0; i < r.length; i++) {
-            r[i] = Math.floorMod(desde + i, SECTORES);
-        }
-        return r;
+        return Math.floorMod(desde, SECTORES) << 8 | Math.min(SECTORES, hasta - desde + 1);
     }
 
     /**

@@ -80,6 +80,9 @@ magic: 4 bytes | version: 1 byte | region_x,z: 4 bytes c/u | dimension_id: 1 byt
   contra los 4 planos laterales de proyección × vista antes de dibujarla; sin
   near ni far, para no depender de la convención de profundidad de cada
   camino (OpenGL, Vulkan, shaderpacks). Medido: ~3× menos vértices por cuadro.
+  Desde 0.26.38 la caja va de la Y más baja a la más alta de la malla
+  (`GeometriaLod.PLANO_MIN_Y/MAX_Y`), no de toda la altura del mundo: mirando
+  hacia arriba ya no se manda el terreno que queda abajo (sección 44).
 - **Blend entre niveles de LOD:** dithering por alpha con patrón Bayer fijo (screen-door transparency) vía `discard` en el fragment shader — no geometría interpolada (transvoxel), por ser mucho más barato en GPU integrada.
   - Duración: ~6-10 frames por transición.
   - Límite de nodos en blend simultáneo (ej. 20-30) para no duplicar demasiados draw calls a la vez con movimiento rápido.
@@ -138,6 +141,10 @@ sujetos a elección manual o a la calibración real por benchmark (sección 9).
   `RecomendacionesBenchmark`: en el piso con la GPU >= 85% del cuadro, FSR 1;
   en el escalón más alto con <= 60% del objetivo y GPU con margen, oclusión en
   costados. El auto-ajuste queda congelado durante la sesión.
+- **0.26.38:** mide sin vsync ni tope de FPS (en la ventana, sin tocar las
+  opciones guardadas; vuelven al terminar o cancelar). Con el cuadro atado al
+  tope el promedio no baja del intervalo: con vsync a 60 Hz ningún escalón con
+  objetivo de 60 FPS pasaba y calibrar desde Ultra terminaba en Mínimo.
 - Se genera una sola vez, cacheada igual que cualquier mundo; el cache de LOD
   se invalida solo si cambia el algoritmo (`GeneradorLocal.VERSION_ALGORITMO`).
 - Flujo del botón "Calibrar" (solo desde el menú principal):
@@ -802,6 +809,10 @@ compatibilidad, secciones 6/15/20). Sí hay perillas que cambian CPU por GPU:
 Reemplaza en la práctica a `PerformanceAutoTuner` (secciones 7, 21, 23),
 que nunca llegó a conectarse al juego.
 
+**Con vsync o tope de FPS (0.26.38, sección 44):** el objetivo nunca es más
+chico que el intervalo del tope; con el cuadro en el tope el objetivo cuenta
+como cumplido y el margen para recuperar sale de la carga medida.
+
 
 ## 29. Vóxeles grandes como terreno, nubes lejanas y curvatura — 2026-09-30
 
@@ -1392,3 +1403,70 @@ más lenta), la generación (densidad del horizonte aproximado) y la precarga.
   global, en un vuelo con los 4 núcleos ocupados los hilos de mallas esperaban
   detrás de la precarga o la generación desalojadas por el sistema (perfil
   JFR, esperas de más de 10 ms en 60 s): 60 (la peor, 0,47 s) → 9 (0,02 s).
+
+
+## 44. Segunda revisión: auto-ajuste con vsync o tope de FPS — 2026-10-03
+
+**El problema (`core/BalanceadorCpuGpu`, `render/BalanceCpuGpu`):** el tiempo
+de cuadro se mide entre un `RenderFrameEvent.Post` y el siguiente: incluye la
+espera del vsync (en `updateDisplay`) y la del tope de FPS
+(`RenderSystem.limitDisplayFPS`, que nunca vuelve antes y suele pasarse un
+poco). Con el cuadro atado al tope, el promedio no baja del intervalo:
+- objetivo igual al tope (Ultra con vsync a 60 Hz, que es como viene
+  Minecraft, o un tope de FPS igual al objetivo): el promedio queda apenas por
+  encima del objetivo y el auto-ajuste bajaba todo, ciclo a ciclo, hasta el piso;
+- objetivo cercano (Alto, 50 FPS, a 60 Hz): nunca bajaba del 80% del objetivo
+  y no recuperaba nunca lo que había bajado en un momento pesado;
+- objetivo por encima del refresco (75 FPS a 60 Hz): imposible de cumplir; el
+  tope de FPS ya se tomaba en cuenta, el vsync no.
+
+**Arreglo:** `BalanceCpuGpu.topeMs` = el mayor entre el intervalo del tope de
+FPS de la ventana y, con vsync, el del refresco del monitor
+(`Window#getRefreshRate`). El objetivo nunca es más chico que eso. Con el
+cuadro a menos de un 10% por encima del tope (`TOLERANCIA_TOPE`), el objetivo
+cuenta como cumplido (no se alivia nada) y el margen sale de la **carga**: el
+mayor entre la GPU (`TimerQuery`) y el hilo de render ocupado (de
+`RenderFrameEvent.Pre` a `Post` más los ticks del cliente, sin las esperas). La
+carga se queda corta (no ve las tareas del hilo principal ni el cambio de
+buffer) y un paso tarda en notarse (las mallas nuevas se arman y suben en unos
+segundos: en Xvfb, un paso de radio subió la GPU recién a los 3-4 ciclos). Por
+eso se recupera por carga de a un paso: el siguiente espera 8 ciclos
+(`CICLOS_PRUEBA_CARGA`); si en ese lapso el cuadro pierde el tope, no se
+recupera por carga durante 30 ciclos, el doble con cada falla seguida (hasta
+240). Sin medición de GPU (VulkanMod) no hay carga: en el tope no se toca nada.
+El diagnóstico del HUD muestra la carga del hilo de render y "tope".
+
+**Otros del auto-ajuste:**
+- Tirones con la generación ya al mínimo: antes cortaban todo (ni se
+  recuperaba lo visible); ahora no frenan la recuperación, y mientras haya
+  tirones la generación no vuelve a subir ni se suma detalle extra.
+- En el menú principal (sin mundo) no se ajusta: medía el menú, con su tope de 60.
+
+**Calibración:** sección 9 (sin vsync ni tope mientras mide).
+
+**Descarte por campo de visión con la altura de la malla:** la caja de cada
+celda iba de la altura mínima a la máxima del mundo (-64 a 320): mirando hacia
+arriba, todas las celdas cuyo terreno quedaba abajo entraban en el campo de
+visión y se mandaban enteras (sus vértices se procesaban para recortarlos). Al
+armar, `GeometriaLod` guarda la Y más baja y más alta de sus vértices, que van
+al final del arreglo de planos de la malla (`PLANO_MIN_Y`, `PLANO_MAX_Y`); el
+descarte usa esa caja, con la misma bajada de la curvatura de antes. Medido en
+Xvfb mirando recto hacia arriba desde y = 150 con radio 8: 1 015 736 → 413 920
+vértices por cuadro, 119 → 28 llamadas, GPU 64-67 → 40-47 ms. Con ese margen,
+el auto-ajuste en el tope (10 FPS, preset Mínimo) volvió del piso (radio 8) a
+radio 28 de 32 en un minuto; antes quedaba en el piso.
+
+**Sección de un solo bloque (`LectorSeccionMinecraft.homogenea`):** usaba
+`PalettedContainer#count`, que con más de un estado en la paleta pasa los 4096
+índices a un `Int2IntOpenHashMap` para contarlos. Ahora: un solo estado en la
+paleta = homogénea; si no, el primer índice distinto en el almacén de bits la
+descarta (la paleta puede guardar estados que ya no se usan, así que el
+resultado es el mismo). Medido en una sección mixta: 8,6 → 0,04 µs, ~6-8% de la
+extracción de una sección (105-145 µs).
+
+**Niebla de las zonas sin datos (`NieblaSectores`):** el recuento recorría
+todas las celdas en cada cuadro con un arreglo nuevo, `hypot`, `atan2` y
+`asin` por celda: en el perfil JFR del vuelo (Xvfb) era 30 de las 54 muestras
+del mod en el hilo de render. Ahora se recuenta cada 100 ms, al moverse la
+cámara más de 8 bloques o con un plan nuevo, sin arreglos por celda.
+
