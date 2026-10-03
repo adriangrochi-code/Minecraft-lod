@@ -285,9 +285,14 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue compartirSeccionesUniformes;
         public final ModConfigSpec.BooleanValue comprimirSeccionesLejanas;
         public final ModConfigSpec.IntValue distanciaCompresion;
+        public final ModConfigSpec.IntValue pregeneracionSalida;
 
         Servidor(ModConfigSpec.Builder b) {
             b.push("generacion");
+            pregeneracionSalida = b.comment("Cuando un jugador se desconecta, segundos generando chunks alrededor de donde",
+                            "quedó, en segundo plano (de a un jugador por vez, frena con el tick lento). Al volver ya",
+                            "tiene terreno real y LOD alrededor. 0 = no. Servidor dedicado o invitados de un mundo en LAN.")
+                    .defineInRange("pregeneracionSalida", 60, 0, 600);
             seleccion = b.comment("Preset de generación del servidor. AUTOMATICO: en singleplayer usa el del",
                             "cliente; en un servidor dedicado lo elige según el hardware.")
                     .defineEnum("preset", ParametrosCalidad.Seleccion.AUTOMATICO,

@@ -1229,3 +1229,12 @@ level.dat (`getLoadedPlayerTag`: `Pos` y `Dimension`, en esa dimensión), o del
 spawn si nunca entró (`PregeneracionInicial.dondeQuedo`). Lo ya generado con
 marca de LOD se saltea, así que en un mundo explorado el minuto se usa en lo
 que falta más afuera. Medido: jugador en 3000, −3000 → 2257 chunks en 60 s.
+
+**0.26.32 — el servidor, cuando un jugador se va (pedido del usuario, multijugador):**
+`PregeneracionInicial.alDesconectarse` (`PlayerLoggedOutEvent`, jugadores que no
+son el dueño de un mundo singleplayer: servidor dedicado o invitados de LAN)
+encola el lugar del jugador; `alTerminarTick` corre una espiral (`Pasos`, la
+misma de la pantalla de carga) de a un lugar por vez durante
+`pregeneracionSalida` segundos (opción de servidor, 60, 0-600), con a lo sumo
+la mitad de los núcleos en vuelo y sin pedir chunks con el tick promedio sobre
+40 ms. Medido (servidor dedicado, Xvfb): 1105 chunks en 60 s.

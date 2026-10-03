@@ -11,9 +11,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Pregeneración al crear un mundo ({@link PregeneracionInicial}): al final de la
- * preparación del área de aparición, antes de cerrar la pantalla de carga, con
- * el mismo bucle de espera que usa vanilla para el spawn.
+ * Pregeneración al entrar a un mundo ({@link PregeneracionInicial}): al final de la
+ * preparación del área de aparición, antes de cerrar la pantalla de carga, con el
+ * mismo bucle de espera que usa vanilla para el spawn.
  */
 @Mixin(MinecraftServer.class)
 public abstract class MixinPrepararNiveles {
@@ -30,9 +30,11 @@ public abstract class MixinPrepararNiveles {
     @Inject(method = "prepareLevels", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/server/level/progress/ChunkProgressListener;stop()V"))
     private void minecraftlodmod$pregeneracionInicial(ChunkProgressListener progreso, CallbackInfo ci) {
-        PregeneracionInicial.correr((MinecraftServer) (Object) this, () -> {
-            nextTickTimeNanos = Util.getNanos() + ESPERA_NANOS;
-            waitUntilNextTick();
-        });
+        PregeneracionInicial.alEntrar((MinecraftServer) (Object) this, this::minecraftlodmod$esperar);
+    }
+
+    private void minecraftlodmod$esperar() {
+        nextTickTimeNanos = Util.getNanos() + ESPERA_NANOS;
+        waitUntilNextTick();
     }
 }

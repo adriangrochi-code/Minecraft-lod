@@ -50,6 +50,7 @@ public class MinecraftLodMod {
         GeneradorLocal generador = new GeneradorLocal(ConfigLod::calidadServidor);
         ProtocoloLod protocolo = new ProtocoloLod(generador);
         NeoForge.EVENT_BUS.register(generador);
+        NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.generation.PregeneracionInicial.class);
         NeoForge.EVENT_BUS.register(protocolo);
         modEventBus.addListener(protocolo::registrar);
         modEventBus.addListener(com.example.minecraftlodmod.cubico.SincroVertical::registrar);

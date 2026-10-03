@@ -6,6 +6,17 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.32 — El servidor pregenera cuando un jugador se va
+- **Multijugador:** cuando un jugador se desconecta de un servidor (dedicado, o
+  un invitado de un mundo abierto en LAN), el servidor pasa 60 s generando
+  chunks alrededor de donde quedó, en segundo plano. Al volver ya tiene
+  terreno real y LOD alrededor. Va de a un jugador por vez, usa a lo sumo la
+  mitad de los núcleos y no pide chunks si el tick del servidor está lento,
+  para no molestar a los que siguen jugando.
+- Medido con un servidor dedicado en Xvfb: 1105 chunks en 60 s.
+- Opción del servidor `pregeneracionSalida` en `minecraftlodmod-server.toml`
+  (sección generacion): 0 a 600 s, 0 = no.
+
 ## 0.26.31 — Pregeneración cada vez que entrás, alrededor tuyo
 - La pregeneración de la pantalla de carga ya no es solo para mundos nuevos:
   corre **cada vez que entrás a un mundo**, desde **donde quedó tu jugador**

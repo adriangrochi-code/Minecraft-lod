@@ -13,6 +13,8 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 - **Pregeneración al entrar (0.26.30-31):** medir cuántos chunks entran en 60 s
   en la A275 y en la 1060, y si 60 s cada vez que se entra es buen valor por
   defecto (en un mundo ya explorado podría preferirse menos).
+- **Pregeneración al irse un jugador (0.26.32, servidor):** ver en un servidor
+  real con varios jugadores que no se note en el tick de los que siguen.
 - **Siluetas de plantas (0.26.29):** mirar en monitor real si las cruces del
   LOD se confunden con las de vanilla en el borde (color, brillo sin sombra por
   cara) y si titilan a distancia (recorte por alfa con mipmaps); medir el costo

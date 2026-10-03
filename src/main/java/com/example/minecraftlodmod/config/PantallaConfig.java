@@ -69,7 +69,7 @@ public final class PantallaConfig {
     }
 
     /** Botón al lado del título de la pantalla de video vanilla, cuando se muestra. */
-    /** Pantalla de carga de un mundo nuevo: avance de la pregeneración inicial (ver PregeneracionInicial). */
+    /** Pantalla de carga del mundo: avance de la pregeneración al entrar (ver PregeneracionInicial). */
     private static void alDibujarPantalla(ScreenEvent.Render.Post evento) {
         if (!(evento.getScreen() instanceof net.minecraft.client.gui.screens.LevelLoadingScreen pantalla)) {
             return;

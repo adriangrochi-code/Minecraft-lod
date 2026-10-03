@@ -5,27 +5,39 @@ import com.example.minecraftlodmod.storage.RegionFileStore;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
 
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
 /**
- * Pregeneración al entrar a un mundo: mientras dura la pantalla de "preparando
- * el área de aparición", cada vez que se abre un mundo, se siguen generando
- * chunks vanilla desde donde quedó el jugador (el spawn en un mundo nuevo)
- * hacia afuera durante {@code pregeneracionInicial} segundos; lo ya generado
- * con su LOD se saltea. Nadie está jugando todavía: se usa toda la CPU sin
- * frenar por el tick del servidor, y al entrar ya hay terreno real (y su LOD)
- * alrededor.
+ * Pregeneración alrededor del jugador al entrar a un mundo y cuando un jugador se
+ * va de un servidor: chunks
+ * vanilla desde donde está (o quedó) el jugador hacia afuera, salteando lo ya
+ * generado con su LOD, con los tickets y las marcas de {@link PregeneradorChunks}.
  *
- * Lo llama {@code MixinPrepararNiveles} desde {@code MinecraftServer#prepareLevels},
- * en el hilo del servidor; {@code esperarTick} es el {@code waitUntilNextTick}
- * de vanilla, que corre las tareas pendientes (tickets, generación, luz) como
- * con el área de aparición. Mismo mecanismo de tickets y marcas de LOD que
- * {@link PregeneradorChunks}.
+ * - **Al entrar** (singleplayer, opción {@code pregeneracionInicial}): mientras
+ *   dura la pantalla de "preparando el área de aparición", desde donde quedó el
+ *   jugador según level.dat (el spawn en un mundo nuevo). Lo llama
+ *   {@code MixinPrepararNiveles} desde {@code MinecraftServer#prepareLevels}.
+ * - **Al irse un jugador de un servidor** (dedicado, o un invitado de un mundo
+ *   abierto en LAN; opción de servidor {@code pregeneracionSalida}): en segundo
+ *   plano durante esos segundos alrededor de donde quedó, de a un jugador por vez
+ *   y sin pedir chunks con el tick del servidor lento. Al volver ya tiene terreno
+ *   real y LOD alrededor.
+ *
+ * Al entrar nadie está jugando: se usa toda la CPU, en el hilo del
+ * servidor, con {@code esperarTick} = el {@code waitUntilNextTick} de vanilla,
+ * que corre las tareas pendientes (tickets, generación, luz) como hace vanilla
+ * con el área de aparición y al guardar.
  */
 public final class PregeneracionInicial {
 
@@ -44,7 +56,7 @@ public final class PregeneracionInicial {
 
     private static volatile Estado estado;
 
-    /** null si no está corriendo. */
+    /** null si no hay una pregeneración bloqueante corriendo. */
     public static Estado estado() {
         return estado;
     }
@@ -52,10 +64,14 @@ public final class PregeneracionInicial {
     private PregeneracionInicial() {
     }
 
-    /** Dimensión y chunk donde quedó el jugador (level.dat en singleplayer); el spawn si nunca entró. */
-    private record Lugar(ServerLevel nivel, ChunkPos chunk) {
+    /** Dimensión y chunk desde donde pregenerar. */
+    record Lugar(ServerLevel nivel, ChunkPos chunk) {
+        static Lugar de(ServerPlayer jugador) {
+            return new Lugar(jugador.serverLevel(), jugador.chunkPosition());
+        }
     }
 
+    /** Dónde quedó el jugador según level.dat (singleplayer); el spawn si nunca entró. */
     static Lugar dondeQuedo(MinecraftServer servidor) {
         net.minecraft.nbt.CompoundTag jugador = servidor.getWorldData().getLoadedPlayerTag();
         if (jugador != null) {
@@ -80,72 +96,170 @@ public final class PregeneracionInicial {
         return new Lugar(servidor.overworld(), new ChunkPos(servidor.overworld().getSharedSpawnPos()));
     }
 
-    public static void correr(MinecraftServer servidor, Runnable esperarTick) {
-        // La opción vive en la config del cliente: en un servidor dedicado no existe.
+    /** Al entrar a un mundo (singleplayer), desde {@code prepareLevels}. */
+    public static void alEntrar(MinecraftServer servidor, Runnable esperarTick) {
+        // Las opciones viven en la config del cliente: en un servidor dedicado no existen.
         if (!servidor.isSingleplayer()) {
             return;
         }
+        bloqueando(servidor, dondeQuedo(servidor), ConfigLod.CLIENTE.pregeneracionInicial.get(), esperarTick,
+                "al entrar");
+    }
+
+    static void bloqueando(MinecraftServer servidor, Lugar lugar, int segundos, Runnable esperarTick, String cuando) {
         GeneradorLocal generador = GeneradorLocal.activo();
-        int segundos = ConfigLod.CLIENTE.pregeneracionInicial.get();
         if (segundos <= 0 || generador == null || generador.store() == null) {
             return;
         }
-        Lugar lugar = dondeQuedo(servidor);
-        ServerLevel nivel = lugar.nivel();
-        ChunkPos centro = lugar.chunk();
-        int enVueloMaximo = Math.max(8, Runtime.getRuntime().availableProcessors() * 4);
         long inicio = System.nanoTime();
         long fin = inicio + segundos * 1_000_000_000L;
-        EspiralChunks espiral = new EspiralChunks(RADIO);
-        Map<Long, Long> enVuelo = new HashMap<>();
-        byte dimension = GeneradorLocal.idDimension(nivel.dimension());
-        RegionFileStore store = generador.store();
-        int listos = 0;
-        boolean agotada = false;
-        LOG.info("LOD: pregenerando alrededor de {}, {} en {} durante {} s", centro.x * 16, centro.z * 16,
-                nivel.dimension().location(), segundos);
+        Pasos pasos = new Pasos(generador, lugar, Math.max(8, Runtime.getRuntime().availableProcessors() * 4));
+        LOG.info("LOD: pregenerando {} alrededor de {}, {} en {} durante {} s", cuando, lugar.chunk().x * 16,
+                lugar.chunk().z * 16, lugar.nivel().dimension().location(), segundos);
         try {
-            while (System.nanoTime() < fin && !(agotada && enVuelo.isEmpty())) {
+            while (System.nanoTime() < fin && !pasos.terminado()) {
                 long ahora = System.nanoTime();
-                Iterator<Map.Entry<Long, Long>> it = enVuelo.entrySet().iterator();
-                while (it.hasNext()) {
-                    Map.Entry<Long, Long> e = it.next();
-                    int x = ChunkPos.getX(e.getKey()), z = ChunkPos.getZ(e.getKey());
-                    boolean listo = GeneradorLocal.tieneMarca(store, GeneradorLocal.claveRegion(dimension, x, z), x, z);
-                    if (listo || ahora - e.getValue() > NANOS_MAXIMOS_POR_CHUNK) {
-                        ChunkPos pos = new ChunkPos(x, z);
-                        nivel.getChunkSource().removeRegionTicket(PregeneradorChunks.TICKET, pos, 0, pos);
-                        it.remove();
-                        listos += listo ? 1 : 0;
-                    }
-                }
-                while (!agotada && enVuelo.size() < enVueloMaximo
-                        && generador.cantidadPendientes() < PENDIENTES_MAXIMOS) {
-                    if (!espiral.siguiente()) {
-                        agotada = true;
-                        break;
-                    }
-                    int x = centro.x + espiral.dx(), z = centro.z + espiral.dz();
-                    if (GeneradorLocal.tieneMarca(store, GeneradorLocal.claveRegion(dimension, x, z), x, z)) {
-                        continue;
-                    }
-                    ChunkPos pos = new ChunkPos(x, z);
-                    nivel.getChunkSource().addRegionTicket(PregeneradorChunks.TICKET, pos, 0, pos);
-                    enVuelo.put(pos.toLong(), ahora);
-                }
-                // Sin ticks del servidor todavía: los chunks que esperaban luz se reintentan acá.
+                pasos.paso(ahora);
+                // Sin ticks del servidor: los chunks que esperaban luz se reintentan acá.
                 generador.reintentarPendientes(servidor);
-                estado = new Estado(listos, (int) Math.max(0, (fin - ahora) / 1_000_000_000L));
+                estado = new Estado(pasos.listos, (int) Math.max(0, (fin - ahora) / 1_000_000_000L));
                 esperarTick.run();
             }
         } finally {
+            pasos.soltar();
+            estado = null;
+        }
+        LOG.info("LOD: pregeneración {}: {} chunks en {} s (anillo {})", cuando, pasos.listos,
+                (System.nanoTime() - inicio) / 1_000_000_000L, pasos.espiral.anillo());
+    }
+
+    // --- Servidor: en segundo plano después de que un jugador se va. ---
+
+    /** Tick del servidor más lento que esto (promedio): no se piden chunks nuevos. */
+    static final long MSPT_MAXIMO_NANOS = 40_000_000L;
+
+    private static final ArrayDeque<Lugar> salidas = new ArrayDeque<>();
+    private static Pasos enCurso;
+    private static long finEnCurso;
+
+    @SubscribeEvent
+    public static void alDesconectarse(PlayerEvent.PlayerLoggedOutEvent evento) {
+        if (!(evento.getEntity() instanceof ServerPlayer jugador)) {
+            return;
+        }
+        MinecraftServer servidor = jugador.getServer();
+        // En singleplayer, el dueño que cierra su mundo no (el servidor se apaga); un invitado de LAN sí.
+        if (servidor != null && !servidor.isSingleplayerOwner(jugador.getGameProfile())
+                && ConfigLod.SERVIDOR.pregeneracionSalida.get() > 0) {
+            Lugar lugar = Lugar.de(jugador);
+            salidas.removeIf(l -> l.nivel() == lugar.nivel() && l.chunk().equals(lugar.chunk()));
+            salidas.add(lugar);
+        }
+    }
+
+    @SubscribeEvent
+    public static void alTerminarTick(ServerTickEvent.Post evento) {
+        MinecraftServer servidor = evento.getServer();
+        if (enCurso == null && salidas.isEmpty()) {
+            return;
+        }
+        GeneradorLocal generador = GeneradorLocal.activo();
+        if (generador == null || generador.store() == null) {
+            return;
+        }
+        long ahora = System.nanoTime();
+        if (enCurso == null) {
+            Lugar lugar = salidas.poll();
+            int segundos = ConfigLod.SERVIDOR.pregeneracionSalida.get();
+            // Con el servidor ocupado, a lo sumo la mitad de los núcleos pidiendo chunks.
+            enCurso = new Pasos(generador, lugar, Math.max(2, Runtime.getRuntime().availableProcessors() / 2));
+            finEnCurso = ahora + segundos * 1_000_000_000L;
+            LOG.info("LOD: pregenerando alrededor de donde se fue un jugador ({}, {} en {}) durante {} s",
+                    lugar.chunk().x * 16, lugar.chunk().z * 16, lugar.nivel().dimension().location(), segundos);
+        }
+        if (ahora >= finEnCurso || enCurso.terminado()) {
+            enCurso.soltar();
+            LOG.info("LOD: pregeneración al salir un jugador: {} chunks", enCurso.listos);
+            enCurso = null;
+            return;
+        }
+        enCurso.paso(ahora, servidor.getAverageTickTimeNanos() <= MSPT_MAXIMO_NANOS);
+    }
+
+    @SubscribeEvent
+    public static void alDetenerse(ServerStoppedEvent evento) {
+        enCurso = null;
+        salidas.clear();
+    }
+
+    /** Una espiral de pregeneración con sus tickets en vuelo (hilo del servidor). */
+    static final class Pasos {
+        final GeneradorLocal generador;
+        final ServerLevel nivel;
+        final ChunkPos centro;
+        final EspiralChunks espiral = new EspiralChunks(RADIO);
+        final int enVueloMaximo;
+        final byte dimension;
+        final Map<Long, Long> enVuelo = new HashMap<>();
+        boolean agotada;
+        int listos;
+
+        Pasos(GeneradorLocal generador, Lugar lugar, int enVueloMaximo) {
+            this.generador = generador;
+            this.nivel = lugar.nivel();
+            this.centro = lugar.chunk();
+            this.enVueloMaximo = enVueloMaximo;
+            this.dimension = GeneradorLocal.idDimension(nivel.dimension());
+        }
+
+        boolean terminado() {
+            return agotada && enVuelo.isEmpty();
+        }
+
+        void paso(long ahora) {
+            paso(ahora, true);
+        }
+
+        /** Suelta lo terminado y, si {@code pedir}, pide chunks nuevos hasta el tope en vuelo. */
+        void paso(long ahora, boolean pedir) {
+            RegionFileStore store = generador.store();
+            if (store == null) {
+                return;
+            }
+            Iterator<Map.Entry<Long, Long>> it = enVuelo.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<Long, Long> e = it.next();
+                int x = ChunkPos.getX(e.getKey()), z = ChunkPos.getZ(e.getKey());
+                boolean listo = GeneradorLocal.tieneMarca(store, GeneradorLocal.claveRegion(dimension, x, z), x, z);
+                if (listo || ahora - e.getValue() > NANOS_MAXIMOS_POR_CHUNK) {
+                    ChunkPos pos = new ChunkPos(x, z);
+                    nivel.getChunkSource().removeRegionTicket(PregeneradorChunks.TICKET, pos, 0, pos);
+                    it.remove();
+                    listos += listo ? 1 : 0;
+                }
+            }
+            while (pedir && !agotada && enVuelo.size() < enVueloMaximo
+                    && generador.cantidadPendientes() < PENDIENTES_MAXIMOS) {
+                if (!espiral.siguiente()) {
+                    agotada = true;
+                    break;
+                }
+                int x = centro.x + espiral.dx(), z = centro.z + espiral.dz();
+                if (GeneradorLocal.tieneMarca(store, GeneradorLocal.claveRegion(dimension, x, z), x, z)) {
+                    continue;
+                }
+                ChunkPos pos = new ChunkPos(x, z);
+                nivel.getChunkSource().addRegionTicket(PregeneradorChunks.TICKET, pos, 0, pos);
+                enVuelo.put(pos.toLong(), ahora);
+            }
+        }
+
+        void soltar() {
             for (long clave : enVuelo.keySet()) {
                 ChunkPos pos = new ChunkPos(clave);
                 nivel.getChunkSource().removeRegionTicket(PregeneradorChunks.TICKET, pos, 0, pos);
             }
-            estado = null;
+            enVuelo.clear();
         }
-        LOG.info("LOD: pregeneración inicial: {} chunks en {} s (anillo {})", listos,
-                (System.nanoTime() - inicio) / 1_000_000_000L, espiral.anillo());
     }
 }
