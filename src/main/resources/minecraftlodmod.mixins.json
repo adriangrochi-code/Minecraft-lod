@@ -1,0 +1,32 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.example.minecraftlodmod.render.mixin",
+  "plugin": "com.example.minecraftlodmod.render.mixin.PluginMixins",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "AccesoLightTexture",
+    "AccesoPipelineIris",
+    "AccesoShaderPackIris",
+    "MixinDespachoBloquesEntidad",
+    "MixinDespachoEntidades",
+    "MixinDistanciaParticulas",
+    "MixinGameRenderer",
+    "MixinMotorParticulas",
+    "MixinLoteChunks",
+    "MixinMinecraft",
+    "MixinRenderTarget",
+    "MixinObjetivosIris",
+    "MixinOpcionesDistancia",
+    "MixinServidorIntegrado",
+    "MixinPipelineIris",
+    "MixinSamplersIris",
+    "MixinShaderInstance",
+    "MixinShaderPackIris",
+    "MixinSombrasIris",
+    "MixinUniformesIris"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

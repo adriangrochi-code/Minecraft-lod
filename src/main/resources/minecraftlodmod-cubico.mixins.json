@@ -1,0 +1,34 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.example.minecraftlodmod.cubico.mixin",
+  "plugin": "com.example.minecraftlodmod.cubico.mixin.PluginCubico",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "AccesoChunk",
+    "AccesoGeneradorFeatures",
+    "AccesoInfoBlockEntity",
+    "AccesoPasosGeneracion",
+    "AccesoSeccionBloques",
+    "MixinAcuifero",
+    "MixinBeardifier",
+    "MixinChunkHolder",
+    "MixinDataLayer",
+    "MixinDatosPaleta",
+    "MixinGeneradorRuido",
+    "MixinLevelChunkCompartido",
+    "MixinLevelFiltro",
+    "MixinNoiseChunk",
+    "MixinNoiseChunkSuperficie",
+    "MixinPalettedContainer",
+    "MixinPaqueteChunk",
+    "MixinPasosGeneracion",
+    "MixinPlayerChunkSender",
+    "MixinPrepararNiveles",
+    "MixinThreadingDetector",
+    "MixinVecinosEstado"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

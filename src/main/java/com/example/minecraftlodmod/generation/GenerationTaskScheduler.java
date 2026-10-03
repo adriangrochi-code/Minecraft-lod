@@ -3,6 +3,7 @@ package com.example.minecraftlodmod.generation;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 
@@ -48,9 +49,23 @@ import java.util.concurrent.Semaphore;
 public final class GenerationTaskScheduler {
 
     private final ForkJoinPool pool;
-    private final Semaphore permisos;
-    private int limiteActual;
+    static final int PRIORIDAD_HILOS = Thread.NORM_PRIORITY - 2;
+    private final SemaforoAjustable permisos;
+    private volatile int limiteActual;
     private final Semaphore permisosDeCola;
+    /** Apagado: el trabajo de fondo cede en su próximo punto de corte ({@link #hayPrioritariasEsperando}). */
+    private volatile boolean apagado;
+
+    /** Semáforo que puede quedar en negativo al bajar el límite (sin esperar a que se liberen permisos). */
+    private static final class SemaforoAjustable extends Semaphore {
+        SemaforoAjustable(int permisos) {
+            super(permisos);
+        }
+
+        void reducir(int cantidad) {
+            reducePermits(cantidad);
+        }
+    }
 
     public GenerationTaskScheduler(int hilosMaximos) {
         this(hilosMaximos, Integer.MAX_VALUE);
@@ -78,8 +93,16 @@ public final class GenerationTaskScheduler {
         if (maxTareasEnCola < 1) {
             throw new IllegalArgumentException("maxTareasEnCola debe ser al menos 1, fue: " + maxTareasEnCola);
         }
-        this.pool = new ForkJoinPool(hilosMaximos);
-        this.permisos = new Semaphore(hilosMaximos);
+        this.pool = new ForkJoinPool(hilosMaximos, pool -> {
+            ForkJoinWorkerThread hilo = ForkJoinPool.defaultForkJoinWorkerThreadFactory.newThread(pool);
+            hilo.setName("LOD-Generacion-" + hilo.getPoolIndex());
+            // Por debajo del hilo de render y del servidor: con el procesador lleno (generación
+            // aproximada usa todos los hilos que tiene), el juego va primero. En Windows la
+            // prioridad de Java llega al sistema operativo.
+            hilo.setPriority(PRIORIDAD_HILOS);
+            return hilo;
+        }, null, false);
+        this.permisos = new SemaforoAjustable(hilosMaximos);
         this.limiteActual = hilosMaximos;
         this.permisosDeCola = new Semaphore(maxTareasEnCola);
     }
@@ -98,6 +121,95 @@ public final class GenerationTaskScheduler {
             throw new RuntimeException("Interrumpido esperando espacio en la cola de generación", e);
         }
 
+        return enviarConCupoTomado(tarea);
+    }
+
+    /**
+     * Como {@link #enviar}, pero sin bloquear: si la cola está llena devuelve
+     * null y la tarea no se encola. Para llamadores que no pueden esperar —
+     * el hilo del servidor al cargar chunks — y prefieren descartar trabajo
+     * (se vuelve a pedir en la próxima carga) antes que frenar el juego.
+     */
+    public <T> Future<T> intentarEnviar(Callable<T> tarea) {
+        if (!permisosDeCola.tryAcquire()) {
+            return null;
+        }
+        return enviarConCupoTomado(tarea);
+    }
+
+    /** Lugares extra de la cola para {@link #intentarEnviarReservado}. */
+    static final int RESERVADOS = 3;
+    private final Semaphore reservados = new Semaphore(RESERVADOS);
+
+    /**
+     * Como {@link #intentarEnviar}, pero con la cola llena todavía entra en
+     * uno de los {@link #RESERVADOS} lugares extra. Para trabajo poco
+     * frecuente que no puede quedar sin turno detrás de una ráfaga (el
+     * horizonte aproximado por región detrás de la pregeneración).
+     */
+    public <T> Future<T> intentarEnviarReservado(Callable<T> tarea) {
+        if (permisosDeCola.tryAcquire()) {
+            return enviarConCupoTomado(tarea);
+        }
+        if (!reservados.tryAcquire()) {
+            return null;
+        }
+        prioritariasEsperando.incrementAndGet();
+        return pool.submit(() -> {
+            boolean contada = true;
+            try {
+                permisos.acquire();
+                prioritariasEsperando.decrementAndGet();
+                contada = false;
+                try {
+                    return tarea.call();
+                } finally {
+                    permisos.release();
+                }
+            } finally {
+                if (contada) {
+                    prioritariasEsperando.decrementAndGet();
+                }
+                reservados.release();
+            }
+        });
+    }
+
+    /**
+     * Tareas prioritarias (todas menos las de fondo) encoladas o esperando
+     * un permiso: mientras haya alguna, el trabajo de fondo no arranca y el
+     * que está en curso cede en su próximo punto de corte.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger prioritariasEsperando =
+            new java.util.concurrent.atomic.AtomicInteger();
+    /** Tareas de fondo enviadas y todavía no terminadas. */
+    private final java.util.concurrent.atomic.AtomicInteger deFondo = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * Trabajo de fondo (el horizonte aproximado): puede tardar minutos por
+     * tarea en un procesador lento y no debe dejar sin turno a la extracción
+     * de chunks reales cercanos, que es lo que el jugador ve primero. Solo
+     * entra si no hay tareas prioritarias esperando y si deja libre al menos
+     * un permiso del límite actual (con límite 1, entra de a una y solo con
+     * el pool ocioso). Quien la ejecuta debería consultar
+     * {@link #hayPrioritariasEsperando()} entre partes y ceder.
+     *
+     * @param conReserva con la cola llena, usar uno de los {@link #RESERVADOS}
+     * @return null si no entró (se reintenta más tarde)
+     */
+    public <T> Future<T> intentarEnviarDeFondo(Callable<T> tarea, boolean conReserva) {
+        if (prioritariasEsperando.get() > 0 || deFondo.get() >= maximoDeFondo(limiteActual)) {
+            return null;
+        }
+        Semaphore cupo;
+        if (permisosDeCola.tryAcquire()) {
+            cupo = permisosDeCola;
+        } else if (conReserva && reservados.tryAcquire()) {
+            cupo = reservados;
+        } else {
+            return null;
+        }
+        deFondo.incrementAndGet();
         return pool.submit(() -> {
             try {
                 permisos.acquire();
@@ -107,6 +219,39 @@ public final class GenerationTaskScheduler {
                     permisos.release();
                 }
             } finally {
+                deFondo.decrementAndGet();
+                cupo.release();
+            }
+        });
+    }
+
+    /** Tareas de fondo a la vez con ese límite de concurrencia: todas menos una, y al menos una. */
+    static int maximoDeFondo(int limite) {
+        return Math.max(1, limite - 1);
+    }
+
+    /** ¿Hay extracción u otro trabajo prioritario esperando turno (o se apagó)? El trabajo de fondo cede si sí. */
+    public boolean hayPrioritariasEsperando() {
+        return apagado || prioritariasEsperando.get() > 0;
+    }
+
+    private <T> Future<T> enviarConCupoTomado(Callable<T> tarea) {
+        prioritariasEsperando.incrementAndGet();
+        return pool.submit(() -> {
+            boolean contada = true;
+            try {
+                permisos.acquire();
+                prioritariasEsperando.decrementAndGet();
+                contada = false;
+                try {
+                    return tarea.call();
+                } finally {
+                    permisos.release();
+                }
+            } finally {
+                if (contada) {
+                    prioritariasEsperando.decrementAndGet(); // interrumpida antes de arrancar
+                }
                 permisosDeCola.release();
             }
         });
@@ -118,13 +263,13 @@ public final class GenerationTaskScheduler {
      * periódicamente junto con sus otras dos perillas (umbral de detalle y
      * radio activo — sección 21).
      *
-     * IMPORTANTE: si el nuevo límite es menor al actual, este método
-     * BLOQUEA hasta poder retener los permisos de sobra — se espera que
-     * quien llama lo haga desde el hilo de control del auto-ajuste (no
-     * desde el hilo principal del juego), donde una espera corta es
-     * aceptable.
+     * No bloquea: al bajar, los permisos de sobra se descuentan aunque estén
+     * en uso (el semáforo puede quedar en negativo) y las tareas en curso
+     * los devuelven al terminar. Antes se esperaba a tomarlos todos juntos, y
+     * con tareas entrando sin parar (que los toman de a uno) esa espera podía
+     * no terminar nunca, trabando el hilo del auto-ajuste.
      */
-    public void ajustarLimiteConcurrencia(int nuevoLimite) {
+    public synchronized void ajustarLimiteConcurrencia(int nuevoLimite) {
         if (nuevoLimite < 1) {
             throw new IllegalArgumentException("nuevoLimite debe ser al menos 1, fue: " + nuevoLimite);
         }
@@ -132,7 +277,7 @@ public final class GenerationTaskScheduler {
         if (delta > 0) {
             permisos.release(delta);
         } else if (delta < 0) {
-            permisos.acquireUninterruptibly(-delta);
+            permisos.reducir(-delta);
         }
         limiteActual = nuevoLimite;
     }
@@ -150,7 +295,25 @@ public final class GenerationTaskScheduler {
         return enviar(tarea).get();
     }
 
+    /** Sin esperar: las tareas encoladas igual se ejecutan; las de fondo ceden. */
     public void apagar() {
+        apagado = true;
         pool.shutdown();
+    }
+
+    /**
+     * Apaga y espera a que terminen las tareas (como mucho {@code maximoMs}): quien
+     * cierra el store después no pierde lo que todavía se estaba generando.
+     *
+     * @return true si terminaron todas
+     */
+    public boolean apagarYEsperar(long maximoMs) {
+        apagar();
+        try {
+            return pool.awaitTermination(maximoMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 }

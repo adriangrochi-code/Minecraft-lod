@@ -1,0 +1,9 @@
+{
+    "vertex": "minecraftlodmod:fsr_pantalla",
+    "fragment": "minecraftlodmod:fsr_easu",
+    "samplers": [ { "name": "Sampler0" } ],
+    "uniforms": [
+        { "name": "InSize", "type": "float", "count": 2, "values": [ 1.0, 1.0 ] },
+        { "name": "OutSize", "type": "float", "count": 2, "values": [ 1.0, 1.0 ] }
+    ]
+}

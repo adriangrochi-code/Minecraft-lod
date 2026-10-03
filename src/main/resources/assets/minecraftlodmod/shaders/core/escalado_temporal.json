@@ -1,0 +1,11 @@
+{
+    "vertex": "minecraftlodmod:fsr_pantalla",
+    "fragment": "minecraftlodmod:escalado_temporal",
+    "samplers": [ { "name": "Sampler0" }, { "name": "Sampler1" }, { "name": "Sampler2" }, { "name": "Sampler3" } ],
+    "uniforms": [
+        { "name": "InSize", "type": "float", "count": 2, "values": [ 1.0, 1.0 ] },
+        { "name": "OutSize", "type": "float", "count": 2, "values": [ 1.0, 1.0 ] },
+        { "name": "Jitter", "type": "float", "count": 2, "values": [ 0.0, 0.0 ] },
+        { "name": "Reiniciar", "type": "float", "count": 1, "values": [ 1.0 ] }
+    ]
+}

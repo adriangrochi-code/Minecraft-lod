@@ -9,6 +9,23 @@ displayName = "${mod_name}"
 authors = "${mod_authors}"
 description = '''${mod_description}'''
 
+# Solo para el escalado FSR experimental (render/EscaladoFsr).
+[[mixins]]
+config = "minecraftlodmod.mixins.json"
+
+# VulkanMod integrado (LGPL-3.0, ver vulkanmod/LICENSE): sus mixins solo se aplican con
+# Vulkan activado en el menú (vulkanmod.mixin.MixinPlugin).
+[[mixins]]
+config = "minecraftlodmod-vulkan.mixins.json"
+
+# Sincronización vertical (cubico/, etapa 1 de cubic chunks): solo actúan con la opción
+# experimental prendida en el cliente.
+[[mixins]]
+config = "minecraftlodmod-cubico.mixins.json"
+
+[[accessTransformers]]
+file = "META-INF/accesstransformer.cfg"
+
 [[dependencies.${mod_id}]]
     modId = "neoforge"
     type = "required"
@@ -22,3 +39,6 @@ description = '''${mod_description}'''
     versionRange = "${minecraft_version_range}"
     ordering = "NONE"
     side = "BOTH"
+
+# Cloth Config: pantalla de config más completa si está instalado; sin él
+# se usa la pantalla automática de NeoForge (ver config/PantallaConfig).

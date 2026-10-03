@@ -1,0 +1,15 @@
+{
+    "vertex": "minecraftlodmod:fsr_pantalla",
+    "fragment": "minecraftlodmod:lod_acabado",
+    "samplers": [ { "name": "Sampler0" }, { "name": "Sampler1" }, { "name": "Sampler2" } ],
+    "uniforms": [
+        { "name": "InSize", "type": "float", "count": 2, "values": [ 1.0, 1.0 ] },
+        { "name": "ProjInv", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "ColorNiebla", "type": "float", "count": 3, "values": [ 1.0, 1.0, 1.0 ] },
+        { "name": "NieblaBorde", "type": "float", "count": 2, "values": [ 1000.0, 1001.0 ] },
+        { "name": "Neblina", "type": "float", "count": 3, "values": [ 0.0, 1.0, 0.0 ] },
+        { "name": "ConOclusion", "type": "float", "count": 1, "values": [ 0.0 ] },
+        { "name": "VistaInv", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "ConSectores", "type": "float", "count": 1, "values": [ 0.0 ] }
+    ]
+}

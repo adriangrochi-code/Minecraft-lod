@@ -1,0 +1,6 @@
+{
+    "vertex": "minecraftlodmod:fsr_pantalla",
+    "fragment": "minecraftlodmod:escalado_profundidad",
+    "samplers": [ { "name": "Sampler0" } ],
+    "uniforms": []
+}

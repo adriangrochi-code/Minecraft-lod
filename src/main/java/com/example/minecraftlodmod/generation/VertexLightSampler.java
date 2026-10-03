@@ -61,7 +61,7 @@ public final class VertexLightSampler {
         for (int du = -1; du <= 0; du++) {
             for (int dv = -1; dv <= 0; dv++) {
                 SuperVoxel vecino = obtener(grid, lado, eje, capa, u + du, v + dv);
-                if (vecino != null && vecino.material() != SuperVoxel.Material.AIRE) {
+                if (vecino != null && !vecino.sinVolumen()) {
                     suma += vecino.luzHorneada();
                     cantidad++;
                 }

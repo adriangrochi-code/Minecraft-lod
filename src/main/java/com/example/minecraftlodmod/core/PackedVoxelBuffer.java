@@ -48,7 +48,7 @@ public final class PackedVoxelBuffer {
         buffer.put(offset + 3, v.alturaLocal());
         buffer.put(offset + 4, v.material().codigo);
         buffer.put(offset + 5, v.flags());
-        // offsets 6-7: reservado, se dejan en 0
+        buffer.putShort(offset + 6, v.estado());
     }
 
     public SuperVoxel get(int indice) {
@@ -60,7 +60,8 @@ public final class PackedVoxelBuffer {
                 buffer.get(offset + 2),
                 buffer.get(offset + 3),
                 SuperVoxel.Material.fromCodigo(buffer.get(offset + 4)),
-                buffer.get(offset + 5)
+                buffer.get(offset + 5),
+                buffer.getShort(offset + 6)
         );
     }
 

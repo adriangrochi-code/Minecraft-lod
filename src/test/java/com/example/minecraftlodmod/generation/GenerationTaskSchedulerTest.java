@@ -97,6 +97,62 @@ class GenerationTaskSchedulerTest {
     }
 
     @Test
+    @Timeout(10)
+    void bajarElLimiteConTareasEnCursoNoBloqueaYSeRespeta() throws Exception {
+        GenerationTaskScheduler scheduler = new GenerationTaskScheduler(4);
+        try {
+            CountDownLatch soltar = new CountDownLatch(1);
+            CountDownLatch arrancaron = new CountDownLatch(4);
+            for (int i = 0; i < 4; i++) {
+                scheduler.enviar(() -> {
+                    arrancaron.countDown();
+                    soltar.await();
+                    return null;
+                });
+            }
+            assertTrue(arrancaron.await(5, TimeUnit.SECONDS));
+            // Con los 4 permisos en uso: antes esperaba a tomarlos y quedaba trabado acá.
+            scheduler.ajustarLimiteConcurrencia(1);
+            assertEquals(1, scheduler.limiteConcurrenciaActual());
+            soltar.countDown();
+
+            AtomicInteger enEjecucion = new AtomicInteger();
+            AtomicInteger maximo = new AtomicInteger();
+            List<Future<Object>> futuros = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                futuros.add(scheduler.enviar(() -> {
+                    maximo.accumulateAndGet(enEjecucion.incrementAndGet(), Math::max);
+                    Thread.sleep(10);
+                    enEjecucion.decrementAndGet();
+                    return null;
+                }));
+            }
+            for (Future<Object> f : futuros) {
+                f.get(5, TimeUnit.SECONDS);
+            }
+            assertEquals(1, maximo.get());
+        } finally {
+            scheduler.apagar();
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void apagarYEsperarDejaTerminarLoEncolado() {
+        GenerationTaskScheduler scheduler = new GenerationTaskScheduler(2);
+        AtomicInteger hechas = new AtomicInteger();
+        for (int i = 0; i < 20; i++) {
+            scheduler.enviar(() -> {
+                Thread.sleep(5);
+                return hechas.incrementAndGet();
+            });
+        }
+        assertTrue(scheduler.apagarYEsperar(5000));
+        assertEquals(20, hechas.get());
+        assertTrue(scheduler.hayPrioritariasEsperando(), "el trabajo de fondo cede una vez apagado");
+    }
+
+    @Test
     void ajustarLimiteConcurrenciaRechazaValoresMenoresAUno() {
         GenerationTaskScheduler scheduler = new GenerationTaskScheduler(2);
         try {
@@ -151,5 +207,75 @@ class GenerationTaskSchedulerTest {
         } finally {
             scheduler.apagar();
         }
+    }
+
+    @Test
+    @Timeout(10)
+    void intentarEnviarDevuelveNullConLaColaLlenaEnVezDeBloquear() throws Exception {
+        GenerationTaskScheduler scheduler = new GenerationTaskScheduler(1, 1);
+        try {
+            CountDownLatch dejarTerminar = new CountDownLatch(1);
+            Future<Object> ocupada = scheduler.intentarEnviar(() -> {
+                dejarTerminar.await();
+                return null;
+            });
+            assertNotNull(ocupada);
+
+            assertNull(scheduler.intentarEnviar(() -> "no entra"), "Con la cola llena no debería encolar");
+
+            dejarTerminar.countDown();
+            ocupada.get(5, TimeUnit.SECONDS);
+            // El cupo se libera en el finally de la tarea, justo después de que get() retorna.
+            Future<String> siguiente = null;
+            for (int i = 0; i < 100 && siguiente == null; i++) {
+                siguiente = scheduler.intentarEnviar(() -> "entra");
+                if (siguiente == null) Thread.sleep(10);
+            }
+            assertNotNull(siguiente, "Al liberarse la cola debería volver a aceptar");
+            assertEquals("entra", siguiente.get(5, TimeUnit.SECONDS));
+        } finally {
+            scheduler.apagar();
+        }
+    }
+
+    @Test
+    void elFondoDejaSiempreUnLugarSalvoConLimiteUno() {
+        assertEquals(1, GenerationTaskScheduler.maximoDeFondo(1));
+        assertEquals(1, GenerationTaskScheduler.maximoDeFondo(2));
+        assertEquals(3, GenerationTaskScheduler.maximoDeFondo(4));
+    }
+
+    @Test
+    @Timeout(10)
+    void elFondoNoArrancaConExtraccionEsperandoYLaExtraccionPasaPrimero() throws Exception {
+        GenerationTaskScheduler s = new GenerationTaskScheduler(2);
+        s.ajustarLimiteConcurrencia(1);
+        CountDownLatch fondoCorriendo = new CountDownLatch(1);
+        CountDownLatch soltarFondo = new CountDownLatch(1);
+        AtomicInteger orden = new AtomicInteger();
+        Future<Integer> fondo = s.intentarEnviarDeFondo(() -> {
+            fondoCorriendo.countDown();
+            // Como un lote de aproximación: entre partes mira si tiene que ceder.
+            while (!s.hayPrioritariasEsperando()) {
+                Thread.sleep(5);
+            }
+            soltarFondo.await();
+            return orden.incrementAndGet();
+        }, false);
+        assertNotNull(fondo);
+        assertTrue(fondoCorriendo.await(5, TimeUnit.SECONDS));
+        assertNull(s.intentarEnviarDeFondo(() -> 0, false), "Solo una de fondo con límite 1");
+
+        Future<Integer> extraccion = s.intentarEnviar(orden::incrementAndGet);
+        assertNotNull(extraccion);
+        assertTrue(s.hayPrioritariasEsperando(), "La extracción espera el único permiso");
+        assertNull(s.intentarEnviarDeFondo(() -> 0, true), "Con extracción esperando, el fondo no entra");
+
+        soltarFondo.countDown(); // el lote cede
+        assertEquals(1, fondo.get());
+        assertEquals(2, extraccion.get());
+        assertFalse(s.hayPrioritariasEsperando());
+        assertNotNull(s.intentarEnviarDeFondo(() -> 0, false), "Sin nada esperando, vuelve a entrar");
+        s.apagar();
     }
 }

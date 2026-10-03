@@ -67,6 +67,7 @@ magic: 4 bytes | version: 1 byte | region_x,z: 4 bytes c/u | dimension_id: 1 byt
 ```
 
 - RLE por nodo (aprovecha corridas largas de terreno natural); Deflate/GZIP solo a nivel de archivo completo, no por nodo, para no penalizar la lectura parcial.
+- **Índice en disco append-only (0.25.5):** `r.X.Z.idx` = generación (8 bytes) + el header de arriba como foto completa + bloques de diario `cantidad: 4 | cantidad × (clave 8 | offset 8 | tamaño 8) | crc32: 4`. Cada lote de escritura agrega un bloque en vez de reescribir el índice (antes, 1,5 MB por región y por lote en regiones grandes); cuando el diario supera la mitad de los nodos se reescribe la foto (move atómico), así el costo queda amortizado. Un bloque cortado o con CRC mal termina el diario y se recorta en la próxima escritura. Un índice sin bloques es el formato anterior.
 - Mismo serializador para disco y red — en red se omite el header repetido (ambas partes ya conocen la región/nodo pedido).
 - Cache en RAM como LRU chico (lo visible + margen); disco (SSD) como fuente de verdad de todo lo demás, con lectura asíncrona y escritura diferida (write-behind, batch cada 2-5s).
 
@@ -74,6 +75,14 @@ magic: 4 bytes | version: 1 byte | region_x,z: 4 bytes c/u | dimension_id: 1 byt
 
 - Enganche vía `RenderLevelStageEvent` de NeoForge (etapa posterior a bloques sólidos vanilla), como pasada de render separada del terreno cercano (compatible con Embeddium, que maneja el terreno vanilla normal).
 - Buffers agrupados **por región**, no por nodo individual — minimiza draw calls, crítico en iGPU (Vega 8).
+- **Descarte por campo de visión (0.26.11, `render/CampoVision`):** cada celda
+  (caja con la altura del mundo, bajada de la curvatura incluida) se prueba
+  contra los 4 planos laterales de proyección × vista antes de dibujarla; sin
+  near ni far, para no depender de la convención de profundidad de cada
+  camino (OpenGL, Vulkan, shaderpacks). Medido: ~3× menos vértices por cuadro.
+  Desde 0.26.38 la caja va de la Y más baja a la más alta de la malla
+  (`GeometriaLod.PLANO_MIN_Y/MAX_Y`), no de toda la altura del mundo: mirando
+  hacia arriba ya no se manda el terreno que queda abajo (sección 44).
 - **Blend entre niveles de LOD:** dithering por alpha con patrón Bayer fijo (screen-door transparency) vía `discard` en el fragment shader — no geometría interpolada (transvoxel), por ser mucho más barato en GPU integrada.
   - Duración: ~6-10 frames por transición.
   - Límite de nodos en blend simultáneo (ej. 20-30) para no duplicar demasiados draw calls a la vez con movimiento rápido.
@@ -112,15 +121,38 @@ sujetos a elección manual o a la calibración real por benchmark (sección 9).
 
 ## 9. Calibración por benchmark
 
-- Dimensión custom (`worldgen/dimension`) generada proceduralmente con seed fija y generador vanilla normal (terreno real, no sintético), con 3-4 puntos representativos (llanura, bosque denso, montaña, cueva/cambio de altura).
-- Se genera una sola vez, cacheada igual que cualquier mundo; invalidable si cambia el algoritmo de LOD entre versiones del mod.
-- Flujo del botón "Calibrar":
-  1. Jugador elige preset inicial (Bajo/Medio/Alto/Ultra) como punto de partida.
-  2. Se genera (si no existe) y teletransporta a la dimensión benchmark.
-  3. Prueba por escalones alrededor del preset elegido (hacia arriba si sobra rendimiento, hacia abajo si falta), midiendo frame_time en cada punto representativo.
-  4. Guarda el resultado como config personalizada basada en el preset.
-  5. Devuelve al jugador a su dimensión/posición original.
-- Disponible desde el primer arranque del mod, sin necesidad de tener un mundo propio generado.
+- **Mundo aparte** (`minecraftlodmod-benchmark`, decisión 2026-09-29 — antes
+  era una dimensión custom) generado con seed fija y generador vanilla normal
+  (terreno real, no sintético), con 4 puntos representativos (llanura, bosque
+  denso, montaña, cueva) — ver `benchmark/PuntosBenchmark.java`. Al ser un
+  mundo propio, la seed fija hace determinista toda la generación (terreno,
+  estructuras, árboles) sin mixins, y se puede calibrar desde el menú
+  principal sin tener un mundo del jugador.
+- **Actualización 0.26.27:** 6 puntos (llanura, bosque, montaña, cueva,
+  vista alta = 90 bloques sobre el terreno, vuelo a 20 b/s). Por punto quieto
+  espera 8-60 s hasta que el LOD está listo (2 muestras del monitor sin mallas
+  en cola ni generación) y mide 10 s; el vuelo, 3 s y 15 s en movimiento, y no
+  decide el escalón (la primera vez genera terreno). Métricas por punto
+  (`CalibradorBenchmark.MetricasPunto`): promedio, 1% peor, peor, carga del LOD
+  y, del `MonitorRendimiento`, GPU, CPU, RAM, servidor, vértices, llamadas,
+  VRAM. Pasa si promedio <= 90% del objetivo y 1% peor <= 2,5 × objetivo.
+  Informe en `.minecraft/minecraftlodmod/benchmark/` (`InformeBenchmark`).
+  "Medir rendimiento" = un solo escalón con la config actual. Al calibrar,
+  `RecomendacionesBenchmark`: en el piso con la GPU >= 85% del cuadro, FSR 1;
+  en el escalón más alto con <= 60% del objetivo y GPU con margen, oclusión en
+  costados. El auto-ajuste queda congelado durante la sesión.
+- **0.26.38:** mide sin vsync ni tope de FPS (en la ventana, sin tocar las
+  opciones guardadas; vuelven al terminar o cancelar). Con el cuadro atado al
+  tope el promedio no baja del intervalo: con vsync a 60 Hz ningún escalón con
+  objetivo de 60 FPS pasaba y calibrar desde Ultra terminaba en Mínimo.
+- Se genera una sola vez, cacheada igual que cualquier mundo; el cache de LOD
+  se invalida solo si cambia el algoritmo (`GeneradorLocal.VERSION_ALGORITMO`).
+- Flujo del botón "Calibrar" (solo desde el menú principal):
+  1. Jugador elige preset inicial como punto de partida.
+  2. Se crea (si no existe) y se abre el mundo de benchmark.
+  3. Prueba por escalones alrededor del preset elegido (hacia arriba si sobra rendimiento, hacia abajo si falta), midiendo frame_time en cada punto representativo. Escalones: los presets + 2 intermedios por tramo; pasa si el promedio ≤ 90% del frame time objetivo.
+  4. Guarda el resultado como config Personalizada.
+  5. Cierra el mundo de benchmark y vuelve al menú principal.
 
 ## 10. Multiplayer
 
@@ -129,7 +161,19 @@ sujetos a elección manual o a la calibración real por benchmark (sección 9).
 - Si el servidor no tiene el mod: modo de compatibilidad, LOD generado localmente solo de zonas ya visitadas como chunks reales (igual que singleplayer sin companion).
 - Invalidación de cache server-side ante cambios de bloques (evento → marcar sucio → regenerar en próxima pasada del thread pool).
 
-## 11. Configuración (Cloth Config)
+## 11. Configuración (pantalla propia estilo Sodium desde 0.17.0; antes Cloth Config)
+
+Desde la 0.17.0 la pantalla es propia (`config/PantallaLod` + `config/OpcionesLod`),
+con el estilo de las opciones de Sodium: pestañas General / Calidad /
+Generación / Depuración-Experimental, filas con nombre y control (casilla,
+ciclo, deslizador o botón), panel con la descripción e impacto en el
+rendimiento, y Deshacer / Aplicar / Hecho. Cloth Config dejó de usarse (una
+dependencia menos). Desde la 0.18.0 reemplaza a Opciones > Video, como Sodium:
+las primeras pestañas (Video, Gráficos) son las opciones de video vanilla,
+armadas desde sus `OptionInstance` (`config/OpcionesVideo`), y después vienen
+las del LOD. Si otro mod ya reemplaza esa pantalla (Sodium, Embeddium,
+VulkanMod o el Vulkan integrado) no se la pisa y queda un botón "LOD" en ella.
+El árbol original:
 
 ```
 Config general
@@ -149,7 +193,7 @@ storage/       - serialización compartida, cache en disco, invalidación
 render/        - buffers GPU por región, hook de render, blend/dithering
 network/       - protocolo cliente-servidor, payloads
 benchmark/     - dimensión custom, lógica de calibración
-config/        - Cloth Config, presets, persistencia
+config/        - pantalla de opciones (estilo Sodium), presets, persistencia
 ```
 
 ## 13. Orden de implementación sugerido
@@ -445,6 +489,12 @@ varía mucho según cuántas corridas RLE tenga). Lo desalojado no se pierde:
 sigue en disco (sección 5), así que un miss de este cache cuesta una lectura
 de SSD, no regenerar desde cero.
 
+**Actualización 0.26.6:** sobre `Long2ObjectLinkedOpenHashMap` (fastutil)
+en vez de `LinkedHashMap<Long, byte[]>`, y el límite cuenta datos +
+`COSTO_ENTRADA` (48 B) por entrada: los nodos promedian ~43 B y el costo
+fijo no contado hacía que el cache ocupara ~3× su presupuesto (medido 145 MB
+"usados" vs ~450 MB reales; heap del juego 1133 → 856 MB).
+
 **2. Backpressure en `generation/GenerationTaskScheduler.java` (implementado):**
 `maxTareasEnCola` acota cuántas tareas pueden estar pendientes/en ejecución a
 la vez. Sin este tope, un jugador moviéndose rápido podría hacer que el
@@ -457,3 +507,966 @@ atrás natural, sin necesitar lógica adicional en quien pide la generación.
 `BoundedRegionCache` deberían derivarse de `QualityPreset.cacheRamMb` (más
 un estimado de tamaño promedio de tarea) al construir el scheduler/cache
 para cada preset, no quedar como valores libres.
+
+## 25. Análisis de Voxy y FarPlaneTwo: rendimiento sin perder calidad (2026-09-29)
+
+**Licencias:** Voxy (MCRcortex) es "All rights reserved, do not
+redistribute" → solo se toman IDEAS, nunca código. FarPlaneTwo
+(DaPorkchop_) es MIT → se puede adaptar código con crédito explícito
+(autor + enlace al repo) en el archivo que lo use.
+
+Medición de partida (preset Medio, 1080p, antes del descarte de cuevas):
+~34M vértices / 17M triángulos / ~1,4 GB de VRAM — inviable en iGPU.
+
+Ideas adoptadas, en orden de implementación sugerido:
+
+1. **Formato de vértice compacto (idea de Voxy) — implementado: 12 B/vértice
+   (`GeometriaLod.escribirCompacto`, tabla de sprites en `PaletaTexturas`).** Voxy guarda un quad en
+   64 bits (posición 5+5+5, tamaño 4+4, cara 3, estado, bioma, luz) y
+   reconstruye los vértices en el shader. Nuestro equivalente compatible
+   (sin GL crudo): `VertexFormat` propio con elementos empaquetados
+   (posición relativa a la celda en shorts, color+luz en un int, UV
+   derivada de posición+cara en el shader) → ~8-12 B/vértice contra ~36
+   actuales, 3-4× menos VRAM y ancho de banda. Sin pérdida de calidad.
+2. **Mip por bloque representativo + paleta (idea de Voxy) — implementado
+   el bloque representativo en `HierarchicalReducer`; color en cliente y
+   paleta pendientes (ver NOTES.md).** En vez de
+   promediar color, el nivel superior elige el hijo más representativo
+   (más opaco, preferencia al de arriba) y guarda `estado`; el color se
+   resuelve en el cliente con `ColoresBloque`/resource pack activo. Mejora
+   nitidez lejana (sin "barro" promediado), arregla colores en
+   multiplayer y permite almacenamiento por paleta (índices de 1-2 bytes
+   + Deflate) → nodos en disco/RAM mucho más chicos.
+3. **Agrupación de quads por dirección de cara (Voxy) — implementado: un
+   `VertexBuffer` por dirección y celda, dibujados como el terreno vanilla.** Seis rangos por
+   malla; se omite el dibujo de las caras que miran en sentido contrario
+   a la cámara (hasta ~50% menos triángulos procesados) usando rangos de
+   `VertexBuffer` por dirección — sin GL crudo.
+4. **Culling de caras entre secciones vecinas (Voxy) — implementado con
+   `GreedyMesher.Vecinos`; costados de teselas pendientes.** Máscara de
+   opacidad del borde de la sección vecina al mallar: elimina caras
+   internas en los límites de sección/tesela (hoy solo se omiten caras
+   laterales cubiertas a nivel celda).
+5. **Oclusión ambiental horneada por vértice — implementado en
+   `GreedyMesher`/`GeometriaLod`, opción `oclusionAmbiental`.** Voxy usa SSAO de
+   postproceso; lo nuestro compatible es AO por vértice al mallar (0 costo
+   en GPU, gran aporte de profundidad visual). **Desde 0.23.0 también SSAO**
+   (`render/AcabadoLod`, opción `oclusionPantalla`): pasada de pantalla con
+   `ShaderInstance` sobre la profundidad del LOD, antes de que se limpie; el
+   radio crece con la distancia. En la misma pasada va la niebla del LOD
+   (borde igual al de vanilla corrido + neblina atmosférica exp2), que
+   hasta ahí no existía. Sin GL crudo; no corre con VulkanMod ni shaderpacks.
+   **Luz de bloque aparte (idea de Voxy) — implementado en 0.24.0:** bits
+   2-3 de `flags` (`SuperVoxel.luzBloque`, 0-3, máximo al reducir), bits
+   14-15 del short de sprite en el vértice compacto (sprites hasta 16383);
+   el shader toma `max(luz del cielo a esta hora, luz cálida de bloque)`.
+   Datos viejos quedan en 0 (sin romper formato). Mismo hito: tinte de
+   bioma mezclado como el biome blend de vanilla (`LectorSeccionMinecraft`,
+   biomas de los chunks vecinos cargados).
+6. **Exclusión exacta del área vanilla (FP2, "vanilla renderability").**
+   Máscara por chunk de qué renderiza vanilla realmente, en vez de un radio
+   fijo → sin geometría LOD duplicada bajo el terreno cercano ni huecos.
+7. **Generación aproximada por funciones de densidad (FP2, MIT) — implementado:
+   `GeneradorAproximado` + `TerrenoAproximado` (niveles 3-4 por chunk, claves propias).** Para el
+   horizonte de varios km: samplear `NoiseRouter.finalDensity` de
+   1.21 a baja resolución para regiones nunca visitadas, sin generar
+   chunks. Es lo que hace sostenible el preset Horizonte (secciones 17-18).
+8. **Texturas horneadas de modelos no cúbicos (Voxy) — implementado en
+   0.22.0: `render/AtlasLod` + `PaletaTexturas`.** Los modelos que no son
+   cubos simples se rasterizan por software (vista de arriba y de costado,
+   con prueba de profundidad y recorte por alfa) a teselas de un atlas propio
+   del LOD con mipmaps por tesela; los huecos del follaje van oscurecidos.
+
+**NO adoptado en el backend por defecto:** HiZ occlusion + recorrido
+jerárquico en GPU por compute + multidraw indirecto de Voxy (requiere GL
+4.5/4.6, int64 en shaders, llamadas GL directas) y árbol de render
+off-heap con GL crudo de FP2. Ambos rompen la regla de compatibilidad
+(secciones 6, 15, 20) y el hardware de la A275 no los soporta bien; quedan
+como candidatos para el backend de alto rendimiento opt-in (sección 20).
+
+## 26. Escalado AMD FSR 1 (experimental, opt-in) — primera excepción a "solo eventos"
+
+Pedido: bajar el costo de GPU en hardware donde la GPU es el límite (A275,
+3500U a 1080p). FSR 1 (AMD FidelityFX, MIT) escala una imagen de menor
+resolución con EASU (reconstrucción de bordes) + RCAS (nitidez).
+
+**Decisión:** implementado en `render/EscaladoFsr.java`, APAGADO por defecto,
+con dos mixins en `render/mixin/` (el único paquete de mixins del mod):
+`Minecraft.getMainRenderTarget()` devuelve un framebuffer chico mientras
+`GameRenderer.render` dibuja el mundo, y después se escala al framebuffer
+real; interfaz, contorno de entidades y efectos de pantalla quedan a
+resolución completa. Las pasadas usan solo abstracciones de Minecraft
+(RenderTarget, ShaderInstance, BufferUploader).
+
+Es la primera vez que el mod entra al cuadro de Minecraft con mixins (hasta
+acá, solo eventos de NeoForge — secciones 6 y 20). Por eso es opt-in y se
+desactiva solo donde choca: gráficos Fabulous (framebuffers de transparencia
+del tamaño de la ventana) e Iris/Oculus (reemplazan este tramo). Con
+Embeddium debería convivir: falta probarlo en hardware real (Pista B), igual
+que la ganancia de FPS y la calidad visual.
+
+
+## 27. Vulkan, shaders y escaladores temporales (FSR 2 / XeSS / DLSS) — 2026-09-30
+
+Pedido: poder usar Vulkan (con interruptor), compatibilidad con shaders, y
+como objetivos XeSS (segunda prioridad) y DLSS (si se puede).
+
+**1. Vulkan = VulkanModNeoForge, no un renderer propio.** (Actualizado en
+0.15.0: el código de VulkanMod pasó a estar integrado, ver al final de este punto.)
+El que usa el jugador es VulkanModNeoForge 0.5.5-dev+3.1 (yiyuyan, fork de
+VulkanMod de xCollateral, LGPL-3.0). Reemplaza el renderer entero al
+arrancar: no se puede prender/apagar en caliente, y meterlo como jar-in-jar
+lo dejaría siempre prendido. Decisión: no se incluye; el LOD se adapta si
+está y el interruptor del menú (`config/ConmutadorVulkan`) lo activa o
+desactiva para el próximo arranque renombrando el jar (`.jar.disabled`, la
+convención de Modrinth). Apagarlo mientras corre el juego lo hace un
+proceso aparte cuando el juego cierra (en Windows un jar cargado no se
+puede renombrar).
+
+Qué rompía con VulkanMod (reproducido con lavapipe en Xvfb):
+- Shaders propios (`lod_textura`, FSR): su conversor GLSL→SPIR-V no los
+  toma y quedan sin pipeline → NullPointerException al primer dibujo (el
+  crash de la 0.9.0). Con VulkanMod no se registran; el LOD usa el camino
+  de colores planos con el shader vanilla `position_color`, que VulkanMod
+  trae portado. FSR 1 queda apagado.
+- `VertexBuffer.draw()` no vuelve a subir uniforms: el truco de un shader
+  por pasada + `ChunkOffset` por buffer no sirve ahí (sí `drawWithShader`).
+- Profundidad: si su "depthFix" (necesita `jdk.attach`, que el Java de
+  Modrinth no trae) funciona, las proyecciones salen en 0..1; si no, en
+  -1..1. `PlanCeldas.conPlanosDeProfundidad` detecta la convención de la
+  matriz que llega y la respeta.
+
+Texturas con VulkanMod (0.13.0): mismo formato compacto de 12 B, descripto
+para VulkanMod como dos elementos UV SHORT×2 (arma el atributo de Vulkan por
+uso y tipo, sin mirar la cantidad) y una variante del shader
+(`lod_textura_vk`) que su conversor línea por línea acepta: sin `flat`, sin
+`%`, samplers declarados solo en el vértice, sin `ChunkOffset` (dibujo con
+`drawWithShader`). Se crea con el constructor de `ShaderInstance` que recibe
+String, el único que VulkanMod intercepta. Pendiente: FSR con VulkanMod.
+
+Buffer de índices de VulkanMod (0.14.0): su `AutoIndexBuffer` de quads es
+compartido (65536 vértices al arrancar) y al crecer libera el anterior aunque
+otros VBO lo sigan usando → índices basura ("espigas"). Con VulkanMod el LOD
+parte las mallas en piezas de hasta 65536 vértices, así nunca lo hace crecer.
+
+**VulkanMod integrado (0.15.0, pedido del usuario: no depender de otro mod).**
+El código del fork (LGPL-3.0) vive en el paquete `vulkanmod/`, con los
+paquetes renombrados. Reemplaza la decisión anterior de "no se incluye":
+- Interruptor al arrancar: `config/ConmutadorVulkan` guarda el pedido en
+  `config/minecraftlodmod-vulkan.properties`; el `MixinPlugin` de VulkanMod
+  no aplica ningún mixin si Vulkan está apagado (el juego queda en OpenGL
+  sin cambios). Prenderlo apaga `earlyWindowControl` en `fml.toml`.
+- Librerías: lwjgl-vulkan/vma/shaderc (Windows y Linux) dentro del jar; los
+  módulos de Fabric que usa su armado de bloques (FRAPI), como jar-in-jar.
+- El VulkanMod suelto ya no puede instalarse junto (paquetes de LWJGL
+  repetidos); el LOD lo sigue reconociendo si está (`RenderLod.conVulkanMod`).
+
+Escalado según la GPU (0.14.0): `config/CompatibilidadEscalado` decide qué
+modos se ofrecen (DLSS solo RTX, XeSS con DP4a o Intel Xe, ambos solo en
+Windows; con VulkanMod, ninguno) y el menú muestra solo esos.
+
+**2. Shaders (Iris) — implementado el paso (a).** Con un shaderpack activo
+(`render/ShadersIris`, API de Iris por reflexión, Iris opcional):
+- El LOD se arma en el formato de bloque extendido de Iris
+  (`IrisVertexFormats.TERRAIN`, 52 B: el `BLOCK` de vanilla + mc_Entity,
+  mc_midTexCoord, at_tangent, at_midBlock; `GeometriaLod.escribirBloque`) y se
+  dibuja con `GameRenderer.getRendertypeSolidShader()`, que Iris cambia por el
+  `gbuffers_terrain` del pack: el pack lo ilumina como al resto del terreno.
+  Con el `BLOCK` de 32 B Iris lee los vértices corridos (espigas).
+- Color sin luz ni sombra por cara, luz horneada en el lightmap, normal por
+  cara, textura blanca 1×1 (el color ya es el promedio de la textura).
+- Proyección de vanilla sin tocar (el pack reconstruye posiciones con ella),
+  con el far estirado hasta el alcance del LOD (mixin de
+  `GameRenderer#getDepthFar`) y sin limpiar la profundidad.
+- Límite conocido: el uniform `far` de Iris sale de la distancia de render
+  vanilla, así que la "niebla de borde" de muchos packs tapa el LOD más allá
+  de esa distancia (en Complementary se puede apagar esa niebla).
+- Verificado en Xvfb con un shaderpack mínimo propio; Complementary en render
+  por software sale todo niebla, no se pudo juzgar (Pista B).
+
+Los shaderpacks ya definen contratos para mods de LOD, que serían el paso (b):
+- Distant Horizons: programas `dh_terrain`/`dh_water`/`dh_shadow`,
+  `dhDepthTex0/1` y matrices `dhProjection`; Iris los alimenta desde la API
+  de DH (específico de DH).
+- Voxy: `voxy.json` + `voxy_opaque.glsl`/`voxy_translucent.glsl` en el pack
+  (Complementary r5.9 los trae): el pack aporta el código de fragmento y la
+  lista de uniforms/samplers; el mod de LOD lo compila con su propia entrada
+  de vértices y le da `vx*` (proyección, profundidad propia). Implementarlo
+  (solo leyendo archivos del pack, sin código de Voxy) daría el LOD sin la
+  niebla de borde y con iluminación completa en los packs que ya soportan
+  Voxy. Requiere acceso a los render targets y uniforms de Iris.
+  **Etapa A implementada (0.25.3):** `render/ContratoVoxy` (lógica pura: json
+  laxo, GLSL de vértice y fragmento) + `render/ShadersVoxy` (lado Iris,
+  Iris como dependencia solo de compilación). Mixins sobre Iris
+  (`MixinShaderPackIris`, aplicados solo si Iris está, `PluginMixins`): los
+  archivos voxy se suman al grafo de includes de Iris y se preprocesan con
+  sus mismas definiciones más `VOXY`. Tipos de uniforms: primero las
+  declaraciones de los programas normales del pack, después los que registra
+  Iris. Compila y enlaza (0.25.3).
+  **Etapa B (0.26.8, opción experimental `contratoVoxy`):** `VOXY` para todo el
+  pack (deferred/composite leen el LOD); uniforms `vx*` y samplers
+  `vxDepthTexOpaque/Trans` agregados a los de Iris (`MixinUniformesIris`,
+  `MixinSamplersIris`); `render/DibujoVoxy` arma el programa como el
+  `IrisLodRenderProgram` de Iris (uniforms, samplers e imágenes del pack) y
+  dibuja en `AFTER_SKY` sobre los colortex de `opaqueDrawBuffers` con una
+  profundidad propia (la de translúcidos es copia), así vanilla tapa al LOD
+  después. Las matrices `vx*` también se suben directo al programa (los
+  uniforms propios de Iris se actualizan una vez por cuadro) y la
+  profundidad vale para el cuadro de Iris en que se dibujó. Iris 1.8 admite
+  16 colortex y Complementary con `VOXY` usa 18 y 19: con el contrato se
+  amplía a 32 (`MixinObjetivosIris`); si el pipeline igual falla, el pack se
+  recarga sin `VOXY` (`MixinPipelineIris`).
+  **0.26.9:** formato de vértice propio del contrato (`RenderLod.FORMATO_VOXY`,
+  16 B: el compacto con el color sin sombra por cara + un int con estado de
+  bloque, luz de cielo horneada y marca de agua). `customId` = tabla R32I
+  estado → id del `block.properties` del pack (`WorldRenderingSettings` de
+  Iris), `lightMap` con la luz de cielo real. El agua va a un grupo aparte
+  (`GeometriaLod.GRUPO_AGUA`, solo la superficie) y se dibuja con
+  `voxy_translucent` sobre una copia de la profundidad opaca, con la mezcla
+  del json por salida; sin ese archivo, con el opaco. Pendiente: sombras del
+  LOD (NOTES.md).
+
+Con Sodium/Embeddium, `LevelRenderer#isSectionCompiled` da false aun para
+secciones a la vista: ahí el LOD le cede un chunk a vanilla cuando lleva 2 s
+cargado en el cliente (`RenderLod.vanillaLoDibujo`).
+
+**3. Escaladores temporales.** FSR 2/3, XeSS y DLSS necesitan lo mismo, y es
+~80% del trabajo (según el proyecto de referencia minecraft-dlss, MIT):
+proyección con jitter por cuadro, vectores de movimiento (Minecraft no los
+genera: reproyección de cámara desde la profundidad + entidades aparte),
+profundidad y máscara reactiva (agua, partículas). Por hardware:
+- **FSR 2/3 (AMD, MIT):** corre en todo (GTX 1060, Vega 8, R7 de la A275).
+  Es el primero a implementar: se puede portar a shaders de cómputo GL sin
+  Vulkan.
+- **XeSS (Intel, licencia propia, DLL solo Windows):** tiene backend Vulkan,
+  no OpenGL. En GPUs no Intel necesita DP4a/SM 6.4: GTX 1060 sí; Vega 8 y
+  R7 (A275) probablemente no (a verificar). Camino: dispositivo Vulkan
+  interno + interop GL↔Vulkan (`GL_EXT_memory_object_win32` y semáforos),
+  llamando a `libxess.dll` desde Java con LWJGL (sin C++).
+- **DLSS (NVIDIA):** solo RTX (Turing o más nuevas): ninguno de los equipos
+  de referencia lo puede usar. Mismo interop que XeSS; la DLL de NVIDIA no
+  se redistribuye, la aporta el usuario. Última prioridad.
+
+**4. Implementado (0.12.0) — base temporal, puente Vulkan, XeSS y DLSS.**
+- `config/ModoEscalado` reemplaza el on/off de FSR: APAGADO, FSR1, TEMPORAL
+  (propio), XESS, DLSS. Los tres últimos comparten la base temporal de
+  `render/Escalado`:
+  - Jitter de Halton 2/3 (`SecuenciaJitter`, fases como FSR 2) aplicado en
+    `GameRenderer#getProjectionMatrix` (mixin): mundo, mano y frustum
+    coherentes.
+  - Profundidad de la escena y matrices capturadas en `AFTER_LEVEL`, antes
+    de que la mano limpie la profundidad; los píxeles de la mano llevan
+    movimiento cero.
+  - Vectores de movimiento reconstruidos desde la profundidad
+    (`MovimientoCamara`, shader `escalado_movimiento`), solo cámara: las
+    entidades que se mueven quedan con el de la cámara (estelas posibles).
+  - TEMPORAL: acumulación con historial RGBA16F, recorte por varianza en
+    YCoCg, velocidad del vecino más cercano (`escalado_temporal`) + RCAS.
+- `render/InteropVulkan`: dispositivo Vulkan propio en la misma GPU (UUID
+  de `GL_EXT_memory_object`), imágenes con memoria exportable importadas en
+  OpenGL (fd en Linux, handles en Windows), sincronización glFinish + fence.
+  lwjgl-vulkan va reubicado dentro del mod (`com.example.minecraftlodmod.lwjglvk`,
+  plugin Shadow) para no chocar con el de VulkanMod. Verificado en Xvfb con
+  llvmpipe + lavapipe y el escalador de prueba `EscaladorBlit`
+  (-Dminecraftlodmod.pruebaVulkan=true).
+- `render/EscaladorXess`: libxess.dll del usuario en
+  `.minecraft/minecraftlodmod/`, API C de xess_vk.h por JNI de LWJGL
+  (structs en `XessParametros`, headers MIT).
+- `render/EscaladorDlss`: Streamline 2.14 (MIT) en
+  `.minecraft/minecraftlodmod/streamline/`, hookeo manual + slSetVulkanInfo,
+  structs en `StreamlineParametros`, llamadas de 5 argumentos por libffi.
+- XeSS y DLSS no se pueden probar acá (DLL solo Windows, GPU real): falta
+  Pista B. Si fallan al cargar o al ejecutar, el escalado cae solo al
+  TEMPORAL y lo dice en el log. `invertirJitter` (experimental) por si la
+  convención del signo del jitter resulta la contraria.
+
+## 28. Auto-ajuste según el cuello de botella (CPU o GPU) — 2026-09-30
+
+Pedido: detectar en tiempo real si el límite es el CPU o la GPU y pasar
+trabajo al que está más libre, para más FPS y sobre todo más estabilidad.
+
+**Medición (sin GL crudo):** tiempo de cuadro y `TimerQuery` de Minecraft
+para el tiempo de GPU del cuadro (con F3 abierto se lee el de Minecraft).
+GPU ocupada casi todo el cuadro = límite GPU; si no, límite CPU. Con
+VulkanMod no hay medición de GPU: se ajusta con el orden genérico.
+
+**Qué se puede mover de un lado al otro:** no hay tareas con dos
+implementaciones (generar mallas en GPU con compute rompería la regla de
+compatibilidad, secciones 6/15/20). Sí hay perillas que cambian CPU por GPU:
+- distancia de agrupado de caras (buffer por dirección = más llamadas y
+  menos triángulos de espaldas, un buffer = lo contrario);
+- radio de los oclusores del relieve (CPU por plan contra celdas dibujadas);
+- escala del escalado (GPU), si hay escalado;
+- generación simultánea (CPU; es la que causa tirones).
+
+**Orden (`core/BalanceadorCpuGpu`, una perilla por segundo):**
+- GPU al límite: agrupado ↓, oclusión ↑, escala ↓, recién después detalle ↓ y radio ↓.
+- CPU al límite: generación ↓, agrupado ↑, oclusión ↓, después detalle y radio.
+- Tirones con promedio bueno: generación ↓.
+- Con margen (2 ciclos seguidos por debajo del 80% del objetivo): se
+  recupera generación, radio, detalle y escala; las perillas invisibles de
+  reparto quedan donde están.
+Reemplaza en la práctica a `PerformanceAutoTuner` (secciones 7, 21, 23),
+que nunca llegó a conectarse al juego.
+
+**Con vsync o tope de FPS (0.26.38, sección 44):** el objetivo nunca es más
+chico que el intervalo del tope; con el cuadro en el tope el objetivo cuenta
+como cumplido y el margen para recuperar sale de la carga medida.
+
+
+## 29. Vóxeles grandes como terreno, nubes lejanas y curvatura — 2026-09-30
+
+**Texturas de vóxeles grandes.** La textura se repite una vez por bloque
+(misma escala que vanilla), así que el costado de un vóxel de pasto de 16
+bloques mostraba 16 líneas de pasto. Ahora el vértice compacto lleva el
+tamaño del vóxel (log2, bits 3-7 del byte de alfa, junto a la cara) y la
+tabla de sprites un cuarto texel con el sprite "de abajo": en los costados
+con franja (`ColorTextura.tieneFranja`: el cuarto de arriba distinto de la
+mitad de abajo, y esa mitad parecida a la cara de abajo del bloque — pasto,
+nieve, micelio, podzol), el shader pone la franja solo en la fila de arriba
+de cada vóxel y la textura de abajo (tierra) en el resto. El resto de los
+bloques (piedra, troncos) sigue repitiéndose por bloque, como el terreno
+cercano. Opción `texturasComoTerreno`.
+
+**Nubes lejanas (`render/NubesLejanas`).** Vanilla arma sus nubes en un
+cuadrado de ~700 bloques y las corta con su plano lejano (4× la distancia de
+render). Capa plana propia en la pasada del LOD (shader `lod_nubes`): misma
+textura, altura y desplazamiento que vanilla (ticks del LevelRenderer por AT),
+hueco donde vanilla dibuja, 4 muestras por píxel y paso a la cobertura media
+cuando los texeles son más chicos que un píxel (sin mipmaps titilaría), y
+fundido al color de niebla hacia el alcance del LOD. Sin VulkanMod ni
+shaderpacks (tienen sus nubes).
+
+**Curvatura (`core/HorizonteCurvo`).** El LOD baja `(d - d0)² / 2R` con d0 = borde
+de vanilla (vanilla no se curva; la pendiente arranca en cero, sin escalón) y
+R configurable (Tierra 1:1 = 6371 km por defecto; Marte, Luna y planetas de
+juguete). Por vértice en `lod_textura` y en las nubes; por celda entera donde
+el shader no es nuestro (colores planos, VulkanMod, shaderpacks).
+**Horizonte real:** el radio del LOD sale de
+`sqrt(2Rh) + sqrt(2R·32)` (horizonte desde los ojos, h sobre el nivel del mar,
+más una colina de 32 bloques detrás), con tope `RADIO_MAX`; el auto-ajuste lo
+recorta en la misma proporción que al radio del preset, y la generación
+aproximada genera hasta ahí (`GeneradorLocal.radioHorizonteCliente`).
+
+## 30. Superficie a la altura real, niveles hasta 10 y horizonte por región — 2026-09-30
+
+Pedido: pasar de 2048 chunks, vóxeles "más suaves según la forma" en vez de
+cubos de 2/4/8/16, vóxeles de 16 recién lejos, niveles más grandes para lo
+muy lejano, y detalle por píxeles en pantalla.
+
+**Por qué no tamaños que no sean potencia de 2:** el octree (sección 2) anida
+cada nivel en el anterior y la sección de 16 bloques solo se divide en
+potencias de 2; tamaños intermedios romperían el formato de disco y red
+(sección 5) y la derivación jerárquica. En cambio:
+
+- **Relleno por vóxel** (`SuperVoxel.relleno`, el byte `alturaLocal`): qué
+  parte del alto del vóxel está llena. El mesher dibuja la superficie a esa
+  altura (recortes en bloques enteros) y los costados hasta ahí. Así la
+  forma vertical queda a resolución de bloque en todos los niveles y el
+  tamaño del vóxel solo se nota a lo ancho, donde el tope de píxeles lo
+  acota. Es lo que hace "según la forma" la transición entre niveles.
+- **Detalle por píxeles** (ya existía, sección 3): ahora con un tope duro
+  (`pixelesMaximos`) que ni el preset ni el auto-ajuste pasan. Los vóxeles de
+  16 solo aparecen donde ocupan menos que eso.
+- **Niveles 9 y 10** (vóxeles de 512 y 1024; la tesela de nivel 10 mide
+  16 384 bloques, el máximo que entra en los shorts del vértice compacto).
+- **Radio 8192** con el horizonte aproximado por región (nodo entero de nivel
+  5/6/7 por tarea), porque chunk por chunk serían ~200 millones de chunks.
+
+**Fundido con tramado entre niveles (sección 6) — implementado en 0.25.0**
+(`render/FundidoNiveles` + uniform `Fundido` de `lod_textura`): la malla vieja
+pasa a "saliente", se dibuja entera hasta que las celdas que la tapan están
+armadas (tope 3 s) y después se cruza con ellas con un Bayer 4×4
+complementario durante 0,4 s; hasta 32 salientes a la vez. En el mismo hito,
+la aproximación cercana se arma en niveles 1 y 2 (`TerrenoAproximado`,
+claves de nivel 15) porque los vóxeles de 8 bloques de cerca eran lo que más
+se notaba.
+
+## 31. Cubic chunks por etapas: sincronización vertical + LOD vertical — 2026-10-01
+
+Pedido: ganar memoria y CPU con mundos gigantes (a futuro, alturas mucho
+mayores, hasta un mundo 1:1) sin reescribir todo, como experimento medible.
+
+**Por qué no cubic chunks completo de una:** carga por columnas (tickets,
+`ChunkMap`), etapas de generación, mapas de altura, luz del cielo, formato
+Anvil, red y cliente asumen columnas; también Sodium, Iris, VulkanMod y los
+mods de generación. Vanilla además limita la altura de una dimensión a 4064.
+
+**Etapa 1 — sincronización vertical (implementada en 0.26.0, `cubico/`):**
+idea de Vertigo (Builderb0y, MIT; solo Fabric), escrita de nuevo para
+NeoForge. El servidor genera y carga columnas enteras como siempre; a cada
+cliente le manda de cada columna solo las secciones a ±N secciones de él
+(mixins: `PlayerChunkSender`, `ClientboundLevelChunkPacketData`,
+`ChunkHolder#broadcast`) y, al moverse, paquetes propios de cargar y vaciar
+secciones sueltas (bloques + luz) y el rango de cada columna (`RangoSecciones`,
+histéresis de una sección). Opt-in desde el cliente (opción experimental) y
+permitido por el servidor. **LOD vertical:** el cliente guarda el rango de
+cada columna (`ClienteVertical`) y `RenderLod` deja de tratar esas columnas
+como "de vanilla": arma solo sus secciones fuera del rango, con caras
+laterales por sección según el rango del vecino. Las islas flotantes y el
+relieve fuera del rango se siguen viendo. Gana memoria, red y mallas del
+cliente; no CPU ni memoria del servidor.
+
+**Franja vertical de vanilla (0.26.10):** vanilla y Sodium no dibujan las
+secciones a más de *distancia de render × 16* bloques en vertical de la cámara
+(`SectionOcclusionGraph#getRelativeFrom`). Cuando la superficie de una columna
+queda fuera de esa franja (`RangoSecciones.verticalVisible`, achicada una
+sección de cada lado), el LOD la trata como parcial con esa franja, o como
+toda suya si la superficie no entra; con la superficie adentro no cambia nada
+(no hay rearmados al caminar). Sin esto, volando alto el suelo cercano no lo
+dibujaba nadie.
+
+**Etapa 2 (pendiente):** no generar ni cargar en el servidor lo lejano en
+vertical (empezando por la generación); con formato de guardado propio para
+pasar de 4064 de alto.
+
+## 32. Cubic chunks, etapa 2: generar con ruido solo una franja vertical — 2026-10-01
+
+Pedido: en mundos muy altos, que el servidor no gaste CPU ni memoria en lo
+que está lejos en vertical de los jugadores, empezando por la generación.
+
+**Dónde se gasta:** el paso NOISE evalúa la densidad final en cada esquina de
+celda (4×8×4 bloques) de toda la altura de la columna; en un mundo de 2048 de
+alto es ~5× lo de uno vanilla aunque casi todo sea piedra o aire. Ese rango lo
+fija `NoiseSettings.clampToHeightAccessor(chunk)` en dos lugares:
+`NoiseChunk.forChunk` (paso BIOMES, el `NoiseChunk` queda guardado en el
+`ProtoChunk`) y `NoiseBasedChunkGenerator.fillFromNoise` (paso NOISE).
+
+**Parte 1 (implementada en 0.26.1, `cubico/GeneracionVertical`, opción de
+servidor `cubico.generacionVertical`, apagada):**
+- Al crear el `NoiseChunk` de un chunk que todavía no pasó por NOISE se
+  decide su franja (`VentanaVertical`): superficie estimada en 5 puntos con
+  la densidad sin "jaggedness" y el umbral de la superficie preliminar de
+  vanilla, menos un margen; las alturas de los jugadores cercanos con su
+  distancia; arriba, hasta el techo salvo `recortarArriba`. Se guarda en un
+  adjunto del chunk (`ventana_generacion`, persistente, pasa al LevelChunk):
+  es la marca de "secciones pendientes" para la parte 2, y hace que el
+  `NoiseChunk` y el llenado usen siempre el mismo rango.
+- Los dos `clampToHeightAccessor` devuelven la franja. El acuífero conserva
+  la altura completa (los carvers lo consultan en todo su rango).
+- Después del llenado, lo de abajo pasa a secciones de un solo valor (el
+  bloque por defecto, sin costo). Sobre ese relleno siguen corriendo las
+  reglas de superficie (pizarra, lecho de roca), los carvers y las menas;
+  faltan cuevas de ruido, acuíferos y vetas grandes.
+- Solo dimensiones con cielo y sin techo: en el Nether la "superficie" sería
+  el techo y se perdería el piso.
+- Medido (mundo -1024..1023, 1024 chunks, servidor dedicado): ruido por chunk
+  171 ms → 103 ms con la franja → 28 ms con `recortarArriba`; estimar la
+  franja, 1,4-1,7 ms.
+
+**Parte 2 (implementada en 0.26.2, `cubico/CompletadoVertical`):** cada 10
+ticks, las columnas cargadas a la vista de un jugador cuya franja no llega a
+`distanciaJugador` (+2) secciones de él se encolan, de la más cercana a la más
+lejana. En un hilo de fondo, la banda que falta se genera en un `ProtoChunk`
+aparte con la banda como franja: biomas, ruido (acuífero y superficie
+preliminar con la altura completa, `MixinNoiseChunkSuperficie`) y reglas de
+superficie (con tres secciones de relleno encima de una banda de abajo, para
+que no la traten como superficie). En el hilo del servidor se mezcla con el
+chunk real vía `LevelChunk#setBlockState` (luz, mapas de altura, fluidos):
+abajo, aire y fluidos del aparte sobre roca, y la roca del aparte solo donde el
+real tiene la del relleno; arriba, lo del aparte donde el real es aire. Al
+terminar la luz (`lightChunk(chunk, true)` como barrera) se reenvía el chunk.
+Medido: 99,2% de bloques iguales a la generación completa (falta la
+vegetación de cuevas, que viene de features).
+
+**Parte 3, "no cargar lo lejano en vertical" (0.26.3):** medido con un
+histograma del heap en el mundo alto: 840 mil `PalettedContainer`, el 74% de
+un solo valor pero ~250 B fijos cada uno (candados, detector de hilos), y
+~200 MB en `long[]` de datos de bloques, casi todo roca profunda mixta (menas,
+tufa, diorita: ~2 KB por sección). Las columnas siguen cargadas enteras (carga,
+luz, guardado, red y otros mods lo asumen); se achica lo que guarda cada sección:
+- `SeccionesComprimidas` + `AlmacenComprimido`: un `BitStorage` que guarda los
+  datos con Deflate y se descomprime solo al leer (lecturas desde cualquier
+  hilo con la versión descomprimida en una local; escribir y comprimir, solo el
+  hilo del servidor; `getRaw` para guardar/paquetes descomprime en temporal).
+  Barrido con tope de 1 ms/tick sobre secciones a más de `distanciaCompresion`
+  de todos los jugadores, sin ticks aleatorios. Access transformer para el
+  campo `data` y el record `Data` de `PalettedContainer`. Medido: heap 818 →
+  720 MB, datos de esas secciones 94 → 7,8 MB, mismos bloques al guardar.
+- `SeccionesCompartidas`: contenedores de un solo valor compartidos, copia al
+  escribir en `LevelChunk#setBlockState`, guarda contra escrituras directas.
+  ~10 MB (solo el aire es uniforme de verdad).
+
+- Luz (0.26.4, `MixinDataLayer`): `get(int)` y `copy()` reescritos para leer
+  `data` una sola vez; las capas visibles (`getDataLayerData`, que el motor de
+  luz nunca escribe: copia antes, `getDataLayerToWrite`) se comprimen desde
+  el barrido. `isEmpty`/`isDefinitelyHomogenous`/`isDefinitelyFilledWith`
+  dan false si está comprimida (si no, no se guardaba); `getData` devuelve
+  una copia temporal (guardar, paquetes) y `set` descomprime e invalida. Solo
+  chunks cargados hace más de 10 s (las capas en cola sí se escriben directo).
+  Medido: ~17 MB de luz con datos → ~1 MB; luz guardada igual que sin
+  compresión.
+
+- Costo fijo por contenedor (0.26.5, `MixinThreadingDetector`,
+  `MixinDatosPaleta`; cliente y servidor, cualquier mundo): el detector de
+  hilos de cada `PalettedContainer` ya no arma `Semaphore` ni `ReentrantLock`
+  (el dueño va en un campo bajo el monitor del detector; mismo error de
+  vanilla) y `Configuration` se comparte por valor. No se aplica con
+  FerriteCore (`PluginCubico`). Medido: heap 712 → 621 MB.
+
+- Features sobre lo completado (0.26.7, `DecoracionVertical`): mismo orden y
+  siembra que `ChunkGenerator#applyBiomeDecoration` (accesor a
+  `featuresPerStep`), pasos LOCAL_MODIFICATIONS (sin geodas),
+  UNDERGROUND_STRUCTURES, UNDERGROUND_DECORATION, FLUID_SPRINGS,
+  VEGETAL_DECORATION y TOP_LAYER_MODIFICATION, sobre el `ServerLevel` vivo;
+  `MixinLevelFiltro` descarta las escrituras fuera de la banda y del chunk y
+  quita el aviso a vecinos. Medido: vegetación de cuevas como la generación
+  completa (musgo 2989/2866, lianas 291/291), 3,6 ms por columna.
+
+**Pendiente:** lo que queda fijo por contenedor
+(`PalettedContainer` 40 B, detector 40 B, `Data`, paleta de un valor: ~150 B);
+compresión de secciones lejanas en el cliente (hoy todo es servidor).
+
+## 33. Optimizaciones del juego fuera del LOD — 2026-10-02
+
+Pedido: acelerar el juego en general (chunks y FPS), no solo el LOD. En orden:
+
+1. **Modo híbrido (`config/DistanciaVanilla`, opción `vanillaReducida`):**
+   con el LOD activo, la distancia de vanilla se acota según el preset (5 a
+   12 chunks) en `Options#getEffectiveRenderDistance` y en la del servidor
+   integrado. Medido: 4-5 → 9-10 FPS pidiendo 16 chunks.
+2. **Entidades tapadas (`render/OcultamientoEntidades` + `RayosVisibilidad`):**
+   lo que vanilla quiso dibujar (ya pasó el frustum) se prueba en un hilo
+   aparte con rayos al centro y las esquinas de la caja (DDA bloque por
+   bloque, bloques `isSolidRender`); el cuadro siguiente saltea lo tapado.
+   Conservador: lo nuevo, una prueba vieja o hecha con la cámara en otro
+   lugar cuentan como visibles; nada en espectador, en la pasada de sombras
+   de Iris ni para lo que brilla. Idea de EntityCulling (si está, no corre).
+   Medido: 105 → 51 entidades dibujadas con la imagen idéntica.
+3. **Límites:** distancia de entidades y bloques con entidad, distancia de
+   partículas (vanilla 32) y tope total de partículas vivas.
+4. **Ritmo de chunks (`msCargaChunks`):** el cliente pide los chunks que
+   entran en N ms por tick (vanilla 7, `ChunkBatchSizeCalculator`). En Xvfb no
+   cambió nada (el límite era el servidor): queda en 7, a probar en hardware.
+5. **Generación en paralelo (`cubico/GeneracionParalela`, opción de servidor
+   experimental `generacionParalela`):** vanilla corre superficie, carvers y
+   features de a un chunk por vez desde el mailbox de worldgen. Superficie y
+   carvers (solo escriben su chunk) van al pool de fondo; features, con
+   candados rayados por chunk sobre los 3×3 que escribe, tomados en orden.
+   Idea de C2ME (si está, no corre).
+6. **Vecinos de estados de bloque (`cubico/TablaEstados`):** una tabla por
+   bloque con índice en base mixta en vez de un `ArrayTable` por estado
+   (~26 mil tablas). Idea de FerriteCore (MIT; si está, no corre).
+
+## 34. Sin huecos cerca y terreno real después de vanilla (como Voxy) — 2026-10-02
+
+- **Luz del terreno aproximado:** el subsuelo de una columna se guarda con
+  luz 0 y el descarte de caras sin luz (sección 25) borraba las paredes de
+  acantilados. Los chunks aproximados se mallan con sus vecinos laterales al
+  mismo nivel (reales o aproximados) y sus costados restantes llevan luz
+  plena (`GeometriaLod#costadosAlAire`); en las teselas, solo los interiores
+  (los bordes siguen dependiendo de la luz para no dibujar paredes enterradas).
+- **Bordes entre niveles:** una celda oculta los costados de su borde contra
+  el chunk vecino solo si la celda de al lado tiene el mismo nivel (firma de
+  vecinas en `EstadoCelda`, rearmado si cambia).
+- **Anillo real (`anilloReal`):** el pregenerador (`PregeneradorChunks`) con
+  radio vista + N, re-centrado cada radio/8 chunks: lo primero después de
+  vanilla es terreno real, como en Voxy (que solo muestra chunks reales).
+- **Anillo cercano (`GeneradorAproximado#revisarAnilloCercano`):** cada
+  segundo, de vanilla hacia afuera hasta `DISTANCIA_NIVEL1`, lo que falta
+  pasa adelante de la ventana (tope 256); las celdas cercanas incompletas se
+  rearman cada 2 s.
+
+## 35. Chunks en RAM para cargar antes — 2026-10-02
+
+Vanilla deserializa cada chunk (`ChunkSerializer.read`) en el hilo del
+servidor recién cuando entra a la distancia de vista, y lo suelta al salir.
+Moverlo a otro hilo (como C2ME) toca `PoiManager` y la luz, que no son
+seguros entre hilos: descartado. En cambio, `generation/ChunksEnRam` usa RAM:
+ticket propio de nivel 33 (completo, sin ticks ni envío) para un colchón de
+`chunksEnRam` chunks más allá de la vista (de a 32 por pasada, prioridad de
+vista, no con MSPT > 40 ms) y retención LRU de lo que queda atrás hasta
+`ramChunksMb` (~96 KB por chunk medido). Solo singleplayer.
+
+**0.26.17:** el presupuesto sale de `cacheRamMb` ("RAM para LOD"), con tope
+en un cuarto del heap; la mitad para el colchón (el más ancho de 2 a 32
+chunks que entre, `ChunksEnRam.margenPara`), el resto para la retención.
+
+**0.26.18 — primero la vista:** colchón y anillo real solo piden chunks
+nuevos con la vista completa (`ChunksEnRam.faltanEnVista`, una vez por tick):
+sus tickets de nivel 33 tienen la misma prioridad que el borde de la vista y
+en terreno nuevo la ahogaban (607/625 faltantes a los 80 s → completa en 37-39 s).
+Perfil del vuelo por terreno nuevo: casi todo el CPU es ruido
+(`wgen_fill_noise`) y el hilo `worldgen`; el del servidor casi no aparece.
+
+**0.26.19 — generación en paralelo por defecto:** medido con la misma prueba
+(vista 12, terreno nuevo): 35-37 s con `generacionParalela` contra 47-48 s
+sin ella. Pasa a estar prendida por defecto; sigue sin aplicarse con C2ME.
+
+**0.26.20 — extracción por paleta:** perfilando el vuelo, la mitad del CPU
+propio era `Block.getId` (búsqueda en mapa por bloque) dentro de
+`ColoresBloque.rgb`, más los mapas de forma y material. `LectorSeccionMinecraft`
+arma `InfoEstado` (estado, id, material, forma) una vez por entrada de la
+paleta de la sección (hasta 256; si no, memo por estado) y la fila de la
+sección de arriba una vez por columna: 228-235 → 105-116 µs por sección.
+
+**0.26.21 — atajo exacto del `Beardifier`:** `cubico/LimitesBeardifier` +
+`MixinBeardifier`: caja de alcance de piezas (±12 en horizontal; en vertical
+de su caja y su suelo) y uniones (núcleo 24³); fuera, los `hasNext()` de los
+dos bucles de `compute` dan false (redirect, sin objeto por punto) y el aporte
+queda en 0. Test contra el `Beardifier` de vanilla. Vuelo: 6,4 % → 0,5 % del CPU.
+
+## 36. Carga de GPU del LOD — 2026-10-02
+
+Medido en Xvfb (llvmpipe: proporciones, no números absolutos): el LOD es ~85%
+del trabajo de GPU; las texturas, ~38% de eso; SSAO, nubes lejanas y fundido,
+casi nada. Por nivel, los vóxeles de 1 bloque (nivel 0) son ~85% de los
+vértices de las mallas.
+
+**0.26.22 — piso de píxeles (`pixelesMinimos`, 2 px por defecto):** en
+`PlanCeldas.nivelPara` el umbral queda entre el piso y el techo
+(`pixelesMaximos`; si chocan, manda el techo). Con umbrales bajos (Alto 1,5,
+Ultra 1,0, Horizonte 0,75, × 0,6 cerca) el nivel 0 llegaba a 1-1,7 km a
+1080p con vóxeles de menos de un píxel. Medido con umbral 1,0, radio 160:
+14,8 M → 9,2 M vértices dibujados, GPU −31%, imagen igual. En Medio no
+cambia nada (el umbral ya pasa los 2 px donde termina el nivel 0).
+
+**0.26.23 — sin cambio visual:**
+- `lod_textura` sin `discard` (apagaba el early-Z); el tramado del fundido va
+  en `lod_textura_fundido` (mismo color por `include/lod_textura_color.glsl`),
+  dibujado en una pasada aparte solo para las mallas que entran o salen
+  (`RenderLod.Filtro`). Datos por cara `flat`. En llvmpipe no cambia el
+  tiempo (ya prueba profundidad antes); la ganancia es en GPU real (Pista B).
+- `LectorSeccionMinecraft.voxel`: un objeto por vóxel, tinte de bioma pedido
+  solo por los bloques que lo usan (`ColoresBloque.FuenteTinte`, un canal),
+  luz de los 6 vecinos en una pasada, emisión en `InfoEstado`. 287 → 145 ns
+  por vóxel, 54 M vóxeles iguales al código anterior.
+- Descartado: tabla de oclusión ambiental por capa en `GreedyMesher` (mismos
+  quads, 5% más lento: arma la capa entera para pocas caras).
+
+**0.26.24 — acuífero (`cubico/mixin/MixinAcuifero`, `@Overwrite` de
+`NoiseBasedAquifer#computeSubstance`):** los 12 centros vecinos dependen solo
+de la celda de acuífero; se guardan desempaquetados los de la última celda
+(mismo orden, desempates y siembra que vanilla). 40 M llamadas iguales a
+vanilla, 328 → 261 ns (el acuífero es ~19% del CPU de `wgen_fill_noise`). No
+con C2ME. Memoria: el heap en vuelo es sobre todo la cache del LOD (`byte[]`)
+y los chunks retenidos a propósito (`long[]`); compartir contenedores de un
+solo valor por defecto se descartó (≤ 65 MB, error si otro mod escribe directo).
+
+## 37. Más calidad con poco costo — 2026-10-02
+
+**Detalle extra (0.26.25, `BalanceadorCpuGpu.detalleExtra`):** perilla del
+auto-ajuste que multiplica umbral y piso de píxeles (1 → 0,5; piso nunca bajo
+1 px, `RenderLod.PISO_DETALLE_EXTRA_PX`). Se suma último en `recuperar()` (con
+todo en el preset y 2 ciclos bajo el 80% del objetivo) y se saca primero en
+cuanto el cuadro pasa el objetivo, sin esperar a confirmar el lado; después
+queda bloqueada `CICLOS_BLOQUEO_EXTRA` (30) ciclos. Solo con el auto-ajuste.
+
+**Oclusión en costados (0.26.25, opción `oclusionCostados`, apagada):**
+`GreedyMesher.mallar(..., enCostados, ...)` calcula la AO por esquina en las
+6 caras (antes solo +Y); el mapeo (u, v) de la AO a los vértices ya era el
+mismo por eje. Medido en la vista de prueba: malla 24,6 → 31,7 M vértices,
+dibujados 8,5 → 10,3 M, GPU +18%: corta fusiones de caras. La SSAO
+(`oclusionPantalla`, prendida) ya cubre valles y pies de montaña; la de
+costados suma el detalle de las grietas en laderas de roca.
+
+**Agua translúcida (0.26.26, opción `aguaTranslucida`, prendida):** con el
+shader propio (`TipoMalla.TEXTURA`) el agua se separa al armar
+(`GeometriaLod.separarAgua`, como el contrato Voxy) y se dibuja en
+`RenderLod.pasadasTextura(..., soloAgua)` al final, con mezcla alfa y
+`ColorModulator.a` = `ALFA_AGUA` (0,72), escribiendo profundidad (niebla y
+SSAO la toman como superficie). Al separar, se descartan solo los costados de
+agua en el borde de la grilla y las caras de abajo; los de adentro (cascadas)
+se dibujan. Medido: misma geometría, GPU +3%, +372 llamadas en la vista de
+prueba. Bordes entre niveles: revisados con cada nivel teñido, continuos.
+
+**0.26.27 — marcas vs. nodos:** la marca vieja de "chunk extraído"
+(`GeneradorLocal.claveMarcaVieja`, nivel 15, Y=0) comparte clave con el nodo
+aproximado fino de nivel 2 en la sección 0 (`TerrenoAproximado.claveNodo`, nivel
+15). En mundos de antes de 0.26.14 el armado lo leía como nodo (0 o 1 byte) y la
+celda fallaba. `OctreeNodeCodec.esNodo` (al menos la cabecera) en todos los
+lectores. Escalado "solo si gana" pasó a "apagar solo si pierde" más de 3%
+(`PruebaEscalado.PERDIDA_MAXIMA`); con Iris, apagado solo con shaderpack activo.
+
+
+## 38. Bloques finos y de entidad en el LOD — 2026-10-02
+
+Pedido: que plantas, camas y otros bloques 3D se vean en el LOD casi igual que
+de cerca, sin tocar la zona vanilla. Descartado: reemplazar en vanilla los
+bloques con entidad por cajas (lo cercano tiene que quedar igual).
+
+**0.26.28 — sin geometría nueva:**
+- **Cobertura vegetal:** la decoración sin colisión (pasto, flores, caña) se
+  sigue omitiendo, pero tiñe el vóxel de abajo (`LectorSeccionMinecraft.voxel`)
+  con su color × `ColorTextura.pesoCobertura` (fracción opaca de su textura
+  × 1,5, tope 0,75). La cobertura se calcula por sprite en `PaletaTexturas`
+  (`Paleta.cobertura`) y solo para `MapColor.PLANT` (un cartel, riel o
+  estandarte no tiñe el suelo). Medido en Xvfb: cambio sutil de tono, igual costo.
+- **Camas y cofres:** su modelo de bloque solo tiene la partícula (tablones);
+  `PaletaTexturas.coloresDeEntidad` usa el promedio de la región visible de su
+  textura de entidad (`Sheets.BED_TEXTURES`, `CHEST_*`, base 64×64), color plano.
+- `VERSION_ALGORITMO` no sube: regenerar todo el cache por un tono no vale;
+  se aplica a lo que se extrae desde ahora.
+
+**0.26.29 — siluetas en cruz (opción `siluetasPlantas`, prendida):**
+- `LectorSeccionMinecraft.esCruz` (caña, bambú, `DoublePlantBlock` no
+  sumergidas) → `SuperVoxel.Material.CRUZ` (código 4) con su color, luz y
+  estado. `sinVolumen()`: para el mesher (caras, superficie a la altura real,
+  oclusión), la luz por vértice, el relieve y el reductor cuenta como aire, así
+  que de nivel 1 para arriba desaparece y el suelo queda igual que antes.
+- `GeometriaLod.agregarCruces` (solo nivel 0 y con texturas): dos planos por
+  planta, X y Z, una columna de la misma planta en un solo par;
+  `GRUPO_CRUZ` aparte. Las posiciones del formato compacto son enteras: bit 7
+  del byte de alfa (`MARCA_CRUZ`) y el shader corre el plano 0,5 al centro.
+- Silueta: la vista de costado horneada del modelo con su alfa
+  (`AtlasLod.recortable`, huecos con el promedio y alfa 1 para que los mipmaps
+  de vanilla no oscurezcan los bordes), tabla `TablaTexturas.cruces`.
+- Pasada propia después de lo opaco, sin culling, con `lod_textura_recorte`
+  (discard por alfa < 0,5); el fundido entre niveles hace el mismo recorte.
+  Lo opaco sigue sin discard. Medido: 4,2 → 4,3 M vértices (+2%).
+
+## 39. Pregeneración al crear un mundo — 2026-10-02
+
+Pedido: en un mundo nuevo, tomarse un minuto o minuto y medio al cargar para
+generar todos los chunks que se pueda.
+
+**0.26.30 (`generation/PregeneracionInicial` + `cubico/mixin/MixinPrepararNiveles`,
+opción `pregeneracionInicial`, 60 s por defecto, 0-180):** inyectado en
+`MinecraftServer#prepareLevels` antes de `ChunkProgressListener#stop` (la
+pantalla de carga sigue abierta). Solo singleplayer y solo si
+`WorldData#getLoadedPlayerTag()` es null (el jugador nunca entró). Espiral desde
+el spawn con los tickets y las marcas de LOD de `PregeneradorChunks`, hasta
+núcleos × 4 en vuelo, frenando si la extracción se atrasa; el bucle es el de
+vanilla para el spawn (`nextTickTimeNanos` + `waitUntilNextTick`, 10 ms de
+tareas por vuelta), y como no hay ticks, los pendientes de luz se reintentan
+ahí (`GeneradorLocal.reintentarPendientes`). El avance se dibuja sobre
+`LevelLoadingScreen` (`PantallaConfig`, `ScreenEvent.Render.Post`). Medido en
+Xvfb: 2527 chunks en 60 s (~42/s, anillo 25), contra ~17/s jugando.
+El mundo del benchmark, la primera vez que se crea, también pasa por esto.
+
+**0.26.31 — cada vez que se entra, alrededor del jugador (pedido del usuario):**
+sin la condición de mundo nuevo; el centro sale de los datos del jugador en
+level.dat (`getLoadedPlayerTag`: `Pos` y `Dimension`, en esa dimensión), o del
+spawn si nunca entró (`PregeneracionInicial.dondeQuedo`). Lo ya generado con
+marca de LOD se saltea, así que en un mundo explorado el minuto se usa en lo
+que falta más afuera. Medido: jugador en 3000, −3000 → 2257 chunks en 60 s.
+
+**0.26.32 — el servidor, cuando un jugador se va (pedido del usuario, multijugador):**
+`PregeneracionInicial.alDesconectarse` (`PlayerLoggedOutEvent`, jugadores que no
+son el dueño de un mundo singleplayer: servidor dedicado o invitados de LAN)
+encola el lugar del jugador; `alTerminarTick` corre una espiral (`Pasos`, la
+misma de la pantalla de carga) de a un lugar por vez durante
+`pregeneracionSalida` segundos (opción de servidor, 60, 0-600), con a lo sumo
+la mitad de los núcleos en vuelo y sin pedir chunks con el tick promedio sobre
+40 ms. Medido (servidor dedicado, Xvfb): 1105 chunks en 60 s.
+
+## 40. Multijugador de verdad: espejo del LOD del servidor — 2026-10-03
+
+Hasta acá el cliente en multijugador no dibujaba nada: el render leía solo el
+store del servidor integrado y el protocolo de nodos (sección 10) nunca se
+conectó. Pedido del usuario (juega en servidor).
+
+**0.26.33 — rebanadas (`network/`):**
+- **Unidad:** `RebanadaId` = región del store + código de nivel de la clave
+  (bits 22-25 de `SectionExtractor.claveNodo`: 0-4 niveles reales, 5-10
+  grandes, 13-14 aproximado grande, 15 marcas y aproximado fino). Todas las
+  claves del store comparten ese formato, así que una rebanada trae de una vez
+  lo que el render necesita de ese nivel en esa región.
+- **Cliente (`EspejoServidor`):** un `RegionFileStore` propio por servidor; el
+  render lo usa igual que el del servidor integrado (`RenderLod.store()`).
+  `RegionFileStore.observarFaltantes` avisa cada clave buscada y ausente → se
+  pide su rebanada (`PedidosRebanadas`: una vez, en el orden en que el render
+  buscó = de cerca hacia afuera, hasta 24 en vuelo; recibida, vigente 120 s).
+- **Huellas:** `RegionFileStore.huella(región, filtro)` sin leer datos de disco
+  (ubicación y tamaño en el índice; contenido de lo que está en memoria). El
+  cliente manda la que tiene; si coincide, "sin cambios" sin datos. Se guardan
+  en `huellas.bin` (al salir y cada 60 s, después de bajar el store a disco).
+- **Servidor (`ServidorRebanadas`):** cola por jugador validada contra el radio
+  servido (estirado para los nodos grandes), lectura en el pool de generación,
+  bytes comprimidos tal cual (`leerComprimido` → `guardarComprimido`, sin
+  recomprimir), partes de 256 KB, ritmo `kbPorSegundo` (1024) por jugador.
+- **Rearmado:** las marcas de chunk (código 15) llegan antes que los nodos; una
+  celda armada en ese momento quedaba "completa" con huecos. Con datos nuevos de
+  una región, sus celdas se rearman (`RenderLod.regionConDatosNuevos`, de a
+  lotes cada 1 s).
+- Medido (servidor dedicado + cliente, Xvfb, radio 160): primera entrada 47 MB
+  y el terreno completo; al volver a entrar 0 KB (todo "sin cambios" o vacío).
+- Protocolo versión 2 (servidor y cliente con la misma versión del mod).
+- Pendiente: el servidor dedicado no corre la generación aproximada ni el
+  pregenerador (solo singleplayer): en multijugador el LOD llega hasta donde el
+  servidor generó chunks de verdad (jugadores, pregeneración al irse).
+
+## 41. Nodos con paleta (sección 25, punto 2, la parte de almacenamiento) — 2026-10-03
+
+**0.26.34 (`storage/OctreeNodeCodec`):** bit 1 de `flag_homogeneo` = formato con
+paleta: `count` = vóxeles distintos, la paleta (8 B c/u) y un índice por vóxel
+(1 B hasta 256 distintos, si no 2). Regla `usaPaleta`: al menos 512 vóxeles y 16
+corridas; el resto sigue con RLE. Medido sobre ~1,5 M nodos de tres mundos con
+el Deflate del store encima (por mundo, actual → nuevo): servidor 53,2 → 36,7 MB
+(−31%), benchmark 120,9 → 91,4 MB (−24%), casi todo aproximado 15,5 → 14,1 MB
+(−9%); la regla queda a menos del 1% del mejor formato elegido nodo por nodo.
+Descartados: paleta + corridas (−22%), columnas por byte (+22%). Lectura
+(descomprimir + decodificar, 20 mil nodos reales de nivel 0-1): 34 → 20 µs por
+nodo (los vóxeles repetidos comparten el objeto de la paleta). Lo viejo se lee
+igual; no cambia `VERSION_ALGORITMO` (nada se regenera). El color sigue en el
+vóxel (resolverlo en el cliente desde el estado sigue pendiente).
+
+
+## 42. Exclusión exacta del área vanilla y sombras del LOD — 2026-10-03
+
+**Exclusión (sección 25, punto 6), 0.26.35:** sin Sodium/Embeddium, el plan de
+celdas usa la misma prueba que vanilla para saber qué chunk dibuja
+(`ChunkTrackingView.isInViewDistance`, distancia de render efectiva) en vez del
+círculo de radio − 1; la consulta del plan llega a rd + 2. Medido con
+distancia 6: 5,33 → 5,09 M vértices (−4,4%), imagen igual (sin huecos). Con
+Sodium/Embeddium (`RENDERER_DE_CHUNKS_PROPIO`) queda el círculo de antes más
+`vanillaLoDibujo`, porque su recorte de secciones es otro.
+
+**Sombras del LOD con Iris, 0.26.35 (`render/mixin/MixinSombrasIris`, opción
+`sombrasLod`):** inyectado en `ShadowRenderer#renderShadows` después del tercer
+`invokeRenderSectionLayer` (el terreno sólido/cutout del pase de sombras). Ahí
+`GameRenderer.getRendertypeSolidShader()` ya es el programa de sombra del pack,
+así que `RenderLod.dibujarSombras` dibuja las mismas mallas de formato de bloque
+como vanilla en esa pasada: `setDefaultUniforms` + `apply` una vez, corrimiento
+por `ChunkOffset` por malla, con `ShadowRenderer.MODELVIEW/PROJECTION` y la
+cámara sin corrimiento de Iris (`CameraUniforms.getUnshiftedCameraPosition`).
+Hace falta forzar prueba y escritura de profundidad (sin eso no quedaba nada en
+el mapa); con `drawWithShader` y el corrimiento en la vista no se dibujaba. El
+descarte por campo de visión con la ortogonal de la sombra recorta lo que no
+entra en su volumen. No con el contrato Voxy (otro formato de malla).
+Verificado con un pack propio que muestra `shadowtex0` como curvas de nivel:
+continuas en el borde LOD/vanilla.
+
+
+## 43. Revisión de errores de todo el código — 2026-10-03
+
+**Re-extracción de chunks cambiados (0.26.36, `GeneradorLocal`):** la
+invalidación de la sección 10 ("al descargarse si quedó modificado") no andaba:
+vanilla guarda los chunks cargados que cambian cada ~10 s
+(`ChunkMap#processUnloads` → `saveChunkIfNeeded`), así que al descargarse casi
+nunca siguen `isUnsaved()`. Ahora:
+- `ChunkDataEvent.Save` de un chunk ya extraído = cambió → marca **vencida**
+  (versión 0: `extraidoVigente` da false, `tieneMarca` sigue true) y el chunk
+  queda en `modificados`. Persiste: si el juego se cierra con el chunk cargado,
+  se re-extrae en la próxima carga.
+- No cuentan como cambio el primer guardado de un chunk recién cargado (vanilla
+  marca sin guardar todo `LevelChunk` que sale de un `ProtoChunk`, o sea cada
+  carga) ni el de uno recién extraído sin guardar (`extraidosSinGuardar`), ni el
+  que vanilla hace justo después del evento de descarga (`descargando`).
+- Cuando sale de la vista de un jugador (`ChunkWatchEvent.UnWatch`, el chunk
+  todavía está completo) se encola la extracción: desde ahí lo dibuja el LOD.
+  La descarga sola no alcanzaba: cerca del spawn (sus tickets) los chunks
+  quedan en memoria, inaccesibles, sin `ChunkEvent.Unload`. Al descargarse,
+  si sigue en `modificados`: marca vencida y se encola (la luz todavía está).
+  El store se cierra en `ServerStoppedEvent`, después del guardado final de
+  vanilla.
+- Los cambiados que nadie tiene a la vista (ticks aleatorios entre la distancia
+  de vista y la de simulación: nunca "salen de la vista") se re-extraen en un
+  barrido cada 30 s (`reextraerFueraDeVista`, hasta 32 por pasada).
+- Re-extraer pisa con una entrada vacía (no es nodo para `esNodo`) los nodos de
+  las secciones que quedaron vacías, y avisa al render
+  (`GeneradorLocal.avisoReextraccion` → `RenderLod.chunkConDatosNuevos`): una
+  celda completa no se rearmaba nunca sola. Se rearman solo las celdas que tocan
+  el chunk o sus vecinos (no la región entera, como con los datos de red).
+  `NivelesGrandes` borra (`Acceso.borrarGrande`) los nodos grandes que quedaron
+  todo aire: antes quedaba el viejo (terreno aproximado más alto que el real).
+- Medido en Xvfb, después de alejarse 430 bloques: 22 chunks re-extraídos en el
+  acto (los que salieron de la vista); los demás, en el barrido.
+- Medido en Xvfb: sin el arreglo de la carga, 1238 chunks "cambiados" con solo
+  entrar al mundo; con él, decenas (ticks aleatorios, lo tocado con `/fill`). Las
+  marcas vencidas de una sesión se re-extrajeron al cargar en la siguiente
+  (761 + 477 chunks).
+
+**Otros (0.26.36):**
+- `ServidorRebanadas`: una rebanada fuera del radio servido se contesta "sin
+  cambios" con huella 0 (antes, silencio: el cliente la tenía 60 s en vuelo, y
+  con su radio mayor que el servido ocupaba los 24 pedidos). `RebanadaPayload.partir`
+  respeta `MAX_ENTRADAS` (el cliente rechazaba el paquete y se desconectaba).
+- `GenerationTaskScheduler`: bajar el límite usa `reducePermits` (semáforo que
+  puede quedar en negativo) en vez de esperar a juntar n permisos libres, que
+  con tareas entrando sin parar podía no pasar nunca y trababa el hilo del
+  auto-ajuste. `apagarYEsperar` (5 s) al cerrar el mundo; apagado, el trabajo de
+  fondo cede (`hayPrioritariasEsperando`).
+- `RenderLod`: al cambiar de mundo se vacía la cola de mallas y el relieve
+  (`CacheRelieve.olvidar`, con generación para lecturas tardías); `ChunksEnRam`
+  se reinicia al detener el servidor. El descarte de caras de arriba por
+  dirección suma la bajada de la curvatura. Memoria nativa liberada si falla el
+  armado de una celda.
+
+**Rendimiento (0.26.37), perfil JFR de un vuelo por terreno nuevo:** 60% del CPU
+es la generación de vanilla; del mod, los hilos de mallas (`GreedyMesher`, ~5 s
+por minuto; no se tocó: ya optimizado, y una variante con tabla por capa fue
+más lenta), la generación (densidad del horizonte aproximado) y la precarga.
+- `OclusionRelieve` (corre en cada plan, hilo de render): elevación como
+  pendiente (tangente, con el margen angular convertido exacto) en vez de
+  `atan2`; sectores con un "ángulo de rombo" monótono (`pseudoAngulo`) en vez del
+  ángulo real (lo que tapa y lo tapado se miden igual: el criterio conservador
+  no cambia); oclusores en arreglos primitivos ordenados como `long`
+  (distancia float + índice: un empate solo puede dejar afuera un oclusor) y
+  piezas por índice con fastutil; `sqrt` en vez de `hypot`. Banco sintético,
+  5013 piezas con el radio de Medio: 8,99 → 4,34 ms, 3261 → 3268 ocultas.
+- `RegionFileStore`: el cache de lectura en `SEGMENTOS` (16) `BoundedRegionCache`
+  por clave mezclada, cada uno con su candado y 1/16 del presupuesto (LRU por
+  segmento); `versionEscrituras` es un `AtomicLong` que sube bajo el candado del
+  segmento de la clave (la invalidación de región lo sube antes de limpiar
+  todos). La precarga filtra lo ya cacheado antes de leer. Con un candado
+  global, en un vuelo con los 4 núcleos ocupados los hilos de mallas esperaban
+  detrás de la precarga o la generación desalojadas por el sistema (perfil
+  JFR, esperas de más de 10 ms en 60 s): 60 (la peor, 0,47 s) → 9 (0,02 s).
+
+
+## 44. Segunda revisión: auto-ajuste con vsync o tope de FPS — 2026-10-03
+
+**El problema (`core/BalanceadorCpuGpu`, `render/BalanceCpuGpu`):** el tiempo
+de cuadro se mide entre un `RenderFrameEvent.Post` y el siguiente: incluye la
+espera del vsync (en `updateDisplay`) y la del tope de FPS
+(`RenderSystem.limitDisplayFPS`, que nunca vuelve antes y suele pasarse un
+poco). Con el cuadro atado al tope, el promedio no baja del intervalo:
+- objetivo igual al tope (Ultra con vsync a 60 Hz, que es como viene
+  Minecraft, o un tope de FPS igual al objetivo): el promedio queda apenas por
+  encima del objetivo y el auto-ajuste bajaba todo, ciclo a ciclo, hasta el piso;
+- objetivo cercano (Alto, 50 FPS, a 60 Hz): nunca bajaba del 80% del objetivo
+  y no recuperaba nunca lo que había bajado en un momento pesado;
+- objetivo por encima del refresco (75 FPS a 60 Hz): imposible de cumplir; el
+  tope de FPS ya se tomaba en cuenta, el vsync no.
+
+**Arreglo:** `BalanceCpuGpu.topeMs` = el mayor entre el intervalo del tope de
+FPS de la ventana y, con vsync, el del refresco del monitor
+(`Window#getRefreshRate`). El objetivo nunca es más chico que eso. Con el
+cuadro a menos de un 10% por encima del tope (`TOLERANCIA_TOPE`), el objetivo
+cuenta como cumplido (no se alivia nada) y el margen sale de la **carga**: el
+mayor entre la GPU (`TimerQuery`) y el hilo de render ocupado (de
+`RenderFrameEvent.Pre` a `Post` más los ticks del cliente, sin las esperas). La
+carga se queda corta (no ve las tareas del hilo principal ni el cambio de
+buffer) y un paso tarda en notarse (las mallas nuevas se arman y suben en unos
+segundos: en Xvfb, un paso de radio subió la GPU recién a los 3-4 ciclos). Por
+eso se recupera por carga de a un paso: el siguiente espera 8 ciclos
+(`CICLOS_PRUEBA_CARGA`); si en ese lapso el cuadro pierde el tope, no se
+recupera por carga durante 30 ciclos, el doble con cada falla seguida (hasta
+240). Sin medición de GPU (VulkanMod) no hay carga: en el tope no se toca nada.
+El diagnóstico del HUD muestra la carga del hilo de render y "tope".
+
+**Otros del auto-ajuste:**
+- Tirones con la generación ya al mínimo: antes cortaban todo (ni se
+  recuperaba lo visible); ahora no frenan la recuperación, y mientras haya
+  tirones la generación no vuelve a subir ni se suma detalle extra.
+- En el menú principal (sin mundo) no se ajusta: medía el menú, con su tope de 60.
+
+**Calibración:** sección 9 (sin vsync ni tope mientras mide).
+
+**Descarte por campo de visión con la altura de la malla:** la caja de cada
+celda iba de la altura mínima a la máxima del mundo (-64 a 320): mirando hacia
+arriba, todas las celdas cuyo terreno quedaba abajo entraban en el campo de
+visión y se mandaban enteras (sus vértices se procesaban para recortarlos). Al
+armar, `GeometriaLod` guarda la Y más baja y más alta de sus vértices, que van
+al final del arreglo de planos de la malla (`PLANO_MIN_Y`, `PLANO_MAX_Y`); el
+descarte usa esa caja, con la misma bajada de la curvatura de antes. Medido en
+Xvfb mirando recto hacia arriba desde y = 150 con radio 8: 1 015 736 → 413 920
+vértices por cuadro, 119 → 28 llamadas, GPU 64-67 → 40-47 ms. Con ese margen,
+el auto-ajuste en el tope (10 FPS, preset Mínimo) volvió del piso (radio 8) a
+radio 28 de 32 en un minuto; antes quedaba en el piso.
+
+**Sección de un solo bloque (`LectorSeccionMinecraft.homogenea`):** usaba
+`PalettedContainer#count`, que con más de un estado en la paleta pasa los 4096
+índices a un `Int2IntOpenHashMap` para contarlos. Ahora: un solo estado en la
+paleta = homogénea; si no, el primer índice distinto en el almacén de bits la
+descarta (la paleta puede guardar estados que ya no se usan, así que el
+resultado es el mismo). Medido en una sección mixta: 8,6 → 0,04 µs, ~6-8% de la
+extracción de una sección (105-145 µs).
+
+**Niebla de las zonas sin datos (`NieblaSectores`):** el recuento recorría
+todas las celdas en cada cuadro con un arreglo nuevo, `hypot`, `atan2` y
+`asin` por celda: en el perfil JFR del vuelo (Xvfb) era 30 de las 54 muestras
+del mod en el hilo de render. Ahora se recuenta cada 100 ms, al moverse la
+cámara más de 8 bloques o con un plan nuevo, sin arreglos por celda.
+

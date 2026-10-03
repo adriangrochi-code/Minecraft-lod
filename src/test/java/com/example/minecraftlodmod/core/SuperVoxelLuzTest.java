@@ -27,6 +27,29 @@ class SuperVoxelLuzTest {
     }
 
     @Test
+    void laLuzDeBloqueVaEnLosBitsLibresSinPisarNada() {
+        SuperVoxel v = new SuperVoxel((byte) 10, (byte) 20, (byte) 30, (byte) 64,
+                SuperVoxel.Material.SOLIDO, (byte) 0b0000_0011).conLuzHorneada(9);
+        SuperVoxel conBloque = v.conLuzBloque(3);
+        assertEquals(3, conBloque.luzBloque());
+        assertEquals(9, conBloque.luzHorneada());
+        assertTrue(conBloque.esHomogeneo());
+        assertTrue(conBloque.nevado());
+        assertEquals(0, v.luzBloque(), "Datos viejos (bits en 0): sin luz de bloque");
+        assertEquals(1, conBloque.conLuzBloque(1).luzBloque());
+    }
+
+    @Test
+    void cuantizaLaLuzDeBloqueEnCuatroEscalones() {
+        assertEquals(0, SuperVoxel.cuantizarLuzBloque(0));
+        assertEquals(0, SuperVoxel.cuantizarLuzBloque(2));
+        assertEquals(1, SuperVoxel.cuantizarLuzBloque(3));
+        assertEquals(2, SuperVoxel.cuantizarLuzBloque(8));
+        assertEquals(3, SuperVoxel.cuantizarLuzBloque(13));
+        assertEquals(3, SuperVoxel.cuantizarLuzBloque(15));
+    }
+
+    @Test
     void rechazaValoresDeLuzFueraDeRango() {
         SuperVoxel v = new SuperVoxel((byte) 0, (byte) 0, (byte) 0, (byte) 0,
                 SuperVoxel.Material.SOLIDO, (byte) 0);

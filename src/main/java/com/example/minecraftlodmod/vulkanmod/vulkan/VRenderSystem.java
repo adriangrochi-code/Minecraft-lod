@@ -1,0 +1,311 @@
+package com.example.minecraftlodmod.vulkanmod.vulkan;
+
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.platform.Window;
+
+import net.minecraft.client.Minecraft;
+import com.example.minecraftlodmod.vulkanmod.vulkan.device.DeviceManager;
+import com.example.minecraftlodmod.vulkanmod.vulkan.shader.PipelineState;
+import com.example.minecraftlodmod.vulkanmod.vulkan.util.ColorUtil;
+import com.example.minecraftlodmod.vulkanmod.vulkan.util.MappedBuffer;
+import com.example.minecraftlodmod.vulkanmod.vulkan.util.VUtil;
+import org.joml.Matrix4f;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.system.MemoryUtil;
+
+import static org.lwjgl.vulkan.VK10.*;
+
+import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
+
+public abstract class VRenderSystem {
+    private static final float DEFAULT_DEPTH_VALUE = 1.0f;
+
+    private static long window;
+
+    public static boolean depthTest = true;
+    public static boolean depthMask = true;
+    public static int depthFun = 515;
+    public static int topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    public static int polygonMode = VK_POLYGON_MODE_FILL;
+    public static boolean canSetLineWidth = false;
+
+    public static int colorMask = PipelineState.ColorMask.getColorMask(true, true, true, true);
+
+    public static boolean cull = true;
+
+    public static boolean logicOp = false;
+    public static int logicOpFun = 0;
+
+    public static float clearDepthValue = DEFAULT_DEPTH_VALUE;
+    public static FloatBuffer clearColor = MemoryUtil.memCallocFloat(4);
+
+    public static MappedBuffer modelViewMatrix = new MappedBuffer(16 * 4);
+    public static MappedBuffer projectionMatrix = new MappedBuffer(16 * 4);
+    public static MappedBuffer TextureMatrix = new MappedBuffer(16 * 4);
+    public static MappedBuffer MVP = new MappedBuffer(16 * 4);
+
+    /**
+     * True once {@link com.example.minecraftlodmod.vulkanmod.vulkan.compat.JomlDepthFix} has retransformed
+     * {@code org.joml.Matrix4f} so projections are built with Vulkan [0, 1] depth GLOBALLY
+     * (covering directly-built projections that entities use, which {@link #toVulkanClip} in
+     * {@code setProjectionMatrix} misses). When true, {@code setProjectionMatrix} must NOT also
+     * apply {@code toVulkanClip} — that would double-correct. When false (retransform
+     * unavailable/failed) we keep the {@code toVulkanClip} fallback.
+     */
+    public static volatile boolean JOML_DEPTH_FIX_ACTIVE = false;
+
+    /**
+     * Remaps an OpenGL-convention projection (clip-space depth in [-1, 1]) to the
+     * Vulkan convention (depth in [0, 1]): z' = 0.5*z + 0.5*w. Pre-multiplying a
+     * projection by this is exactly equivalent to building it with JOML's
+     * {@code zZeroToOne = true}. This replaces the old global {@code Matrix4f}
+     * @Overwrite (which required a JVM agent to reach the system-classloader JOML
+     * class) with a normal correction applied where MC hands us its projection.
+     */
+    private static final Matrix4f VULKAN_CLIP = new Matrix4f().m22(0.5f).m32(0.5f);
+
+    /** Returns a new matrix = VULKAN_CLIP * projection (OpenGL depth -> Vulkan depth). */
+    public static Matrix4f toVulkanClip(Matrix4f openglProjection) {
+        return VULKAN_CLIP.mul(openglProjection, new Matrix4f());
+    }
+
+    public static MappedBuffer modelOffset = new MappedBuffer(3 * 4);
+    public static MappedBuffer lightDirection0 = new MappedBuffer(3 * 4);
+    public static MappedBuffer lightDirection1 = new MappedBuffer(3 * 4);
+
+    public static MappedBuffer shaderColor = new MappedBuffer(4 * 4);
+    public static MappedBuffer shaderFogColor = new MappedBuffer(4 * 4);
+
+    public static MappedBuffer screenSize = new MappedBuffer(2 * 4);
+
+    public static float alphaCutout = 0.0f;
+
+    private static boolean depthBiasEnabled = false;
+    private static float depthBiasConstant = 0.0f;
+    private static float depthBiasSlope = 0.0f;
+
+    public static void initRenderer() {
+        Vulkan.initVulkan(window);
+    }
+
+    public static void blendOp(int op) {
+        PipelineState.blendInfo.setBlendOp(op);
+    }
+
+    public static MappedBuffer getScreenSize() {
+        updateScreenSize();
+        return screenSize;
+    }
+
+    public static void updateScreenSize() {
+        Window window = Minecraft.getInstance().getWindow();
+
+        screenSize.putFloat(0, (float) window.getWidth());
+        screenSize.putFloat(4, (float) window.getHeight());
+    }
+
+    public static void setWindow(long window) {
+        VRenderSystem.window = window;
+    }
+
+    public static ByteBuffer getModelOffset() {
+        return modelOffset.buffer;
+    }
+
+    public static int maxSupportedTextureSize() {
+        return DeviceManager.deviceProperties.limits().maxImageDimension2D();
+    }
+
+    public static void applyMVP(Matrix4f MV, Matrix4f P) {
+        applyModelViewMatrix(MV);
+        applyProjectionMatrix(P);
+        calculateMVP();
+    }
+
+    public static void applyModelViewMatrix(Matrix4f mat) {
+        mat.get(modelViewMatrix.buffer.asFloatBuffer());
+        //MemoryUtil.memPutFloat(MemoryUtil.memAddress(modelViewMatrix), 1);
+    }
+
+    public static void applyProjectionMatrix(Matrix4f mat) {
+        // Minecraft LOD: sin el arreglo global de JOML (el Java de Modrinth no trae jdk.attach) las
+        // proyecciones llegan con la profundidad de OpenGL (-1..1) y Vulkan recortaba la mitad: la
+        // interfaz (HUD) y las entidades no se veían. toVulkanClip existía pero nadie lo llamaba.
+        (JOML_DEPTH_FIX_ACTIVE ? mat : toVulkanClip(mat)).get(projectionMatrix.buffer.asFloatBuffer());
+    }
+
+    public static void calculateMVP() {
+        org.joml.Matrix4f MV = new org.joml.Matrix4f(modelViewMatrix.buffer.asFloatBuffer());
+        org.joml.Matrix4f P = new org.joml.Matrix4f(projectionMatrix.buffer.asFloatBuffer());
+
+        P.mul(MV).get(MVP.buffer);
+    }
+
+    public static void setTextureMatrix(Matrix4f mat) {
+        mat.get(TextureMatrix.buffer.asFloatBuffer());
+    }
+
+    public static MappedBuffer getTextureMatrix() {
+        return TextureMatrix;
+    }
+
+    public static MappedBuffer getModelViewMatrix() {
+        return modelViewMatrix;
+    }
+
+    public static MappedBuffer getProjectionMatrix() {
+        return projectionMatrix;
+    }
+
+    public static MappedBuffer getMVP() {
+        return MVP;
+    }
+
+    public static void setModelOffset(float f1, float f2, float f3) {
+        long ptr = modelOffset.ptr;
+        VUtil.UNSAFE.putFloat(ptr, f1);
+        VUtil.UNSAFE.putFloat(ptr + 4, f2);
+        VUtil.UNSAFE.putFloat(ptr + 8, f3);
+    }
+
+    public static void setShaderColor(float f1, float f2, float f3, float f4) {
+        ColorUtil.setRGBA_Buffer(shaderColor, f1, f2, f3, f4);
+    }
+
+    public static void setShaderFogColor(float f1, float f2, float f3, float f4) {
+        ColorUtil.setRGBA_Buffer(shaderFogColor, f1, f2, f3, f4);
+    }
+
+    public static MappedBuffer getShaderColor() {
+        return shaderColor;
+    }
+
+    public static MappedBuffer getShaderFogColor() {
+        return shaderFogColor;
+    }
+
+    public static void setClearColor(float f1, float f2, float f3, float f4) {
+        ColorUtil.setRGBA_Buffer(clearColor, f1, f2, f3, f4);
+    }
+
+    public static void clear(int mask) {
+        Renderer.clearAttachments(mask);
+    }
+
+    public static void clearDepth(double depth) {
+        clearDepthValue = (float) depth;
+    }
+
+    // Pipeline state
+
+    public static void disableDepthTest() {
+        depthTest = false;
+    }
+
+    public static void depthMask(boolean b) {
+        depthMask = b;
+    }
+
+    public static void setPrimitiveTopologyGL(final int mode) {
+        VRenderSystem.topology = switch (mode) {
+            case GL11.GL_LINES, GL11.GL_LINE_STRIP  -> VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            case GL11.GL_TRIANGLE_FAN, GL11.GL_TRIANGLES, GL11.GL_TRIANGLE_STRIP -> VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            default -> throw new RuntimeException(String.format("Unknown GL primitive topology: %s", mode));
+        };
+    }
+
+    public static void setPolygonModeGL(final int mode) {
+        VRenderSystem.polygonMode = switch (mode) {
+            case GL11.GL_POINT -> VK_POLYGON_MODE_POINT;
+            case GL11.GL_LINE -> VK_POLYGON_MODE_LINE;
+            case GL11.GL_FILL -> VK_POLYGON_MODE_FILL;
+            default -> throw new RuntimeException(String.format("Unknown GL polygon mode: %s", mode));
+        };
+    }
+
+    public static void setLineWidth(final float width) {
+        if (canSetLineWidth) {
+            Renderer.setLineWidth(width);
+        }
+    }
+
+    public static void colorMask(boolean b, boolean b1, boolean b2, boolean b3) {
+        colorMask = PipelineState.ColorMask.getColorMask(b, b1, b2, b3);
+    }
+
+    public static int getColorMask() {
+        return colorMask;
+    }
+
+    public static void enableDepthTest() {
+        depthTest = true;
+    }
+
+    public static void enableCull() {
+        cull = true;
+    }
+
+    public static void disableCull() {
+        cull = false;
+    }
+
+    public static void depthFunc(int depthFun) {
+        VRenderSystem.depthFun = depthFun;
+    }
+
+    public static void enableBlend() {
+        PipelineState.blendInfo.enabled = true;
+    }
+
+    public static void disableBlend() {
+        PipelineState.blendInfo.enabled = false;
+    }
+
+    public static void blendFunc(int srcFactor, int dstFactor) {
+        PipelineState.blendInfo.setBlendFunction(srcFactor, dstFactor);
+    }
+
+    public static void blendFuncSeparate(int srcFactorRGB, int dstFactorRGB, int srcFactorAlpha, int dstFactorAlpha) {
+        PipelineState.blendInfo.setBlendFuncSeparate(srcFactorRGB, dstFactorRGB, srcFactorAlpha, dstFactorAlpha);
+    }
+
+    public static void blendEquation(int i) {
+        PipelineState.blendInfo.setBlendOp(i);
+    }
+
+    public static void enableColorLogicOp() {
+        logicOp = true;
+    }
+
+    public static void disableColorLogicOp() {
+        logicOp = false;
+    }
+
+    public static void logicOp(int glLogicOp) {
+        logicOpFun = glLogicOp;
+    }
+
+    public static void polygonOffset(float slope, float biasConstant) {
+        if (depthBiasConstant != biasConstant || depthBiasSlope != slope) {
+            depthBiasConstant = biasConstant;
+            depthBiasSlope = slope;
+
+            Renderer.setDepthBias(depthBiasConstant, depthBiasSlope);
+        }
+    }
+
+    public static void enablePolygonOffset() {
+        if (!depthBiasEnabled) {
+            Renderer.setDepthBias(depthBiasConstant, depthBiasSlope);
+            depthBiasEnabled = true;
+        }
+    }
+
+    public static void disablePolygonOffset() {
+        if (depthBiasEnabled) {
+            Renderer.setDepthBias(0.0F, 0.0F);
+            depthBiasEnabled = false;
+        }
+    }
+}

@@ -68,4 +68,237 @@ class GreedyMesherTest {
     private static int indice(int x, int y, int z, int lado) {
         return (x * lado + y) * lado + z;
     }
+
+    @Test
+    void lasCarasDelBordeTapadasPorElVecinoNoSeGeneran() {
+        int lado = 2;
+        SuperVoxel[] lleno = new SuperVoxel[lado * lado * lado];
+        java.util.Arrays.fill(lleno, solido());
+        SuperVoxel[] vacio = new SuperVoxel[lado * lado * lado];
+        java.util.Arrays.fill(vacio, aire());
+
+        // Sin vecinos: un cubo cerrado, 6 caras.
+        assertEquals(6, GreedyMesher.mallar(lleno, lado).size());
+        // Con otra sección llena arriba y abajo (como secciones apiladas): solo los 4 costados.
+        GreedyMesher.Vecinos apilado = GreedyMesher.Vecinos.deGrillas(lado, null, null, lleno, lleno, null, null);
+        List<Quad> quads = GreedyMesher.mallar(lleno, lado, apilado);
+        assertEquals(4, quads.size());
+        assertTrue(quads.stream().noneMatch(q -> q.eje() == Quad.Eje.Y), "La costura entre secciones no se dibuja");
+        // Un vecino de aire no tapa nada.
+        GreedyMesher.Vecinos conAire = GreedyMesher.Vecinos.deGrillas(lado, vacio, vacio, vacio, vacio, vacio, vacio);
+        assertEquals(6, GreedyMesher.mallar(lleno, lado, conAire).size());
+    }
+
+    @Test
+    void elVecinoTapaSoloDondeEsSolido() {
+        int lado = 2;
+        SuperVoxel[] lleno = new SuperVoxel[lado * lado * lado];
+        java.util.Arrays.fill(lleno, solido());
+        // Vecino +X con solo la columna z=0 sólida: la cara +X queda expuesta en z=1.
+        SuperVoxel[] medio = new SuperVoxel[lado * lado * lado];
+        for (int x = 0; x < lado; x++) {
+            for (int y = 0; y < lado; y++) {
+                for (int z = 0; z < lado; z++) {
+                    medio[(x * lado + y) * lado + z] = z == 0 ? solido() : aire();
+                }
+            }
+        }
+        GreedyMesher.Vecinos vecinos = GreedyMesher.Vecinos.deGrillas(lado, null, medio, null, null, null, null);
+        List<Quad> caraXPos = GreedyMesher.mallar(lleno, lado, vecinos).stream()
+                .filter(q -> q.eje() == Quad.Eje.X && q.positivo()).toList();
+        assertEquals(1, caraXPos.size());
+        assertEquals(1, caraXPos.get(0).z(), "Queda solo la mitad sin tapar");
+        assertEquals(1, caraXPos.get(0).ancho());
+    }
+
+    /** Piso de 3x3 (y = 0) con bloques encima según {@code arriba[x][z]}. */
+    private static SuperVoxel[] pisoCon(boolean[][] arriba) {
+        int lado = 3;
+        SuperVoxel[] g = new SuperVoxel[lado * lado * lado];
+        for (int x = 0; x < lado; x++) {
+            for (int y = 0; y < lado; y++) {
+                for (int z = 0; z < lado; z++) {
+                    boolean lleno = y == 0 || (y == 1 && arriba[x][z]);
+                    g[(x * lado + y) * lado + z] = lleno ? solido() : aire();
+                }
+            }
+        }
+        return g;
+    }
+
+    private static Quad techoEn(List<Quad> quads, int x, int z) {
+        return quads.stream()
+                .filter(q -> q.eje() == Quad.Eje.Y && q.positivo() && q.y() == 0)
+                .filter(q -> x >= q.x() && x < q.x() + q.ancho() && z >= q.z() && z < q.z() + q.alto())
+                .findFirst().orElseThrow();
+    }
+
+    @Test
+    void laOclusionOscureceLasEsquinasJuntoAUnBloque() {
+        boolean[][] arriba = new boolean[3][3];
+        arriba[0][1] = true; // un bloque sobre el piso, al lado (-x) de la celda (1, 1)
+        List<Quad> quads = GreedyMesher.mallar(pisoCon(arriba), 3, null, true);
+
+        Quad junto = techoEn(quads, 1, 1);
+        assertEquals(1, junto.ancho(), "No se fusiona con caras de otra oclusión");
+        assertTrue(junto.oclusionEn(false, false) < 3 && junto.oclusionEn(false, true) < 3,
+                "Las esquinas del lado del bloque se oscurecen");
+        assertEquals(3, junto.oclusionEn(true, false), "Las del otro lado no");
+        assertEquals(3, techoEn(quads, 2, 0).oclusionEn(true, false), "Lejos del bloque no hay oclusión");
+    }
+
+    @Test
+    void unRinconCerradoQuedaEnCero() {
+        boolean[][] arriba = new boolean[3][3];
+        arriba[0][1] = true; // -x de (1, 1)
+        arriba[1][0] = true; // -z de (1, 1)
+        Quad rincon = techoEn(GreedyMesher.mallar(pisoCon(arriba), 3, null, true), 1, 1);
+        assertEquals(0, rincon.oclusionEn(false, false), "Dos costados ocluyendo: rincón cerrado");
+    }
+
+    @Test
+    void sinOclusionTodoQuedaComoAntes() {
+        boolean[][] arriba = new boolean[3][3];
+        arriba[0][1] = true;
+        SuperVoxel[] g = pisoCon(arriba);
+        List<Quad> sin = GreedyMesher.mallar(g, 3, null, false);
+        assertEquals(GreedyMesher.mallar(g, 3).size(), sin.size());
+        assertTrue(sin.stream().allMatch(q -> q.oclusion() == Quad.SIN_OCLUSION));
+        assertTrue(GreedyMesher.mallar(g, 3, null, true).size() >= sin.size(),
+                "Con oclusión se fusiona menos, nunca más");
+    }
+
+    @Test
+    void elFondoBajoElAguaTieneCarasYNoSeFusionaConLoDeAire() {
+        SuperVoxel agua = new SuperVoxel((byte) 40, (byte) 70, (byte) 200, (byte) 0, SuperVoxel.Material.AGUA, (byte) 0);
+        // Columna de 2: arena abajo, agua arriba.
+        SuperVoxel[] g = new SuperVoxel[8];
+        for (int x = 0; x < 2; x++) {
+            for (int z = 0; z < 2; z++) {
+                g[(x * 2) * 2 + z] = solido();
+                g[(x * 2 + 1) * 2 + z] = agua;
+            }
+        }
+        List<Quad> quads = GreedyMesher.mallar(g, 2);
+        Quad fondo = quads.stream().filter(q -> q.eje() == Quad.Eje.Y && q.positivo() && q.y() == 0)
+                .findFirst().orElseThrow(() -> new AssertionError("El fondo bajo el agua tiene que tener cara"));
+        assertTrue(fondo.bajoAgua(), "Marcada como bajo agua (el descarte de cuevas no la saca)");
+        Quad superficie = quads.stream().filter(q -> q.eje() == Quad.Eje.Y && q.positivo() && q.y() == 1)
+                .findFirst().orElseThrow();
+        assertTrue(!superficie.bajoAgua(), "La superficie del agua da contra aire");
+    }
+
+    @Test
+    void unVoxelNevadoTieneNieveSoloArriba() {
+        GreedyMesher.definirNieve(0xF0F8F8, 1234);
+        SuperVoxel hoja = new SuperVoxel((byte) 20, (byte) 90, (byte) 20, (byte) 0,
+                SuperVoxel.Material.VEGETACION, (byte) 0).conEstado(77).conNevado(true);
+
+        List<Quad> quads = GreedyMesher.mallar(new SuperVoxel[] {hoja}, 1);
+
+        assertEquals(6, quads.size());
+        for (Quad q : quads) {
+            SuperVoxel cara = q.voxelRepresentativo();
+            if (q.eje() == Quad.Eje.Y && q.positivo()) {
+                assertEquals(1234, cara.idEstado(), "arriba: la textura de la nieve");
+                assertEquals((byte) 0xF0, cara.r());
+            } else {
+                assertEquals(77, cara.idEstado(), "costados y abajo: el bloque de siempre");
+                assertEquals((byte) 20, cara.r());
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ superficie a la altura real
+
+    private static SuperVoxel conRelleno(int relleno) {
+        return solido().conRelleno(relleno);
+    }
+
+    private static Quad cara(List<Quad> quads, Quad.Eje eje, boolean positivo) {
+        return quads.stream().filter(q -> q.eje() == eje && q.positivo() == positivo).findFirst().orElse(null);
+    }
+
+    @Test
+    void sinTamanoDeVoxelNoHayRecortes() {
+        List<Quad> quads = GreedyMesher.mallar(new SuperVoxel[]{conRelleno(128)}, 1, null, false, 0);
+        assertEquals(6, quads.size());
+        assertTrue(quads.stream().noneMatch(Quad::recortado), "Cubos enteros, como antes");
+    }
+
+    @Test
+    void laCaraDeArribaBajaALaAlturaDelRelleno() {
+        // Vóxel de 16 bloques lleno hasta la mitad (128/255 → 8 bloques).
+        List<Quad> quads = GreedyMesher.mallar(new SuperVoxel[]{conRelleno(128)}, 1, null, false, 16);
+        assertEquals(8, cara(quads, Quad.Eje.Y, true).recorteArriba());
+        assertEquals(0, cara(quads, Quad.Eje.Y, false).recorteArriba(), "La de abajo queda en el piso del vóxel");
+        assertEquals(8, cara(quads, Quad.Eje.X, true).recorteArriba(), "Los costados llegan hasta la superficie");
+        assertEquals(0, cara(quads, Quad.Eje.X, true).recorteAbajo());
+    }
+
+    @Test
+    void unVoxelLlenoConOtroEncimaNoSeRecorta() {
+        // Columna de 2: el de abajo tiene sólido encima (no es superficie) aunque su relleno diga otra cosa.
+        SuperVoxel[] grid = new SuperVoxel[8];
+        java.util.Arrays.fill(grid, aire());
+        grid[0] = conRelleno(40);  // (0,0,0)
+        grid[2] = conRelleno(128); // (0,1,0): índice (x*2+y)*2+z
+        List<Quad> columna = GreedyMesher.mallar(grid, 2, null, false, 16);
+        Quad abajoMenosX = columna.stream().filter(q -> q.eje() == Quad.Eje.X && !q.positivo() && q.y() == 0)
+                .findFirst().orElseThrow();
+        assertEquals(0, abajoMenosX.recorteArriba(), "Con sólido encima llega hasta el borde del vóxel");
+        assertEquals(1, abajoMenosX.alto(), "El costado recortado de arriba no se fusiona con el de abajo");
+    }
+
+    @Test
+    void contraUnVecinoMasBajoQuedaALaVistaElTramoDeEnMedio() {
+        // lado 2, fila y = 0: A en x = 0 lleno (16 bloques), B en x = 1 con 4 bloques; arriba aire.
+        SuperVoxel[] grid = new SuperVoxel[8];
+        java.util.Arrays.fill(grid, aire());
+        grid[0] = conRelleno(255);           // (0,0,0)
+        grid[4] = conRelleno(64);            // (1,0,0): 64/255·16 = 4 bloques
+        List<Quad> quads = GreedyMesher.mallar(grid, 2, null, false, 16);
+        Quad tramo = quads.stream().filter(q -> q.eje() == Quad.Eje.X && q.positivo() && q.x() == 0)
+                .findFirst().orElseThrow(() -> new AssertionError("Falta el costado de A sobre B"));
+        assertEquals(0, tramo.recorteArriba());
+        assertEquals(4, tramo.recorteAbajo(), "Arranca donde termina B");
+        assertTrue(quads.stream().noneMatch(q -> q.eje() == Quad.Eje.X && !q.positivo() && q.x() == 1),
+                "B no muestra costado contra A, que es más alto");
+    }
+
+    /** Cubo 4×4×4 con el estado alternando entre 10 y 11 (mismo color). */
+    private static SuperVoxel[] cuboDosEstados() {
+        SuperVoxel[] grid = new SuperVoxel[64];
+        for (int i = 0; i < grid.length; i++) {
+            grid[i] = new SuperVoxel((byte) 100, (byte) 100, (byte) 100, (byte) SuperVoxel.LLENO,
+                    SuperVoxel.Material.SOLIDO, (byte) 0, (short) (10 + i % 2));
+        }
+        return grid;
+    }
+
+    @Test
+    void estadosDistintosConLaMismaTexturaSeFusionan() {
+        // Los dos estados dibujan lo mismo (como hojas a distinta distancia del tronco): 6 caras.
+        assertEquals(6, GreedyMesher.mallar(cuboDosEstados(), 4, null, false, 1, (estado, eje, positivo) -> 7).size());
+        // Texturas distintas: no se fusionan.
+        assertTrue(GreedyMesher.mallar(cuboDosEstados(), 4, null, false, 1, (estado, eje, positivo) -> estado).size() > 6);
+        // Sin texturas (colores planos) el estado no se ve: decide el color.
+        assertEquals(6, GreedyMesher.mallar(cuboDosEstados(), 4, null, false, 1, null).size());
+    }
+
+    @Test
+    void laOclusionEnCostadosSoloConLaOpcion() {
+        boolean[][] arriba = new boolean[3][3];
+        arriba[1][1] = true; // un bloque sobre el piso: sus costados tocan el piso
+        SuperVoxel[] g = pisoCon(arriba);
+        List<Quad> soloArriba = GreedyMesher.mallar(g, 3, null, true, false, 0, null);
+        assertTrue(soloArriba.stream().filter(q -> q.eje() != Quad.Eje.Y)
+                .allMatch(q -> (q.oclusion() & 0xFF) == Quad.SIN_OCLUSION), "Sin la opción, los costados quedan sin oclusión");
+        List<Quad> conCostados = GreedyMesher.mallar(g, 3, null, true, true, 0, null);
+        Quad costado = conCostados.stream()
+                .filter(q -> q.eje() == Quad.Eje.X && q.positivo() && q.x() == 1 && q.y() == 1).findFirst().orElseThrow();
+        assertTrue(costado.oclusionEn(false, false) < 3 && costado.oclusionEn(false, true) < 3,
+                "La base del costado (u = y abajo) se oscurece contra el piso");
+        assertEquals(3, costado.oclusionEn(true, false), "El borde de arriba no");
+    }
 }

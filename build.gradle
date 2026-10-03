@@ -10,6 +10,7 @@ plugins {
     id 'java-library'
     id 'idea'
     id 'net.neoforged.moddev' version '2.0.148'
+    id 'com.gradleup.shadow' version '8.3.6' apply false
 }
 
 version = mod_version
@@ -23,6 +24,12 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
     mavenCentral()
+    maven { url = 'https://maven.su5ed.dev/releases' } // Forgified Fabric API (VulkanMod integrado)
+    // Iris, solo para compilar (render/ShadersVoxy y sus mixins; en el juego es opcional).
+    exclusiveContent {
+        forRepository { maven { url = 'https://api.modrinth.com/maven' } }
+        filter { includeGroup 'maven.modrinth' }
+    }
 }
 
 neoForge {
@@ -32,6 +39,18 @@ neoForge {
         client {
             client()
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            // ./gradlew runClient -Pperfil=archivo.jfr: perfil de CPU/memoria con Java Flight Recorder.
+            if (project.hasProperty('perfil')) {
+                jvmArgument "-XX:StartFlightRecording=filename=${project.property('perfil')},settings=profile,delay=45s,duration=150s"
+            }
+            // ./gradlew runClient -PsinDepthFix: VulkanMod sin el arreglo de profundidad (como el Java de Modrinth).
+            // ./gradlew runClient -PhilosMallas=N: cantidad de hilos que arman mallas (pruebas).
+            if (project.hasProperty('hilosMallas')) {
+                systemProperty 'minecraftlodmod.hilosMallas', project.property('hilosMallas')
+            }
+            if (project.hasProperty('sinDepthFix')) {
+                systemProperty 'minecraftlodmod.sinDepthFix', 'true'
+            }
         }
         server {
             server()
@@ -49,13 +68,110 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+
+    // Minecraft/NeoForge en el classpath de test: permite testear código
+    // que usa tipos del juego (payloads de network/, FriendlyByteBuf).
+    unitTest {
+        enable()
+        testedMod = mods."${mod_id}"
+    }
+}
+
+// Vulkan para XeSS/DLSS (render/InteropVulkan): los bindings de LWJGL van
+// REUBICADOS dentro del mod. VulkanMod carga su propio lwjgl-vulkan como módulo
+// org.lwjgl.vulkan; con el paquete original, los dos mods juntos no arrancan.
+configurations {
+    vulkanReubicado { transitive = false }
 }
 
 dependencies {
-    // Cloth Config — usado por el módulo config/ para la pantalla in-game.
-    // Verificar en el Maven de shedaniel la versión NeoForge para 1.21.1
-    // antes de descomentar (requiere agregar maven.shedaniel.me a repositories).
-    // implementation "me.shedaniel.cloth:cloth-config-neoforge:15.+"
+    vulkanReubicado "org.lwjgl:lwjgl-vulkan:3.3.3"
+}
+
+var reubicarVulkan = tasks.register('reubicarVulkan', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    configurations = [project.configurations.vulkanReubicado]
+    archiveBaseName = 'lwjgl-vulkan-reubicado'
+    destinationDirectory = layout.buildDirectory.dir('reubicado')
+    relocate 'org.lwjgl.vulkan', 'com.example.minecraftlodmod.lwjglvk'
+    exclude 'module-info.class', 'META-INF/**'
+}
+
+dependencies {
+    compileOnly "maven.modrinth:iris:1.8.12+1.21.1-neoforge"
+    compileOnly files(reubicarVulkan)
+    testImplementation files(reubicarVulkan)
+}
+
+// Las clases reubicadas viajan como recursos del mod: así también las ve runClient.
+processResources {
+    dependsOn reubicarVulkan
+    from(zipTree(reubicarVulkan.flatMap { it.archiveFile }))
+}
+
+// ---------------------------------------------------------------------------
+// VulkanMod integrado (paquete vulkanmod/, LGPL-3.0; fork NeoForge de yiyuyan,
+// 0.5.5-dev+3.1). Lo que necesita en tiempo de ejecución viaja dentro del mod:
+//  - lwjgl-vulkan/vma/shaderc (clases + nativos de Windows y Linux) como recursos,
+//    igual que el lwjgl-vulkan reubicado de arriba (varios jars con el mismo
+//    nombre y distinto clasificador no se pueden meter con jarJar). Con esto, el
+//    VulkanMod suelto no puede estar instalado a la vez (paquete org.lwjgl.vulkan
+//    repetido): el integrado lo reemplaza.
+//  - los módulos de Forgified Fabric API que usa su armado de bloques (FRAPI),
+//    como jar-in-jar (Apache-2.0).
+// ---------------------------------------------------------------------------
+configurations {
+    librasVulkan { transitive = false }
+}
+
+dependencies {
+    librasVulkan "org.lwjgl:lwjgl-vulkan:3.3.3"
+    librasVulkan "org.lwjgl:lwjgl-vma:3.3.3"
+    librasVulkan "org.lwjgl:lwjgl-vma:3.3.3:natives-windows"
+    librasVulkan "org.lwjgl:lwjgl-vma:3.3.3:natives-linux"
+    librasVulkan "org.lwjgl:lwjgl-shaderc:3.3.3"
+    librasVulkan "org.lwjgl:lwjgl-shaderc:3.3.3:natives-windows"
+    librasVulkan "org.lwjgl:lwjgl-shaderc:3.3.3:natives-linux"
+    compileOnly "org.lwjgl:lwjgl-vulkan:3.3.3"
+    compileOnly "org.lwjgl:lwjgl-vma:3.3.3"
+    compileOnly "org.lwjgl:lwjgl-shaderc:3.3.3"
+
+    for (String modulo : ['fabric-api-base:0.4.42+d1308ded19',
+                          'fabric-renderer-api-v1:3.4.1+9125b6dc19',
+                          'fabric-rendering-fluids-v1:3.1.6+ddc51b4719',
+                          'fabric-rendering-data-attachment-v1:0.3.49+73761d2e19',
+                          'fabric-block-view-api-v2:1.0.11+e9036fd419']) {
+        String coordenada = "org.sinytra.forgified-fabric-api:${modulo}"
+        String versionModulo = modulo.split(':')[1]
+        implementation coordenada
+        jarJar(coordenada) {
+            version {
+                strictly "[${versionModulo},)"
+                prefer versionModulo
+            }
+        }
+    }
+}
+
+// Loader de Fabric forjado: lo piden los puntos de entrada de esos módulos (ClientModInitializer).
+dependencies {
+    String ffl = 'org.sinytra:forgified-fabric-loader:2.5.68+0.18.4+1.21.1'
+    compileOnly ffl
+    runtimeOnly "${ffl}:full"
+    jarJar("${ffl}:full") {
+        version {
+            strictly '[2.5.68+0.18.4+1.21.1,)'
+            prefer '2.5.68+0.18.4+1.21.1'
+        }
+    }
+}
+
+processResources {
+    from(configurations.librasVulkan.collect { zipTree(it) }) {
+        exclude 'module-info.class', 'META-INF/**'
+    }
+}
+
+dependencies {
 
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
