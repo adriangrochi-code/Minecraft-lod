@@ -1274,3 +1274,18 @@ conectó. Pedido del usuario (juega en servidor).
 - Pendiente: el servidor dedicado no corre la generación aproximada ni el
   pregenerador (solo singleplayer): en multijugador el LOD llega hasta donde el
   servidor generó chunks de verdad (jugadores, pregeneración al irse).
+
+## 41. Nodos con paleta (sección 25, punto 2, la parte de almacenamiento) — 2026-10-03
+
+**0.26.34 (`storage/OctreeNodeCodec`):** bit 1 de `flag_homogeneo` = formato con
+paleta: `count` = vóxeles distintos, la paleta (8 B c/u) y un índice por vóxel
+(1 B hasta 256 distintos, si no 2). Regla `usaPaleta`: al menos 512 vóxeles y 16
+corridas; el resto sigue con RLE. Medido sobre ~1,5 M nodos de tres mundos con
+el Deflate del store encima (por mundo, actual → nuevo): servidor 53,2 → 36,7 MB
+(−31%), benchmark 120,9 → 91,4 MB (−24%), casi todo aproximado 15,5 → 14,1 MB
+(−9%); la regla queda a menos del 1% del mejor formato elegido nodo por nodo.
+Descartados: paleta + corridas (−22%), columnas por byte (+22%). Lectura
+(descomprimir + decodificar, 20 mil nodos reales de nivel 0-1): 34 → 20 µs por
+nodo (los vóxeles repetidos comparten el objeto de la paleta). Lo viejo se lee
+igual; no cambia `VERSION_ALGORITMO` (nada se regenera). El color sigue en el
+vóxel (resolverlo en el cliente desde el estado sigue pendiente).

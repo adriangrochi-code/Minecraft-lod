@@ -41,8 +41,10 @@ class CompresionNodosTest {
     void comprimeTerrenoVariasVeces() {
         byte[] original = nodoDeTerreno(2);
         byte[] comprimido = CompresionNodos.comprimir(original);
-        assertTrue(comprimido.length * 3 < original.length,
-                "Esperaba al menos 3x: " + original.length + " -> " + comprimido.length);
+        // Desde 0.26.34 un nodo así va con paleta (un byte por vóxel): ya llega compacto y
+        // Deflate gana menos en proporción, aunque el resultado sea más chico que con RLE.
+        assertTrue(comprimido.length * 2 < original.length,
+                "Esperaba al menos 2x: " + original.length + " -> " + comprimido.length);
     }
 
     @Test

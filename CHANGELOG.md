@@ -6,6 +6,17 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.34 — LOD más chico y más rápido de leer (paleta)
+- Los nodos grandes del LOD (los vóxeles de 1 y 2 bloques, lo más pesado) se
+  guardan con una paleta: la lista de vóxeles distintos y un índice por vóxel,
+  en vez de corridas de vóxeles completos. Medido sobre datos reales: **−31%**
+  en disco y RAM en un mundo de servidor, −24% en el mundo de benchmark y −9%
+  en uno casi todo aproximado; y **leer un nodo tarda 40% menos** (34 → 20 µs).
+- En multijugador baja lo que manda el servidor en la misma proporción.
+- Lo ya guardado se sigue leyendo igual (no se regenera nada); lo nuevo ocupa
+  menos. No abrir un mundo con una versión anterior del mod después de usar
+  esta: no entiende el formato nuevo.
+
 ## 0.26.33 — LOD en multijugador
 - **En un servidor con el mod, el cliente ahora dibuja el LOD.** Antes, en
   multijugador no se veía nada de LOD (solo funcionaba en un jugador). El
