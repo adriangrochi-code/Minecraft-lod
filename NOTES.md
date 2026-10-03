@@ -10,6 +10,13 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Cuadrado oscuro en el cielo (visto en Xvfb, 0.26.38):** desde y = 200
+  mirando 30° hacia arriba aparece un cuadrado con degradé arriba a la derecha
+  (oscuro de día, claro de noche), también con `lodActivo = false`: es un quad
+  del cielo de vanilla (sol o luna) que sale sin mezcla aditiva. No es una malla
+  del LOD. Ver en GPU real si pasa (puede ser de llvmpipe) y, si pasa, si es
+  vanilla o algún estado de mezcla que deja el mod fuera del LOD.
+
 - **Auto-ajuste con vsync (0.26.38):** en la 1060 con vsync a 60 Hz y Ultra
   (o Alto), ver en el HUD de detalle que el diagnóstico diga "tope" y no quede
   bajando perillas estando en 60 FPS, y que después de un momento pesado vuelva
