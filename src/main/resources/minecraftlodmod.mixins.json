@@ -23,6 +23,7 @@
     "MixinSamplersIris",
     "MixinShaderInstance",
     "MixinShaderPackIris",
+    "MixinSombrasIris",
     "MixinUniformesIris"
   ],
   "injectors": {

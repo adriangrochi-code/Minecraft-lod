@@ -71,6 +71,7 @@ public final class ConfigLod {
         public final ModConfigSpec.BooleanValue oclusionCostados;
         public final ModConfigSpec.BooleanValue aguaTranslucida;
         public final ModConfigSpec.BooleanValue siluetasPlantas;
+        public final ModConfigSpec.BooleanValue sombrasLod;
         public final ModConfigSpec.BooleanValue texturasComoTerreno;
         public final ModConfigSpec.BooleanValue nubesLejanas;
         public final ModConfigSpec.BooleanValue oclusionPantalla;
@@ -162,6 +163,9 @@ public final class ConfigLod {
             siluetasPlantas = b.comment("Caña, bambú, pasto alto y flores de dos bloques en el LOD cercano como dos planos",
                             "cruzados con su silueta (como de cerca), en vez de omitirlos. Solo con texturas del LOD.")
                     .define("siluetasPlantas", true);
+            sombrasLod = b.comment("Con un shaderpack: el LOD también se dibuja en su mapa de sombras (montañas lejanas que",
+                            "tiran sombra). Solo llega hasta la distancia de sombras del pack. Sin contrato Voxy.")
+                    .define("sombrasLod", true);
             texturasComoTerreno = b.comment("Vóxeles grandes (lejos): el costado de pasto, nieve, micelio, etc. lleva su franja",
                             "solo en la fila de arriba y abajo la textura de la tierra, como un corte del terreno. Apagado:",
                             "la textura del costado se repite en cada bloque del vóxel (una línea de pasto por bloque).")

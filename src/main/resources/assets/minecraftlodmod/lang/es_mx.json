@@ -58,6 +58,8 @@
   "minecraftlodmod.configuration.aguaTranslucida.tooltip": "El agua del LOD es translúcida como la de vanilla: se ven la orilla, los bajíos y el fondo cerca de la costa; lo hondo queda oscuro. Solo con texturas del LOD (sin shaderpack ni VulkanMod).",
   "minecraftlodmod.configuration.siluetasPlantas": "Siluetas de plantas",
   "minecraftlodmod.configuration.siluetasPlantas.tooltip": "Caña, bambú, pasto alto y flores de dos bloques en el LOD cercano se dibujan como dos planos cruzados con su silueta, como de cerca, en vez de desaparecer. Solo con texturas del LOD (sin shaderpack ni VulkanMod).",
+  "minecraftlodmod.configuration.sombrasLod": "Sombras del LOD (shaders)",
+  "minecraftlodmod.configuration.sombrasLod.tooltip": "Con un shaderpack, el terreno lejano también proyecta sombras: las montañas del LOD tiran sombra como las cercanas. Llega hasta la distancia de sombras que tenga el pack. No aplica con el contrato Voxy experimental.",
   "minecraftlodmod.configuration.lodActivo": "LOD activado",
   "minecraftlodmod.configuration.lodActivo.tooltip": "Dibuja el terreno lejano. Apágalo para comparar contra vanilla; la generación de LOD sigue funcionando.",
   "minecraftlodmod.configuration.vanillaReducida": "Modo híbrido (vanilla corta)",

@@ -58,6 +58,8 @@
   "minecraftlodmod.configuration.aguaTranslucida.tooltip": "LOD water is translucent like vanilla's: shores, shallows and the seabed near the coast show through; deep water stays dark. Only with LOD textures (no shaderpack or VulkanMod).",
   "minecraftlodmod.configuration.siluetasPlantas": "Plant silhouettes",
   "minecraftlodmod.configuration.siluetasPlantas.tooltip": "Sugar cane, bamboo, tall grass and two-block flowers in the nearby LOD are drawn as two crossed planes with their silhouette, like up close, instead of disappearing. Only with LOD textures (no shaderpack or VulkanMod).",
+  "minecraftlodmod.configuration.sombrasLod": "LOD shadows (shaders)",
+  "minecraftlodmod.configuration.sombrasLod.tooltip": "With a shaderpack, distant terrain also casts shadows: LOD mountains cast shadows like nearby ones. Reaches as far as the pack's shadow distance. Not with the experimental Voxy contract.",
   "minecraftlodmod.configuration.lodActivo": "LOD enabled",
   "minecraftlodmod.configuration.lodActivo.tooltip": "Draws the distant terrain. Turn it off to compare against vanilla; LOD generation keeps running.",
   "minecraftlodmod.configuration.vanillaReducida": "Hybrid mode (short vanilla)",

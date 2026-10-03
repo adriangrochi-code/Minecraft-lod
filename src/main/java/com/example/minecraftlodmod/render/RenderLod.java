@@ -614,6 +614,64 @@ public final class RenderLod {
     public RenderLod(GeneradorLocal generador, BalanceCpuGpu balance) {
         this.generador = generador;
         this.balance = balance;
+        instancia = this;
+    }
+
+    /** Para la pasada de sombras de Iris ({@code mixin/MixinSombrasIris}), que no tiene a mano la instancia. */
+    private static volatile RenderLod instancia;
+
+    /**
+     * Pasada de sombras de Iris: el LOD también se dibuja en el mapa de sombras del pack,
+     * así las montañas lejanas tiran sombra y el terreno del LOD dentro de la distancia de
+     * sombras del pack la recibe bien. Iris llama acá después de su terreno sólido, con el
+     * mapa de sombras atado y su programa {@code shadow} en lugar del sólido de vanilla;
+     * se dibujan las mismas mallas de formato de bloque con sus matrices (el descarte por
+     * campo de visión con la proyección ortogonal de la sombra deja solo lo que entra en
+     * su volumen). Solo con shaderpack sin contrato Voxy (esas mallas son de otro formato).
+     */
+    public static void dibujarSombras(Matrix4f vistaSombra, Matrix4f proyeccionSombra, double camX, double camY,
+                                      double camZ) {
+        RenderLod r = instancia;
+        if (r == null || !r.shadersEnUso || r.voxyEnUso || !ConfigLod.CLIENTE.sombrasLod.get()
+                || !dibujoPermitido()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        ShaderInstance shader = GameRenderer.getRendertypeSolidShader();
+        if (mc.level == null || shader == null) {
+            return;
+        }
+        int llamadas = r.llamadasUltimoFrame;
+        long vertices = r.verticesUltimoFrame;
+        asegurarTexturaBlanca(mc);
+        RenderSystem.setShaderTexture(0, TEXTURA_BLANCA);
+        mc.gameRenderer.lightTexture().turnOnLightLayer();
+        RenderSystem.setShader(() -> shader);
+        double radioPlaneta = ConfigLod.CLIENTE.curvatura.get() ? radioCurvatura() : 0;
+        double inicioCurva = mc.options.getEffectiveRenderDistance() * 16.0;
+        // Como el terreno de vanilla en esta pasada (LevelRenderer#renderSectionLayer): uniforms y
+        // apply una vez, y por malla el corrimiento en ChunkOffset + draw. Con drawWithShader y el
+        // corrimiento en la vista, el programa de sombra de Iris no dibujaba nada.
+        Uniform desplazamiento = shader.CHUNK_OFFSET;
+        if (desplazamiento == null) {
+            mc.gameRenderer.lightTexture().turnOffLightLayer();
+            return;
+        }
+        RenderSystem.enableDepthTest();
+        RenderSystem.depthFunc(515); // GL_LEQUAL
+        RenderSystem.depthMask(true);
+        shader.setDefaultUniforms(VertexFormat.Mode.QUADS, vistaSombra, proyeccionSombra, mc.getWindow());
+        shader.apply();
+        Malla m = r.new Malla(vistaSombra, proyeccionSombra, shader, desplazamiento, null, null,
+                new Vec3(camX, camY, camZ), radioPlaneta > 0, inicioCurva, radioPlaneta);
+        r.recorrerMallas(TipoMalla.BLOQUE, m, false, Filtro.TODAS);
+        desplazamiento.set(0f, 0f, 0f);
+        shader.clear();
+        mc.gameRenderer.lightTexture().turnOffLightLayer();
+        VertexBuffer.unbind();
+        // Las estadísticas del HUD son del cuadro principal.
+        r.llamadasUltimoFrame = llamadas;
+        r.verticesUltimoFrame = vertices;
     }
 
     /** Calidad a usar; la calibración la cambia por escalón ({@code SesionCalibracion.asignarAplicador}). */
@@ -891,9 +949,13 @@ public final class RenderLod {
         double detalleExtra = balance.detalleExtra(c);
         double umbralPx = balance.umbralPx(c) * detalleExtra;
         double distanciaUnBuffer = balance.distanciaUnBuffer();
-        // Vanilla dibuja hasta su distancia de render; se deja un chunk de
-        // solapamiento para que no queden huecos en el borde (vanilla queda encima).
-        int distanciaVanilla = Math.max(0, mc.options.getEffectiveRenderDistance() - 1);
+        // Vanilla dibuja hasta su distancia de render. Con su renderer de chunks se usa su misma
+        // prueba de distancia (ChunkTrackingView, la de SectionOcclusionGraph) más la de secciones
+        // compiladas: el LOD le cede exactamente lo que vanilla dibuja. Con Sodium/Embeddium (su
+        // propio criterio) se deja un chunk de solapamiento, como antes (vanilla queda encima).
+        int distanciaRender = mc.options.getEffectiveRenderDistance();
+        int distanciaVanilla = Math.max(0, distanciaRender - 1);
+        int alcanceVanilla = RENDERER_DE_CHUNKS_PROPIO ? distanciaVanilla : distanciaRender + 1;
         // Chunks que vanilla YA tiene cargados dentro de su distancia: solo esos se le
         // dejan; el resto lo sigue dibujando el LOD hasta que llegue (sin huecos).
         Set<Long> deVanilla = new HashSet<>();
@@ -903,9 +965,12 @@ public final class RenderLod {
         RangoSecciones columnaEntera = new RangoSecciones(mc.level.getMinSection(), mc.level.getMaxSection() - 1);
         RangoSecciones visibleVertical = RangoSecciones.verticalVisible((int) Math.floor(camara.y),
                 mc.options.getEffectiveRenderDistance());
-        for (int dx = -distanciaVanilla; dx <= distanciaVanilla; dx++) {
-            for (int dz = -distanciaVanilla; dz <= distanciaVanilla; dz++) {
-                if ((long) dx * dx + (long) dz * dz < vanilla2) {
+        for (int dx = -alcanceVanilla; dx <= alcanceVanilla; dx++) {
+            for (int dz = -alcanceVanilla; dz <= alcanceVanilla; dz++) {
+                boolean enVista = RENDERER_DE_CHUNKS_PROPIO ? (long) dx * dx + (long) dz * dz < vanilla2
+                        : net.minecraft.server.level.ChunkTrackingView.isInViewDistance(chunkX, chunkZ,
+                        distanciaRender, chunkX + dx, chunkZ + dz);
+                if (enVista) {
                     long claveChunk = PlanCeldas.claveChunk(chunkX + dx, chunkZ + dz);
                     consultados.add(claveChunk);
                     if (vanillaLoDibujo(mc, chunkX + dx, chunkZ + dz)) {
@@ -943,8 +1008,11 @@ public final class RenderLod {
         double piso = Math.max(Math.min(pixelesMinimos, PISO_DETALLE_EXTRA_PX), pixelesMinimos * detalleExtra);
         PlanCeldas.configurar(ConfigLod.CLIENTE.pixelesMaximos.get() * aPantalla, piso * aPantalla,
                 TerrenoAproximado.CHUNKS_POR_REGION_DESDE * 16.0);
+        // El plan solo consulta "¿lo dibuja vanilla?" dentro de este radio: tiene que cubrir lo
+        // que vanilla puede dibujar (su prueba resta un chunk por eje: hasta ~distancia + 1,5).
+        int consultaVanilla = RENDERER_DE_CHUNKS_PROPIO ? distanciaVanilla : distanciaRender + 2;
         List<PlanCeldas.Celda> plan = PlanCeldas.planificarConGrandes(camara.x, camara.z, radioChunks,
-                distanciaVanilla, cubiertos::contains, vista, Math.toRadians(fovGrados), alturaDibujo,
+                consultaVanilla, cubiertos::contains, vista, Math.toRadians(fovGrados), alturaDibujo,
                 umbralPx);
         // Primero lo que se mira, después el margen, al final lo de atrás.
         plan.sort(Comparator.comparingDouble(celda -> prioridad(celda, camara, miraX, miraZ)));

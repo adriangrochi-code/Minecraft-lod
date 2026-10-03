@@ -10,6 +10,17 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
+- **Sombras del LOD con shaderpacks (0.26.35, `sombrasLod`):** verificado solo
+  con un pack de diagnóstico propio (el mapa de sombras en pantalla, curvas de
+  nivel continuas en el borde LOD/vanilla). Probar con Complementary/BSL en GPU
+  real: que las sombras del LOD caigan donde deben y cuánto cuesta en GPU (el
+  LOD entra entero en el volumen de sombras del pack). Con Sodium, Iris no pone
+  en el mapa de sombras las secciones de vanilla que no se ven de frente (pasa
+  igual sin el LOD); ver si se nota. Sin sombras del LOD en el modo contrato Voxy.
+- **Exclusión exacta del área vanilla (0.26.35):** con vanilla (sin Sodium)
+  mirar en monitor real que no aparezcan huecos en el borde al girar rápido o
+  cambiar la distancia de render.
+
 - **Pregeneración al entrar (0.26.30-31):** medir cuántos chunks entran en 60 s
   en la A275 y en la 1060, y si 60 s cada vez que se entra es buen valor por
   defecto (en un mundo ya explorado podría preferirse menos).

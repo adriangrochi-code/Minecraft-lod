@@ -1289,3 +1289,29 @@ Descartados: paleta + corridas (−22%), columnas por byte (+22%). Lectura
 nodo (los vóxeles repetidos comparten el objeto de la paleta). Lo viejo se lee
 igual; no cambia `VERSION_ALGORITMO` (nada se regenera). El color sigue en el
 vóxel (resolverlo en el cliente desde el estado sigue pendiente).
+
+
+## 42. Exclusión exacta del área vanilla y sombras del LOD — 2026-10-03
+
+**Exclusión (sección 25, punto 6), 0.26.35:** sin Sodium/Embeddium, el plan de
+celdas usa la misma prueba que vanilla para saber qué chunk dibuja
+(`ChunkTrackingView.isInViewDistance`, distancia de render efectiva) en vez del
+círculo de radio − 1; la consulta del plan llega a rd + 2. Medido con
+distancia 6: 5,33 → 5,09 M vértices (−4,4%), imagen igual (sin huecos). Con
+Sodium/Embeddium (`RENDERER_DE_CHUNKS_PROPIO`) queda el círculo de antes más
+`vanillaLoDibujo`, porque su recorte de secciones es otro.
+
+**Sombras del LOD con Iris, 0.26.35 (`render/mixin/MixinSombrasIris`, opción
+`sombrasLod`):** inyectado en `ShadowRenderer#renderShadows` después del tercer
+`invokeRenderSectionLayer` (el terreno sólido/cutout del pase de sombras). Ahí
+`GameRenderer.getRendertypeSolidShader()` ya es el programa de sombra del pack,
+así que `RenderLod.dibujarSombras` dibuja las mismas mallas de formato de bloque
+como vanilla en esa pasada: `setDefaultUniforms` + `apply` una vez, corrimiento
+por `ChunkOffset` por malla, con `ShadowRenderer.MODELVIEW/PROJECTION` y la
+cámara sin corrimiento de Iris (`CameraUniforms.getUnshiftedCameraPosition`).
+Hace falta forzar prueba y escritura de profundidad (sin eso no quedaba nada en
+el mapa); con `drawWithShader` y el corrimiento en la vista no se dibujaba. El
+descarte por campo de visión con la ortogonal de la sombra recorta lo que no
+entra en su volumen. No con el contrato Voxy (otro formato de malla).
+Verificado con un pack propio que muestra `shadowtex0` como curvas de nivel:
+continuas en el borde LOD/vanilla.

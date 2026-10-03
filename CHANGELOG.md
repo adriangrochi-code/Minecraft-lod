@@ -6,6 +6,17 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.35 — Menos LOD repetido bajo vanilla y sombras del LOD con shaders
+- El LOD ya no arma terreno debajo de los chunks que vanilla dibuja: usa la
+  misma prueba de distancia que vanilla en vez de un círculo más chico, así que
+  desaparece el anillo repetido del borde. Medido: −4,4% de vértices con
+  distancia 6, sin huecos. Con Sodium/Embeddium sigue como antes, porque esos
+  mods eligen los chunks a su manera.
+- Con un shaderpack (Iris), el LOD también se dibuja en el mapa de sombras del
+  pack: las montañas lejanas tiran sombra y el terreno lejano dentro de la
+  distancia de sombras la recibe. Opción "Sombras del LOD" (Calidad), prendida.
+  No aplica con el modo experimental del contrato Voxy.
+
 ## 0.26.34 — LOD más chico y más rápido de leer (paleta)
 - Los nodos grandes del LOD (los vóxeles de 1 y 2 bloques, lo más pesado) se
   guardan con una paleta: la lista de vóxeles distintos y un índice por vóxel,
