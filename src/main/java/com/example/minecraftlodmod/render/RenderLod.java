@@ -93,9 +93,10 @@ import java.util.concurrent.atomic.LongAdder;
  * {@link BufferBuilder}, {@link RenderSystem}, shader {@code position_color}
  * del juego) — nunca GL crudo (regla de la sección 15).
  *
- * Fuente de datos: por ahora el cache de disco del servidor integrado
- * (singleplayer). En multiplayer el cliente todavía no guarda lo que llega
- * por red ({@code ProtocoloLod}), así que no dibuja nada — anotado en NOTES.
+ * Fuente de datos: el cache de disco del servidor integrado (singleplayer) o,
+ * en multijugador con el mod en el servidor, el espejo local de lo que el
+ * servidor tiene ({@code network/EspejoServidor}), que se llena con lo que
+ * el render busca y no encuentra.
  */
 public final class RenderLod {
 
@@ -272,7 +273,7 @@ public final class RenderLod {
                 mallas == 0 ? 0 : String.format("%.1f", nanos / 1e6 / mallas),
                 piezasOcultas, String.format("%.1f", nanosOclusion / 1e6),
                 planesDesdeEstadistica, String.format("%.1f", nanosPlanMaximo / 1e6),
-                generador.store() == null ? 0 : generador.store().bytesEnCache() >> 20,
+                store() == null ? 0 : store().bytesEnCache() >> 20,
                 seccionesConBloques(mc), ClienteVertical.columnasParciales(),
                 com.example.minecraftlodmod.cubico.SincroVertical.ESTADISTICAS.resumenYReiniciar(),
                 String.format("%06X", colorLuzCielo(mc)), (rt.totalMemory() - rt.freeMemory()) >> 20, rt.maxMemory() >> 20);
@@ -355,6 +356,59 @@ public final class RenderLod {
         } catch (IOException e) {
             LOG.error("LOD: no se pudo cargar el shader del fundido entre niveles; los cambios de nivel serán de golpe", e);
             shaderTexturaFundido = null;
+        }
+    }
+
+    /** Regiones (x, z empaquetados) con datos nuevos del servidor en multijugador, por rearmar. */
+    private static final java.util.concurrent.ConcurrentLinkedQueue<Long> regionesNuevas =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+    /** Última vez que se rearmaron celdas por datos del servidor (de a lotes, una vez por segundo). */
+    private long ultimoRearmeRemotoNanos;
+
+    /**
+     * Llegaron datos de una región en multijugador ({@code network/EspejoServidor}, cualquier
+     * hilo): sus celdas se rearman aunque ya estuvieran "completas". Sin esto, una celda
+     * armada con las marcas de chunk recién llegadas y sin los nodos de su nivel quedaba
+     * con huecos (las marcas viajan en otra rebanada y suelen llegar antes).
+     */
+    public static void regionConDatosNuevos(int regionX, int regionZ) {
+        regionesNuevas.add(PlanCeldas.claveChunk(regionX, regionZ));
+    }
+
+    /** Rearma las celdas que tocan las regiones avisadas (hilo de render). */
+    private void rearmarRegionesNuevas(long ahora) {
+        if (regionesNuevas.isEmpty() || ahora - ultimoRearmeRemotoNanos < 1_000_000_000L) {
+            return;
+        }
+        ultimoRearmeRemotoNanos = ahora;
+        it.unimi.dsi.fastutil.longs.LongOpenHashSet regiones = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
+        Long r;
+        while ((r = regionesNuevas.poll()) != null) {
+            regiones.add(r.longValue());
+        }
+        int bloquesRegion = SectionExtractor.LADO_REGION * 16;
+        int rearmadas = 0;
+        for (EstadoCelda e : celdas.values()) {
+            PlanCeldas.Celda c = e.construidaCon;
+            if (c == null) {
+                continue;
+            }
+            int rx0 = Math.floorDiv(c.origenX(), bloquesRegion), rz0 = Math.floorDiv(c.origenZ(), bloquesRegion);
+            int rx1 = Math.floorDiv(c.origenX() + c.ladoEnBloques() - 1, bloquesRegion);
+            int rz1 = Math.floorDiv(c.origenZ() + c.ladoEnBloques() - 1, bloquesRegion);
+            buscar:
+            for (int rx = rx0; rx <= rx1; rx++) {
+                for (int rz = rz0; rz <= rz1; rz++) {
+                    if (regiones.contains(PlanCeldas.claveChunk(rx, rz))) {
+                        e.construidaCon = null;
+                        rearmadas++;
+                        break buscar;
+                    }
+                }
+            }
+        }
+        if (rearmadas > 0) {
+            chunkPlanX = Integer.MIN_VALUE; // replanificar ya: las celdas marcadas se encolan
         }
     }
 
@@ -604,6 +658,12 @@ public final class RenderLod {
         }
     }
 
+    /** El store del servidor integrado o, en multijugador, el espejo del servidor (null si no hay). */
+    private RegionFileStore store() {
+        RegionFileStore local = generador.store();
+        return local != null ? local : com.example.minecraftlodmod.network.EspejoServidor.store();
+    }
+
     @SubscribeEvent
     public void alRenderizar(RenderLevelStageEvent evento) {
         // Apagado desde la config: ni dibujo ni niebla (las mallas se conservan para volver rápido).
@@ -615,7 +675,7 @@ public final class RenderLod {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        RegionFileStore store = generador.store();
+        RegionFileStore store = store();
         if (mc.level == null || store == null) {
             return;
         }
@@ -673,6 +733,7 @@ public final class RenderLod {
             chunkPlanX = Integer.MIN_VALUE;
         }
         subirMallasListas();
+        rearmarRegionesNuevas(System.nanoTime());
         Camera camara = evento.getCamera();
         replanificarSiHaceFalta(mc, camara.getPosition(), store);
         dibujar(mc, evento, camara.getPosition());

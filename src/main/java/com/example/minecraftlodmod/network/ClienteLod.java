@@ -25,6 +25,12 @@ public final class ClienteLod {
         return conexion != null && conexion.hasChannel(PedidoNodosPayload.TYPE);
     }
 
+    /** ¿El servidor sirve rebanadas del LOD ({@link EspejoServidor}, desde la 0.26.33)? */
+    public static boolean servidorTieneRebanadas() {
+        ClientPacketListener conexion = Minecraft.getInstance().getConnection();
+        return conexion != null && conexion.hasChannel(PedidoRebanadasPayload.TYPE);
+    }
+
     /**
      * Pide nodos al servidor, partiendo en lotes de
      * {@link LimitadorPedidos#MAX_NODOS_POR_PEDIDO}. No hace nada sin companion.

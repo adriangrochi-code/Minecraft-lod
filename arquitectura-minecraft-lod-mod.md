@@ -1238,3 +1238,39 @@ misma de la pantalla de carga) de a un lugar por vez durante
 `pregeneracionSalida` segundos (opción de servidor, 60, 0-600), con a lo sumo
 la mitad de los núcleos en vuelo y sin pedir chunks con el tick promedio sobre
 40 ms. Medido (servidor dedicado, Xvfb): 1105 chunks en 60 s.
+
+## 40. Multijugador de verdad: espejo del LOD del servidor — 2026-10-03
+
+Hasta acá el cliente en multijugador no dibujaba nada: el render leía solo el
+store del servidor integrado y el protocolo de nodos (sección 10) nunca se
+conectó. Pedido del usuario (juega en servidor).
+
+**0.26.33 — rebanadas (`network/`):**
+- **Unidad:** `RebanadaId` = región del store + código de nivel de la clave
+  (bits 22-25 de `SectionExtractor.claveNodo`: 0-4 niveles reales, 5-10
+  grandes, 13-14 aproximado grande, 15 marcas y aproximado fino). Todas las
+  claves del store comparten ese formato, así que una rebanada trae de una vez
+  lo que el render necesita de ese nivel en esa región.
+- **Cliente (`EspejoServidor`):** un `RegionFileStore` propio por servidor; el
+  render lo usa igual que el del servidor integrado (`RenderLod.store()`).
+  `RegionFileStore.observarFaltantes` avisa cada clave buscada y ausente → se
+  pide su rebanada (`PedidosRebanadas`: una vez, en el orden en que el render
+  buscó = de cerca hacia afuera, hasta 24 en vuelo; recibida, vigente 120 s).
+- **Huellas:** `RegionFileStore.huella(región, filtro)` sin leer datos de disco
+  (ubicación y tamaño en el índice; contenido de lo que está en memoria). El
+  cliente manda la que tiene; si coincide, "sin cambios" sin datos. Se guardan
+  en `huellas.bin` (al salir y cada 60 s, después de bajar el store a disco).
+- **Servidor (`ServidorRebanadas`):** cola por jugador validada contra el radio
+  servido (estirado para los nodos grandes), lectura en el pool de generación,
+  bytes comprimidos tal cual (`leerComprimido` → `guardarComprimido`, sin
+  recomprimir), partes de 256 KB, ritmo `kbPorSegundo` (1024) por jugador.
+- **Rearmado:** las marcas de chunk (código 15) llegan antes que los nodos; una
+  celda armada en ese momento quedaba "completa" con huecos. Con datos nuevos de
+  una región, sus celdas se rearman (`RenderLod.regionConDatosNuevos`, de a
+  lotes cada 1 s).
+- Medido (servidor dedicado + cliente, Xvfb, radio 160): primera entrada 47 MB
+  y el terreno completo; al volver a entrar 0 KB (todo "sin cambios" o vacío).
+- Protocolo versión 2 (servidor y cliente con la misma versión del mod).
+- Pendiente: el servidor dedicado no corre la generación aproximada ni el
+  pregenerador (solo singleplayer): en multijugador el LOD llega hasta donde el
+  servidor generó chunks de verdad (jugadores, pregeneración al irse).

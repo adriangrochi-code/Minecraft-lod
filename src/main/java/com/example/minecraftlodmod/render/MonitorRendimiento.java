@@ -226,12 +226,16 @@ public final class MonitorRendimiento {
         if (m.lod() == null || !ConfigLod.CLIENTE.hudDetalleLod.get()) {
             return new Component[]{linea1};
         }
-        Component linea2 = Component.literal("v" + version() + "  ·  ")
+        net.minecraft.network.chat.MutableComponent linea2 = Component.literal("v" + version() + "  ·  ")
                 .append(Component.translatable("minecraftlodmod.hud.linea2",
                 m.lod().activo() ? decimal(m.lod().msDibujo()) : "off", millones(m.lod().verticesDibujados()),
                 m.lod().piezas(), m.lod().vramMb(), m.lod().mallasEnCola(), entero(m.extraidosPorSegundo()),
                 m.pendientes(), entero(m.aproximadosPorSegundo()), pregeneracion(m.pregeneracion())))
                 .append(Component.translatable("minecraftlodmod.hud.limite", balance.diagnostico()));
+        if (com.example.minecraftlodmod.network.EspejoServidor.store() != null) {
+            linea2 = linea2.append(Component.translatable("minecraftlodmod.hud.remoto",
+                    com.example.minecraftlodmod.network.EspejoServidor.resumen()));
+        }
         return new Component[]{linea1, linea2};
     }
 

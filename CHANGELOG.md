@@ -6,6 +6,20 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.33 — LOD en multijugador
+- **En un servidor con el mod, el cliente ahora dibuja el LOD.** Antes, en
+  multijugador no se veía nada de LOD (solo funcionaba en un jugador). El
+  servidor le manda al cliente el LOD que tiene generado, empezando por lo
+  más cercano, y el cliente lo guarda en disco
+  (`.minecraft/minecraftlodmod/servidores/<servidor>/`).
+- **Volver a entrar es instantáneo:** lo guardado aparece enseguida y solo se
+  baja lo que cambió en el servidor. Medido en Xvfb: primera entrada 47 MB
+  (radio 160 chunks); al volver a entrar, 0 KB.
+- El servidor manda a un ritmo fijo por jugador (1 MB/s por defecto, opción
+  `kbPorSegundo` en `minecraftlodmod-server.toml`) para no saturar la conexión.
+- HUD (detalle del LOD): "LOD remoto" con lo pedido, lo recibido y lo bajado.
+- Hay que tener la misma versión del mod en el servidor y en el cliente.
+
 ## 0.26.32 — El servidor pregenera cuando un jugador se va
 - **Multijugador:** cuando un jugador se desconecta de un servidor (dedicado, o
   un invitado de un mundo abierto en LAN), el servidor pasa 60 s generando

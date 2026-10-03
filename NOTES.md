@@ -189,7 +189,11 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
   mundo desde el pool). Bloques cuyo color de mapa depende de la posición
   caen a su color base — revisar visualmente con mods de worldgen.
 
-- **network/: prueba real con dos instancias.** Protocolo registrado y
+- **network/ (0.26.33): el modo REMOTO funciona** con servidor dedicado +
+  cliente en Xvfb (rebanadas, sección 40). Falta en Pista B: un servidor real
+  por internet (ancho de banda, varios jugadores), cliente con mod contra
+  servidor sin mod y cliente vanilla contra servidor con mod.
+- **(histórico) network/: prueba real con dos instancias.** Protocolo registrado y
   testeado (codecs, limitador, lectura del store), y el servidor dedicado
   arranca con él. Falta: cliente conectado a servidor dedicado pidiendo
   nodos (`ClienteLod.pedir`), cliente con mod contra servidor sin mod (debe

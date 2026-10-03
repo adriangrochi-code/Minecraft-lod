@@ -45,13 +45,14 @@ import java.util.function.Consumer;
 public final class ProtocoloLod {
 
     /** Versión del protocolo; subirla si cambia el formato de los payloads. */
-    public static final String VERSION = "1";
+    public static final String VERSION = "2";
 
     private static volatile Consumer<RespuestaNodoPayload> receptor = r -> { };
 
     private final GeneradorLocal generador;
     /** Se crea con el primer pedido de cada servidor (límites de su config); solo hilo principal. */
     private LimitadorPedidos limitador;
+    private final ServidorRebanadas rebanadas = new ServidorRebanadas();
 
     public ProtocoloLod(GeneradorLocal generador) {
         this.generador = generador;
@@ -73,6 +74,34 @@ public final class ProtocoloLod {
         registrar.executesOn(HandlerThread.NETWORK)
                 .playToClient(RespuestaNodoPayload.TYPE, RespuestaNodoPayload.STREAM_CODEC,
                         (respuesta, contexto) -> receptor.accept(respuesta));
+        // Rebanadas (modo REMOTO del cliente, EspejoServidor): el pedido en el hilo del servidor,
+        // la respuesta se guarda en el hilo de red (el store es thread-safe).
+        registrar.playToServer(PedidoRebanadasPayload.TYPE, PedidoRebanadasPayload.STREAM_CODEC,
+                this::alPedirRebanadas);
+        registrar.executesOn(HandlerThread.NETWORK)
+                .playToClient(RebanadaPayload.TYPE, RebanadaPayload.STREAM_CODEC,
+                        (parte, contexto) -> ManejoCliente.recibir(parte));
+    }
+
+    /** Indirección para que el servidor dedicado no cargue {@link EspejoServidor} (clases de cliente). */
+    private static final class ManejoCliente {
+        static void recibir(RebanadaPayload parte) {
+            EspejoServidor.recibir(parte);
+        }
+    }
+
+    private void alPedirRebanadas(PedidoRebanadasPayload pedido, IPayloadContext contexto) {
+        if (!(contexto.player() instanceof ServerPlayer jugador) || generador.calidad() == null) {
+            return;
+        }
+        rebanadas.pedir(jugador, pedido.rebanadas(), pedido.huellas(),
+                ConfigLod.limitesRed(generador.calidad()).radioMaximoChunks());
+    }
+
+    /** Listener del bus de NeoForge: manda las rebanadas leídas a ritmo fijo. */
+    @SubscribeEvent
+    public void alTerminarTick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post evento) {
+        rebanadas.tick(evento.getServer(), generador, ConfigLod.SERVIDOR.kbPorSegundo.get() * 1024);
     }
 
     /** Listener del bus de NeoForge: libera el estado del limitador. */
@@ -81,11 +110,13 @@ public final class ProtocoloLod {
         if (limitador != null) {
             limitador.olvidar(evento.getEntity().getUUID());
         }
+        rebanadas.olvidar(evento.getEntity().getUUID());
     }
 
     @SubscribeEvent
     public void alDetenerServidor(ServerStoppingEvent evento) {
         limitador = null;
+        rebanadas.olvidarTodo();
     }
 
     /** Hilo principal del servidor (default de {@code PayloadRegistrar}). */

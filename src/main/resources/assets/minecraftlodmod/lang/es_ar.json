@@ -99,6 +99,7 @@
   "minecraftlodmod.hud.linea1": "FPS %s  ·  %s ms (peor %s, 1%% bajo %s FPS)  ·  CPU juego %s%% / sistema %s%%  ·  RAM %s/%s MB  ·  servidor %s ms",
   "minecraftlodmod.hud.linea2": "LOD %s ms · %s vért · %s piezas · %s MB · cola %s  ·  extracción %s/s (pend. %s)  ·  aproximado %s/s  ·  pregen %s",
   "minecraftlodmod.hud.limite": "  ·  límite %s",
+  "minecraftlodmod.hud.remoto": "  ·  LOD remoto: %s",
   "minecraftlodmod.hud.libre": "libre",
   "minecraftlodmod.configuration.escalado": "Escalado (experimental)",
   "minecraftlodmod.configuration.escalado.tooltip": "Dibuja el mundo a menor resolución y lo lleva a la pantalla. FSR 1: espacial, cualquier GPU. Temporal: propio, junta varios cuadros, cualquier GPU. XeSS: Intel, Windows, necesita libxess.dll. DLSS: NVIDIA RTX, Windows, necesita las DLL de NVIDIA. Se apaga solo con Fabulous, Iris o VulkanMod.",

@@ -153,7 +153,15 @@ public final class RegionFileStore implements AutoCloseable {
 
     public void guardar(ClaveRegion region, long claveNodo, byte[] datos) {
         // Vacío = marca sin contenido (ej. "chunk generado"): no vale la pena comprimir.
-        byte[] comprimido = datos.length == 0 ? datos : CompresionNodos.comprimir(datos);
+        guardarComprimido(region, claveNodo, datos.length == 0 ? datos : CompresionNodos.comprimir(datos));
+    }
+
+    /**
+     * Como {@link #guardar} con los bytes ya comprimidos ({@link CompresionNodos}),
+     * tal cual los da {@link #leerComprimido}: el espejo del cliente en multijugador
+     * los recibe así del servidor y los guarda sin descomprimir.
+     */
+    public void guardarComprimido(ClaveRegion region, long claveNodo, byte[] comprimido) {
         long[] reemplazado = {0};
         // compute (no computeIfAbsent + put): atómico frente al remove de escribirRegion,
         // así un nodo nunca cae en un mapa que ya se está bajando a disco.
@@ -183,9 +191,102 @@ public final class RegionFileStore implements AutoCloseable {
     public byte[] leer(ClaveRegion region, long claveNodo) {
         byte[] comprimido = leerComprimido(region, claveNodo);
         if (comprimido == null) {
+            avisarFaltante(region, claveNodo);
             return null;
         }
         return comprimido.length == 0 ? comprimido : CompresionNodos.descomprimir(comprimido);
+    }
+
+    /** Quién se entera de las claves que se buscaron y no estaban (ver {@link #observarFaltantes}). */
+    @FunctionalInterface
+    public interface Faltantes {
+        void falta(ClaveRegion region, long claveNodo);
+    }
+
+    private volatile Faltantes faltantes;
+
+    /**
+     * Aviso por cada {@link #leer} o {@link #contiene} que no encontró la clave,
+     * en el hilo que buscó (tiene que ser barato y thread-safe). Lo usa el espejo
+     * del cliente en multijugador para pedirle al servidor lo que el render busca.
+     */
+    public void observarFaltantes(Faltantes observador) {
+        this.faltantes = observador;
+    }
+
+    private void avisarFaltante(ClaveRegion region, long claveNodo) {
+        Faltantes f = faltantes;
+        if (f != null) {
+            f.falta(region, claveNodo);
+        }
+    }
+
+    /**
+     * Huella de las entradas de la región cuya clave cumple el filtro: cambia si se
+     * agrega, quita o reescribe alguna (salvo coincidencias muy improbables). Sin
+     * leer datos de disco: de lo que está en disco usa ubicación y tamaño (un nodo
+     * reescrito queda en otro lugar del archivo, append-only); de lo que está en
+     * memoria, el contenido. Pasar de memoria a disco la cambia una vez. Para que el
+     * espejo del cliente en multijugador sepa si lo que tiene sigue vigente.
+     */
+    public long huella(ClaveRegion region, java.util.function.LongPredicate filtro) {
+        long suma = 0;
+        int cantidad = 0;
+        Map<Long, byte[]> pendientesRegion = pendientes.get(region);
+        Map<Long, byte[]> escribiendose = enEscritura.get(region);
+        it.unimi.dsi.fastutil.longs.LongOpenHashSet enMemoria = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
+        for (Map<Long, byte[]> mapa : java.util.Arrays.asList(pendientesRegion, escribiendose)) {
+            if (mapa == null) {
+                continue;
+            }
+            for (Map.Entry<Long, byte[]> e : mapa.entrySet()) {
+                long clave = e.getKey();
+                if (filtro.test(clave) && enMemoria.add(clave)) {
+                    suma += mezclar(clave * 0x9E3779B97F4A7C15L ^ java.util.Arrays.hashCode(e.getValue()));
+                    cantidad++;
+                }
+            }
+        }
+        Indice indice = indicePublicado(region);
+        if (indice != null) {
+            for (long clave : indice.header().claves()) {
+                if (!filtro.test(clave) || enMemoria.contains(clave)) {
+                    continue;
+                }
+                long[] ubicacion = indice.header().buscarNodo(clave);
+                suma += mezclar(clave * 0x9E3779B97F4A7C15L ^ ubicacion[0] * 31 ^ ubicacion[1] ^ indice.generacion() << 48);
+                cantidad++;
+            }
+        }
+        return mezclar(suma ^ cantidad);
+    }
+
+    /** Mezcla de bits (finalizador de SplitMix64). */
+    private static long mezclar(long x) {
+        x = (x ^ (x >>> 30)) * 0xBF58476D1CE4E5B9L;
+        x = (x ^ (x >>> 27)) * 0x94D049BB133111EBL;
+        return x ^ (x >>> 31);
+    }
+
+    /**
+     * Claves de todos los nodos de la región (en disco, pendientes y en escritura),
+     * sin repetir. Para mandar una región entera o una parte por red.
+     */
+    public long[] claves(ClaveRegion region) {
+        it.unimi.dsi.fastutil.longs.LongOpenHashSet claves = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
+        Indice indice = indicePublicado(region);
+        if (indice != null) {
+            claves.addAll(it.unimi.dsi.fastutil.longs.LongArrayList.wrap(indice.header().claves()));
+        }
+        Map<Long, byte[]> escribiendose = enEscritura.get(region);
+        if (escribiendose != null) {
+            escribiendose.keySet().forEach(claves::add);
+        }
+        Map<Long, byte[]> pendientesRegion = pendientes.get(region);
+        if (pendientesRegion != null) {
+            pendientesRegion.keySet().forEach(claves::add);
+        }
+        return claves.toLongArray();
     }
 
     /**
@@ -197,7 +298,7 @@ public final class RegionFileStore implements AutoCloseable {
      * un índice un poco viejo sigue siendo válida; solo si la generación
      * desapareció (compactación o invalidación) se reintenta con el índice nuevo.
      */
-    private byte[] leerComprimido(ClaveRegion region, long claveNodo) {
+    public byte[] leerComprimido(ClaveRegion region, long claveNodo) {
         long version = versionActual();
         byte[] enMemoria = buscarEnMemoria(region, claveNodo);
         if (enMemoria != null) {
@@ -296,7 +397,11 @@ public final class RegionFileStore implements AutoCloseable {
             return true;
         }
         Indice indice = indicePublicado(region);
-        return indice != null && indice.header().tieneNodo(claveNodo);
+        boolean esta = indice != null && indice.header().tieneNodo(claveNodo);
+        if (!esta) {
+            avisarFaltante(region, claveNodo);
+        }
+        return esta;
     }
 
     /**

@@ -61,6 +61,7 @@ public class MinecraftLodMod {
         NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.cubico.SeccionesComprimidas.class);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
+            NeoForge.EVENT_BUS.register(com.example.minecraftlodmod.network.EspejoServidor.class);
             PaletaTexturas paleta = new PaletaTexturas();
             modEventBus.addListener(paleta::alCoserAtlas);
             modEventBus.addListener(RenderLod::registrarShaders);

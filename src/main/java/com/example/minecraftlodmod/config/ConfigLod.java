@@ -275,6 +275,7 @@ public final class ConfigLod {
         public final ModConfigSpec.IntValue radioServidoMaximo;
         public final ModConfigSpec.IntValue nodosPorSegundo;
         public final ModConfigSpec.IntValue rafagaNodos;
+        public final ModConfigSpec.IntValue kbPorSegundo;
         public final ModConfigSpec.BooleanValue generacionParalela;
         public final ModConfigSpec.BooleanValue permitirSincroVertical;
         public final ModConfigSpec.BooleanValue generacionVertical;
@@ -314,6 +315,9 @@ public final class ConfigLod {
                     .defineInRange("nodosPorSegundo", 1024, 16, 65536);
             rafagaNodos = b.comment("Ráfaga máxima de nodos por jugador (pedidos acumulados).")
                     .defineInRange("rafagaNodos", 2048, 64, 1 << 20);
+            kbPorSegundo = b.comment("KB por segundo de LOD que el servidor le manda a cada jugador (ya comprimido).",
+                            "Más = el LOD lejano aparece antes al entrar; menos = menos ancho de banda.")
+                    .defineInRange("kbPorSegundo", 1024, 32, 65536);
             permitirSincroVertical = b.comment("Permitir que los clientes con el mod pidan la sincronización vertical",
                             "(solo las secciones cercanas en altura; opción experimental del cliente).")
                     .define("permitirSincroVertical", true);

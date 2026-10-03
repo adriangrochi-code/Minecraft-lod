@@ -99,6 +99,7 @@
   "minecraftlodmod.hud.linea1": "FPS %s  ·  %s ms (worst %s, 1%% low %s FPS)  ·  CPU game %s%% / system %s%%  ·  RAM %s/%s MB  ·  server %s ms",
   "minecraftlodmod.hud.linea2": "LOD %s ms · %s verts · %s pieces · %s MB · queue %s  ·  extraction %s/s (pend. %s)  ·  approx %s/s  ·  pregen %s",
   "minecraftlodmod.hud.limite": "  ·  bound by %s",
+  "minecraftlodmod.hud.remoto": "  ·  remote LOD: %s",
   "minecraftlodmod.hud.libre": "free",
   "minecraftlodmod.configuration.escalado": "Upscaling (experimental)",
   "minecraftlodmod.configuration.escalado.tooltip": "Renders the world at a lower resolution and upscales it. FSR 1: spatial, any GPU. Temporal: built-in, accumulates frames, any GPU. XeSS: Intel, Windows, needs libxess.dll. DLSS: NVIDIA RTX, Windows, needs NVIDIA DLLs. Turns itself off with Fabulous, Iris or VulkanMod.",
