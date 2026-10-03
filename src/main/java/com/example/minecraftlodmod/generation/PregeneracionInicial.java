@@ -13,12 +13,13 @@ import java.util.Iterator;
 import java.util.Map;
 
 /**
- * Pregeneración al crear un mundo: mientras dura la pantalla de "preparando el
- * área de aparición", y solo la primera vez que se abre (todavía no entró
- * ningún jugador), se siguen generando chunks vanilla del spawn hacia afuera
- * durante {@code pregeneracionInicial} segundos. Nadie está jugando todavía:
- * se usa toda la CPU sin frenar por el tick del servidor, y al entrar ya hay
- * terreno real (y su LOD) alrededor en vez de empezar con el mundo vacío.
+ * Pregeneración al entrar a un mundo: mientras dura la pantalla de "preparando
+ * el área de aparición", cada vez que se abre un mundo, se siguen generando
+ * chunks vanilla desde donde quedó el jugador (el spawn en un mundo nuevo)
+ * hacia afuera durante {@code pregeneracionInicial} segundos; lo ya generado
+ * con su LOD se saltea. Nadie está jugando todavía: se usa toda la CPU sin
+ * frenar por el tick del servidor, y al entrar ya hay terreno real (y su LOD)
+ * alrededor.
  *
  * Lo llama {@code MixinPrepararNiveles} desde {@code MinecraftServer#prepareLevels},
  * en el hilo del servidor; {@code esperarTick} es el {@code waitUntilNextTick}
@@ -51,14 +52,37 @@ public final class PregeneracionInicial {
     private PregeneracionInicial() {
     }
 
-    /** ¿Mundo recién creado? En singleplayer, level.dat todavía no tiene los datos del jugador. */
-    static boolean mundoNuevo(MinecraftServer servidor) {
-        return servidor.getWorldData().getLoadedPlayerTag() == null;
+    /** Dimensión y chunk donde quedó el jugador (level.dat en singleplayer); el spawn si nunca entró. */
+    private record Lugar(ServerLevel nivel, ChunkPos chunk) {
+    }
+
+    static Lugar dondeQuedo(MinecraftServer servidor) {
+        net.minecraft.nbt.CompoundTag jugador = servidor.getWorldData().getLoadedPlayerTag();
+        if (jugador != null) {
+            try {
+                net.minecraft.nbt.ListTag pos = jugador.getList("Pos", net.minecraft.nbt.Tag.TAG_DOUBLE);
+                ServerLevel nivel = servidor.overworld();
+                if (jugador.contains("Dimension", net.minecraft.nbt.Tag.TAG_STRING)) {
+                    ServerLevel otro = servidor.getLevel(net.minecraft.resources.ResourceKey.create(
+                            net.minecraft.core.registries.Registries.DIMENSION,
+                            net.minecraft.resources.ResourceLocation.parse(jugador.getString("Dimension"))));
+                    nivel = otro != null ? otro : nivel;
+                }
+                if (pos.size() == 3) {
+                    return new Lugar(nivel, new ChunkPos(
+                            net.minecraft.util.Mth.floor(pos.getDouble(0)) >> 4,
+                            net.minecraft.util.Mth.floor(pos.getDouble(2)) >> 4));
+                }
+            } catch (RuntimeException e) {
+                LOG.warn("LOD: no se pudo leer dónde quedó el jugador; se pregenera alrededor del spawn", e);
+            }
+        }
+        return new Lugar(servidor.overworld(), new ChunkPos(servidor.overworld().getSharedSpawnPos()));
     }
 
     public static void correr(MinecraftServer servidor, Runnable esperarTick) {
         // La opción vive en la config del cliente: en un servidor dedicado no existe.
-        if (!servidor.isSingleplayer() || !mundoNuevo(servidor)) {
+        if (!servidor.isSingleplayer()) {
             return;
         }
         GeneradorLocal generador = GeneradorLocal.activo();
@@ -66,8 +90,9 @@ public final class PregeneracionInicial {
         if (segundos <= 0 || generador == null || generador.store() == null) {
             return;
         }
-        ServerLevel nivel = servidor.overworld();
-        ChunkPos centro = new ChunkPos(nivel.getSharedSpawnPos());
+        Lugar lugar = dondeQuedo(servidor);
+        ServerLevel nivel = lugar.nivel();
+        ChunkPos centro = lugar.chunk();
         int enVueloMaximo = Math.max(8, Runtime.getRuntime().availableProcessors() * 4);
         long inicio = System.nanoTime();
         long fin = inicio + segundos * 1_000_000_000L;
@@ -77,7 +102,8 @@ public final class PregeneracionInicial {
         RegionFileStore store = generador.store();
         int listos = 0;
         boolean agotada = false;
-        LOG.info("LOD: mundo nuevo, pregenerando alrededor del spawn durante {} s", segundos);
+        LOG.info("LOD: pregenerando alrededor de {}, {} en {} durante {} s", centro.x * 16, centro.z * 16,
+                nivel.dimension().location(), segundos);
         try {
             while (System.nanoTime() < fin && !(agotada && enVuelo.isEmpty())) {
                 long ahora = System.nanoTime();

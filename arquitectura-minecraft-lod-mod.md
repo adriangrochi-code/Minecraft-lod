@@ -1222,3 +1222,10 @@ ahí (`GeneradorLocal.reintentarPendientes`). El avance se dibuja sobre
 `LevelLoadingScreen` (`PantallaConfig`, `ScreenEvent.Render.Post`). Medido en
 Xvfb: 2527 chunks en 60 s (~42/s, anillo 25), contra ~17/s jugando.
 El mundo del benchmark, la primera vez que se crea, también pasa por esto.
+
+**0.26.31 — cada vez que se entra, alrededor del jugador (pedido del usuario):**
+sin la condición de mundo nuevo; el centro sale de los datos del jugador en
+level.dat (`getLoadedPlayerTag`: `Pos` y `Dimension`, en esa dimensión), o del
+spawn si nunca entró (`PregeneracionInicial.dondeQuedo`). Lo ya generado con
+marca de LOD se saltea, así que en un mundo explorado el minuto se usa en lo
+que falta más afuera. Medido: jugador en 3000, −3000 → 2257 chunks en 60 s.

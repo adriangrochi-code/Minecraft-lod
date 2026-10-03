@@ -6,6 +6,15 @@ la primera línea del log de depuración. Las versiones 0.2.0 a 0.8.0 se
 numeraron después de entregadas (esos jars decían 0.1.0); el commit indica
 cuál es cuál.
 
+## 0.26.31 — Pregeneración cada vez que entrás, alrededor tuyo
+- La pregeneración de la pantalla de carga ya no es solo para mundos nuevos:
+  corre **cada vez que entrás a un mundo**, desde **donde quedó tu jugador**
+  (en la dimensión en que estaba), y saltea lo ya generado. En un mundo nuevo
+  arranca desde el spawn. Medido en Xvfb con el jugador a 3000, −3000: 2257
+  chunks en 60 s alrededor de él.
+- La opción pasó a llamarse "Pregenerar al entrar" (sigue en Generación, 0 a
+  180 s, 0 = no).
+
 ## 0.26.30 — Pregeneración al crear un mundo
 - **Mundo nuevo con terreno alrededor desde el principio:** la primera vez que
   se abre un mundo nuevo, la pantalla de carga se queda 60 s más generando

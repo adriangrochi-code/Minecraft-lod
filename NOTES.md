@@ -10,8 +10,9 @@ Bitácora viva. Claude Code anota acá (ver CLAUDE.md, reglas 4 y 7):
 
 ## Pendiente de Pista B
 
-- **Pregeneración al crear un mundo (0.26.30):** medir cuántos chunks entran en
-  60 s en la A275 y en la 1060, y si 60 s es buen valor por defecto.
+- **Pregeneración al entrar (0.26.30-31):** medir cuántos chunks entran en 60 s
+  en la A275 y en la 1060, y si 60 s cada vez que se entra es buen valor por
+  defecto (en un mundo ya explorado podría preferirse menos).
 - **Siluetas de plantas (0.26.29):** mirar en monitor real si las cruces del
   LOD se confunden con las de vanilla en el borde (color, brillo sin sombra por
   cara) y si titilan a distancia (recorte por alfa con mipmaps); medir el costo
